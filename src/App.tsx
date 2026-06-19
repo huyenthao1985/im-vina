@@ -337,7 +337,6 @@ export default function App() {
       {screen === 'upload' && (
         <UploadScreen
           onFileSelected={handleFileSelected}
-          onLoadMockData={handleLoadMockData}
           theme={theme}
           onToggleTheme={toggleTheme}
           lang={lang}
