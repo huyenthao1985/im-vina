@@ -442,13 +442,9 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
 
     window.Plotly.react('trendChartMonth', tracesMonth as any, layoutMonth as any, { displayModeBar: false, responsive: true });
 
-    // 5. Custom Row 2 Chart 1: ALL YEAR Top Models (ignores year filter)
+    // 5. Custom Row 2 Chart 1: ALL YEAR Top Models (Now respects filters)
     const salesByModelAllYears: Record<string, number> = {};
-    normalizedRows.filter(r =>
-      r.division === 'sales' && r.month === 'TTL' &&
-      (!origin || r.origin === origin) &&
-      (!selModel || r.model === selModel)
-    ).forEach(r => {
+    ttl.filter(r => r.division === 'sales').forEach(r => {
       salesByModelAllYears[r.model] = (salesByModelAllYears[r.model] || 0) + r.value;
     });
     const topModelsAllYearsList = Object.entries(salesByModelAllYears)
@@ -499,13 +495,9 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
       window.Plotly.react('topModelsAllYear', tracesModelAll as any, layoutModelAll as any, { displayModeBar: false, responsive: true });
     }
 
-    // 6. Custom Row 2 Chart 2: MONTH Top Models (respects year/month filters)
+    // 6. Custom Row 2 Chart 2: MONTH Top Models (respects all filters)
     const salesByModelFiltered: Record<string, number> = {};
-    normalizedRows.filter(r =>
-      r.division === 'sales' && r.month !== 'TTL' &&
-      (!origin || r.origin === origin) &&
-      (!selModel || r.model === selModel)
-    ).forEach(r => {
+    filteredRecords.filter(r => r.division === 'sales' && r.month !== 'TTL').forEach(r => {
       salesByModelFiltered[r.model] = (salesByModelFiltered[r.model] || 0) + r.value;
     });
     const topModelsFilteredList = Object.entries(salesByModelFiltered)
@@ -561,24 +553,21 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
     }
 
     // 7. Custom Row 2 Chart 3: ALL YEAR Customer Sales Stacked Bar
-    const stackedYears = [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
     const targetCustomers = ['GAOXIN', 'Q-TECH', 'SEMV', 'SUNNY'];
+    const activeYears = years.filter(y => y >= (yearFrom || years[0]) && y <= (yearTo || years[years.length - 1]));
+    
     const salesByYearCust: Record<number, Record<string, number>> = {};
-    stackedYears.forEach(y => {
+    activeYears.forEach(y => {
       salesByYearCust[y] = {};
       targetCustomers.forEach(c => {
         salesByYearCust[y][c] = 0;
       });
     });
 
-    normalizedRows.filter(r =>
-      r.division === 'sales' && r.month === 'TTL' &&
-      (!origin || r.origin === origin) &&
-      (!selModel || r.model === selModel)
-    ).forEach(r => {
+    ttl.filter(r => r.division === 'sales').forEach(r => {
       const y = r.year;
       const c = String(r.origin || '').toUpperCase().trim();
-      if (stackedYears.includes(y) && targetCustomers.includes(c)) {
+      if (activeYears.includes(y) && targetCustomers.includes(c)) {
         salesByYearCust[y][c] += r.value;
       }
     });
@@ -591,9 +580,9 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
     };
 
     const tracesCustomerStacked = targetCustomers.map(c => {
-      const yVals = stackedYears.map(y => salesByYearCust[y][c]);
+      const yVals = activeYears.map(y => salesByYearCust[y][c]);
       return {
-        x: stackedYears,
+        x: activeYears,
         y: yVals,
         name: c,
         type: 'bar',
