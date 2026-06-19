@@ -125,37 +125,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
             >
               📂 {t.selectExcelBtn}
             </button>
-            <button
-              type="button"
-              className="btn btn-secondary btn-lg"
-              onClick={e => { e.stopPropagation(); onLoadMockData(); }}
-            >
-              🎯 {t.sampleDataBtn}
-            </button>
-            <button
-              type="button"
-              className="btn btn-accent btn-lg"
-              style={{ background: 'var(--purple-strong)', borderColor: 'var(--purple)' }}
-              onClick={e => {
-                e.stopPropagation();
-                fetch('/Test 2.xlsx')
-                  .then(res => {
-                    if (!res.ok) throw new Error(lang === 'vi' ? 'Không tìm thấy file Test 2.xlsx trong thư mục public' : lang === 'en' ? 'File Test 2.xlsx not found in public directory' : 'public 디렉토리에서 Test 2.xlsx 파일을 찾을 수 없습니다.');
-                    return res.arrayBuffer();
-                  })
-                  .then(buffer => {
-                    const data = new Uint8Array(buffer);
-                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                    const file = new File([], 'Test 2.xlsx');
-                    onFileSelected(file, workbook);
-                  })
-                  .catch(err => {
-                    triggerError(err.message || 'Lỗi khi tải file dữ liệu');
-                  });
-              }}
-            >
-              📊 {t.salesDataBtn}
-            </button>
+
           </div>
 
           <input
