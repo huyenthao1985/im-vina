@@ -98,18 +98,37 @@ export default function App() {
 
       if (supabase) {
         try {
-          const { data, error } = await supabase
-            .from('sales_data')
-            .select('*')
-            .order('year', { ascending: true });
-            
-          if (error) {
-            console.error('Supabase fetch error:', error);
-            hasError = true;
-          } else if (data && data.length > 0) {
-            finalData = data;
+          let allData = [];
+          let from = 0;
+          const PAGE_SIZE = 1000;
+          let keepFetching = true;
+
+          while (keepFetching) {
+            const { data, error } = await supabase
+              .from('sales_data')
+              .select('*')
+              .order('year', { ascending: true })
+              .range(from, from + PAGE_SIZE - 1);
+              
+            if (error) {
+              console.error('Supabase fetch error:', error);
+              hasError = true;
+              break;
+            } else if (data && data.length > 0) {
+              allData = [...allData, ...data];
+              from += PAGE_SIZE;
+              if (data.length < PAGE_SIZE) {
+                keepFetching = false;
+              }
+            } else {
+              keepFetching = false;
+            }
+          }
+
+          if (!hasError && allData.length > 0) {
+            finalData = allData;
             // Cache to localStorage
-            try { localStorage.setItem('cached_sales_data', JSON.stringify(data)); } catch (e) { console.error('Cache limit exceeded'); }
+            try { localStorage.setItem('cached_sales_data', JSON.stringify(finalData)); } catch (e) { console.error('Cache limit exceeded'); }
           }
         } catch (err) {
           console.error('Supabase exception:', err);
