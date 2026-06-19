@@ -8,7 +8,6 @@ import {
   detectColumns, toNumber, getDateBounds, resetChannelColors, parseRowToDate
 } from './utils';
 import { UploadScreen } from './components/UploadScreen';
-import { MappingScreen } from './components/MappingScreen';
 import { KPIGrid } from './components/KPIGrid';
 import { ChartsSection } from './components/ChartsSection';
 import { FilterBar } from './components/FilterBar';
@@ -223,28 +222,11 @@ export default function App() {
     setSheetNames(wb.SheetNames);
     const sheet = wb.SheetNames[0];
     setCurrentSheet(sheet);
-    parseSheet(wb, sheet);
-    setScreen('mapping');
-  }, [parseSheet]);
-
-  const handleSheetChange = useCallback((sheet: string) => {
-    setCurrentSheet(sheet);
-    if (workbook) parseSheet(workbook, sheet);
-  }, [workbook, parseSheet]);
-
-  const handleConfirmMapping = useCallback((dateStart?: string, dateEnd?: string, selectedCats?: string[]) => {
+    // Skip mapping screen and go directly to dashboard
     resetChannelColors();
-    setFilters({
-      dateStart: dateStart || '',
-      dateEnd: dateEnd || '',
-      categories: selectedCats || []
-    });
+    setFilters({ dateStart: '', dateEnd: '', categories: [] });
     setScreen('dashboard');
-  }, []);
-
-
-
-  const handleReset = useCallback(() => {
+  }, [parseSheet]);  const handleReset = useCallback(() => {
     setScreen('upload');
     setAllRows([]);
     setHeaders([]);
@@ -302,25 +284,7 @@ export default function App() {
         />
       )}
 
-      {screen === 'mapping' && (
-        <MappingScreen
-          filename={filename}
-          fileSize={fileSize}
-          sheetNames={sheetNames}
-          currentSheet={currentSheet}
-          headers={headers}
-          columnTypes={columnTypes}
-          mapping={mapping}
-          onSheetChange={handleSheetChange}
-          onMappingChange={setMapping}
-          onConfirm={handleConfirmMapping}
-          onBack={() => setScreen('upload')}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          rows={allRows}
-          initialFilters={filters}
-        />
-      )}
+
 
       {screen === 'dashboard' && dashboardMode === 'sales' && (
         <SalesDashboard
@@ -353,13 +317,7 @@ export default function App() {
                 <span>📁</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{filename}</span>
               </div>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setScreen('mapping')}
-                title="Thay đổi cấu hình cột"
-              >
-                ⚙️ Cấu hình
-              </button>
+
               <button className="btn btn-ghost btn-sm" onClick={handleReset}>
                 ← Tải file khác
               </button>
