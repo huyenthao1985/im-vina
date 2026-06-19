@@ -4,7 +4,7 @@ import { translations } from '../translations';
 
 interface UploadScreenProps {
   onFileSelected: (file: File, workbook: any) => void;
-  onLoadMockData: () => void;
+  // onLoadMockData removed
   theme: string;
   onToggleTheme: () => void;
   lang: 'vi' | 'en' | 'ko';
@@ -13,7 +13,7 @@ interface UploadScreenProps {
 
 export const UploadScreen: React.FC<UploadScreenProps> = ({
   onFileSelected,
-  onLoadMockData,
+  // onLoadMockData removed
   theme,
   onToggleTheme,
   lang,
