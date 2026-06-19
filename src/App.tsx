@@ -91,6 +91,7 @@ export default function App() {
   });
 
   // Load from Supabase on mount
+  useEffect(() => {
     async function loadSupabaseData() {
       let finalData = null;
       let hasError = false;
