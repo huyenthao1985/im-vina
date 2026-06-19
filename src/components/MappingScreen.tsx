@@ -28,7 +28,7 @@ export const MappingScreen: React.FC<MappingScreenProps> = ({
   sheetNames,
   currentSheet,
   headers,
-  columnTypes,
+  // columnTypes removed from destructuring
   mapping,
   onSheetChange,
   onMappingChange,
@@ -39,9 +39,7 @@ export const MappingScreen: React.FC<MappingScreenProps> = ({
   rows,
   initialFilters,
 }) => {
-  const numericHeaders = headers.filter((_, i) => columnTypes[i]?.type === 'numeric');
-  const dateHeaders = headers.filter((_, i) => columnTypes[i]?.type === 'date');
-  const textHeaders = headers.filter((_, i) => columnTypes[i]?.type === 'text');
+
 
   // Compute date bounds from rows for the selected dateCol using parseRowToDate
   const dateBounds = useMemo(() => {
@@ -351,67 +349,9 @@ export const MappingScreen: React.FC<MappingScreenProps> = ({
                 </div>
               )}
 
-              {mapping.categoryCol !== NONE_VALUE && distinctCategories.length > 0 && (
-                <div className="advanced-field-row category-selection-row">
-                  <div className="category-selection-header">
-                    <div className="field-title">🏷️ Chọn Kênh / Danh mục phân tích ({selectedCats.length}/{distinctCategories.length}):</div>
-                    <div className="category-selection-actions">
-                      <button type="button" className="btn-link" onClick={() => setSelectedCats(distinctCategories)}>Chọn tất cả</button>
-                      <button type="button" className="btn-link" onClick={() => setSelectedCats([])}>Bỏ chọn tất cả</button>
-                    </div>
-                  </div>
-                  <div className="category-pills-grid">
-                    {distinctCategories.map(cat => {
-                      const isSelected = selectedCats.includes(cat);
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          className={`category-pill ${isSelected ? 'active' : ''}`}
-                          onClick={() => {
-                            if (isSelected) {
-                              setSelectedCats(selectedCats.filter(c => c !== cat));
-                            } else {
-                              setSelectedCats([...selectedCats, cat]);
-                            }
-                          }}
-                        >
-                          <span className="pill-check">{isSelected ? '✓' : '+'}</span>
-                          {cat}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           )}
-
-          {/* Debug Box to check parsed rows */}
-          {rows.length > 0 && (
-            <div style={{
-              marginBottom: 20,
-              padding: '12px 16px',
-              background: 'var(--surface-2)',
-              border: '1px solid var(--border-soft)',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 11,
-              color: 'var(--text-2)',
-              maxHeight: '160px',
-              overflow: 'auto'
-            }}>
-              <strong style={{ color: 'var(--text-1)', display: 'block', marginBottom: 6 }}>🔍 Xem thử dòng dữ liệu đầu tiên (Kiểm tra chéo):</strong>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace', color: 'var(--purple)' }}>
-                {JSON.stringify(rows[0], null, 2)}
-              </pre>
-            </div>
-          )}
-
-          <div style={{ marginBottom: 20, padding: '12px 16px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--text-2)' }}>
-            <strong style={{ color: 'var(--text-1)' }}>📋 Cột phát hiện được:</strong>
-            {' '}Ngày: <strong>{dateHeaders.length}</strong> · Số: <strong>{numericHeaders.length}</strong> · Văn bản: <strong>{textHeaders.length}</strong>
-            {' '}· Tổng: <strong>{headers.length}</strong> cột, chọn sheet <strong>{currentSheet}</strong>
-          </div>
+          {/* Category selection and Debug info removed at user's request */}
 
           <div className="mapping-footer">
             <div className="mapping-note">
