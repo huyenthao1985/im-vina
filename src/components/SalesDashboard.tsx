@@ -28,7 +28,6 @@ declare global {
 
 export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   rows,
-  mapping,
   theme,
   onToggleTheme,
   lang,
