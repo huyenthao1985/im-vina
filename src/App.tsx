@@ -91,28 +91,49 @@ export default function App() {
   });
 
   // Load from Supabase on mount
-  useEffect(() => {
     async function loadSupabaseData() {
-      if (!supabase) return;
-      try {
-        const { data, error } = await supabase
-          .from('sales_data')
-          .select('*')
-          .order('year', { ascending: true });
-          
-        if (error) {
-          console.error('Supabase fetch error:', error);
-          return;
+      let finalData = null;
+      let hasError = false;
+
+      if (supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('sales_data')
+            .select('*')
+            .order('year', { ascending: true });
+            
+          if (error) {
+            console.error('Supabase fetch error:', error);
+            hasError = true;
+          } else if (data && data.length > 0) {
+            finalData = data;
+            // Cache to localStorage
+            try { localStorage.setItem('cached_sales_data', JSON.stringify(data)); } catch (e) { console.error('Cache limit exceeded'); }
+          }
+        } catch (err) {
+          console.error('Supabase exception:', err);
+          hasError = true;
         }
-        
-        if (data && data.length > 0) {
-          setAllRows(data);
-          setHeaders(['model', 'origin', 'customer', 'type', 'division', 'year', 'month', 'value']);
-          setFilename('Supabase Cloud Database');
-          setScreen('dashboard');
-        }
-      } catch (err) {
-        console.error('Supabase exception:', err);
+      } else {
+        hasError = true;
+      }
+
+      // If Supabase failed (e.g. project paused), try loading from local cache
+      if ((hasError || !finalData) && typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem('cached_sales_data');
+          if (cached) {
+            finalData = JSON.parse(cached);
+            console.log('Loaded from local cache (Supabase paused or offline)');
+          }
+        } catch (e) { console.error(e); }
+      }
+      
+      if (finalData && finalData.length > 0) {
+        setAllRows(finalData);
+        setHeaders(['model', 'origin', 'customer', 'type', 'division', 'year', 'month', 'value']);
+        setFilename(hasError ? 'Cached Local Database' : 'Supabase Cloud Database');
+        setScreen('dashboard');
       }
     }
     loadSupabaseData();
@@ -149,6 +170,9 @@ export default function App() {
     setHeaders(filteredHeaders);
     setAllRows(parsedRows);
     setAllRows(parsedRows);
+    
+    // Also save uploaded data to cache so it persists even if Supabase is offline
+    try { localStorage.setItem('cached_sales_data', JSON.stringify(parsedRows)); } catch (e) { console.error('Cache limit exceeded'); }
 
     // Auto-detect mapping
     const allColNames = types.map(t => t.name);
