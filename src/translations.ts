@@ -21,8 +21,8 @@ export interface TranslationDict {
   toYear: string;
   partner: string;
   customer: string;
-  resetBtn: string;
   loadExcelBtn: string;
+  saveToCloudBtn: string;
   filtersApplied: string;
   rowsPill: string;
   allOption: string;
@@ -119,6 +119,7 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     customer: 'Khách hàng',
     resetBtn: 'Đặt lại',
     loadExcelBtn: 'Tải Excel khác',
+    saveToCloudBtn: '☁️ Lên mây (Lưu)',
     filtersApplied: 'bộ lọc đang áp dụng',
     rowsPill: 'dòng dữ liệu',
     allOption: 'Tất cả',
@@ -198,6 +199,7 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     customer: 'Customer',
     resetBtn: 'Reset',
     loadExcelBtn: 'Load other Excel',
+    saveToCloudBtn: '☁️ Save to Cloud',
     filtersApplied: 'filters applied',
     rowsPill: 'rows of data',
     allOption: 'All',
@@ -273,10 +275,11 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     loadingError: '파일을 읽을 수 없습니다. 파일이 손상되었거나 지원되지 않는 형식일 수 있습니다.',
     fromYear: '시작 연도',
     toYear: '종료 연도',
-    partner: 'Custom',
+    partner: '커스텀',
     customer: '고객',
     resetBtn: '초기화',
     loadExcelBtn: '다른 Excel 업로드',
+    saveToCloudBtn: '☁️ 클라우드 저장',
     filtersApplied: '개의 필터 적용됨',
     rowsPill: '행의 데이터',
     allOption: '전체',

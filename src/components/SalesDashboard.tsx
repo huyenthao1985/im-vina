@@ -891,7 +891,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                 disabled={isSaving}
                 style={{ borderColor: 'var(--green)', color: 'var(--green)' }}
               >
-                {isSaving ? '⏳ Đang lưu...' : '☁️ Lên mây (Lưu)'}
+                {isSaving ? '⏳ Đang lưu...' : t.saveToCloudBtn}
               </button>
             )}
             <button className="btn-outline" type="button" onClick={onBack}>
