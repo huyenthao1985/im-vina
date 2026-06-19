@@ -21,6 +21,7 @@ export interface TranslationDict {
   toYear: string;
   partner: string;
   customer: string;
+  resetBtn: string;
   loadExcelBtn: string;
   saveToCloudBtn: string;
   filtersApplied: string;
