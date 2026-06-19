@@ -98,7 +98,7 @@ export default function App() {
 
       if (supabase) {
         try {
-          let allData = [];
+          let allData: any[] = [];
           let from = 0;
           const PAGE_SIZE = 1000;
           let keepFetching = true;
