@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import type {
-  DataRow, ColumnMapping, FilterState, KPIData, ColumnType, ThemeMode, ScreenState
+  DataRow, ColumnMapping, FilterState, KPIData, ThemeMode, ScreenState
 } from './types';
 import { supabase } from './lib/supabase';
 import {
@@ -81,17 +81,11 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [lang, setLang] = useState<'vi' | 'en' | 'ko'>('vi');
   const [screen, setScreen] = useState<ScreenState>('upload');
-  // File state
   const [filename, setFilename] = useState('');
-  const [fileSize, setFileSize] = useState(0);
-  const [workbook, setWorkbook] = useState<any>(null);
-  const [sheetNames, setSheetNames] = useState<string[]>([]);
-  const [currentSheet, setCurrentSheet] = useState('');
 
   // Data state
   const [allRows, setAllRows] = useState<DataRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
-  const [columnTypes, setColumnTypes] = useState<ColumnType[]>([]);
   const [mapping, setMapping] = useState<ColumnMapping>({
     dateCol: NONE, categoryCol: NONE, revenueCol: NONE, costCol: NONE, currency: 'VND',
   });
@@ -154,7 +148,7 @@ export default function App() {
 
     setHeaders(filteredHeaders);
     setAllRows(parsedRows);
-    setColumnTypes(types);
+    setAllRows(parsedRows);
 
     // Auto-detect mapping
     const allColNames = types.map(t => t.name);
@@ -217,21 +211,18 @@ export default function App() {
 
   const handleFileSelected = useCallback((file: File, wb: any) => {
     setFilename(file.name);
-    setFileSize(file.size);
-    setWorkbook(wb);
-    setSheetNames(wb.SheetNames);
     const sheet = wb.SheetNames[0];
-    setCurrentSheet(sheet);
+    parseSheet(wb, sheet);
     // Skip mapping screen and go directly to dashboard
     resetChannelColors();
     setFilters({ dateStart: '', dateEnd: '', categories: [] });
     setScreen('dashboard');
-  }, [parseSheet]);  const handleReset = useCallback(() => {
+  }, [parseSheet]);
+
+  const handleReset = useCallback(() => {
     setScreen('upload');
     setAllRows([]);
     setHeaders([]);
-    setWorkbook(null);
-    setSheetNames([]);
     setMapping({ dateCol: NONE, categoryCol: NONE, revenueCol: NONE, costCol: NONE });
     setFilters({ dateStart: '', dateEnd: '', categories: [] });
   }, []);
