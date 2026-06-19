@@ -16,11 +16,13 @@ interface SalesDashboardProps {
   allCategories: string[];
   lang: 'vi' | 'en' | 'ko';
   setLang: (lang: 'vi' | 'en' | 'ko') => void;
+  onFileSelected: (file: File, wb: any) => void;
 }
 
 declare global {
   interface Window {
     Plotly?: any;
+    XLSX?: any;
   }
 }
 
@@ -31,6 +33,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   onToggleTheme,
   lang,
   setLang,
+  onFileSelected
 }) => {
   // Normalize raw rows to matches expected format
   const normalizedRows = useMemo(() => {
@@ -894,7 +897,31 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                 {isSaving ? '⏳ Đang lưu...' : t.saveToCloudBtn}
               </button>
             )}
-            <button className="btn-outline" type="button" onClick={onBack}>
+            <label className="btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'var(--text)', border: '1px solid var(--border)' }}>
+              <input 
+                type="file" 
+                accept=".xlsx, .xls" 
+                style={{ display: 'none' }} 
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = async (evt) => {
+                    try {
+                      const data = new Uint8Array(evt.target!.result as ArrayBuffer);
+                      // Import XLSX dynamically or expect it to be available globally/passed
+                      // Wait, we need to import XLSX in SalesDashboard.tsx!
+                      const XLSX = await import('xlsx');
+                      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                      onFileSelected(file, workbook);
+                    } catch (err) {
+                      alert('Error reading Excel file');
+                    }
+                  };
+                  reader.readAsArrayBuffer(file);
+                  e.target.value = '';
+                }} 
+              />
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
                 <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
                 <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
@@ -902,7 +929,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                 <path d="M16 3h5v5" />
               </svg>
               {t.loadExcelBtn}
-            </button>
+            </label>
           </div>
         </div>
 

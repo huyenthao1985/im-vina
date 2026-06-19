@@ -7,7 +7,7 @@ import { supabase } from './lib/supabase';
 import {
   detectColumns, toNumber, getDateBounds, resetChannelColors, parseRowToDate
 } from './utils';
-import { UploadScreen } from './components/UploadScreen';
+
 import { KPIGrid } from './components/KPIGrid';
 import { ChartsSection } from './components/ChartsSection';
 import { FilterBar } from './components/FilterBar';
@@ -80,7 +80,7 @@ function countActiveFilters(filters: FilterState): number {
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [lang, setLang] = useState<'vi' | 'en' | 'ko'>('vi');
-  const [screen, setScreen] = useState<ScreenState>('upload');
+  const [screen, setScreen] = useState<ScreenState>('dashboard');
   const [filename, setFilename] = useState('');
 
   // Data state
@@ -309,15 +309,7 @@ export default function App() {
 
 
 
-      {screen === 'upload' && (
-        <UploadScreen
-          onFileSelected={handleFileSelected}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          lang={lang}
-          setLang={setLang}
-        />
-      )}
+
 
 
 
@@ -335,6 +327,7 @@ export default function App() {
           allCategories={allCategories}
           lang={lang}
           setLang={setLang}
+          onFileSelected={handleFileSelected}
         />
       )}
 
