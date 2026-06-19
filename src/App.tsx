@@ -18,39 +18,7 @@ import './App.css';
 
 const NONE = '__none__';
 
-const MOCK_MAPPING: ColumnMapping = {
-  dateCol: 'Ngày',
-  categoryCol: 'Kênh Marketing',
-  revenueCol: 'Doanh thu ($)',
-  costCol: 'Chi phí ($)',
-};
 
-function generateMockRows(): DataRow[] {
-  const channels = ['Google Search', 'Facebook Ads', 'TikTok KOLs', 'Email Marketing', 'SEO Organic', 'Zalo Ads', 'YouTube'];
-  const campaigns = ['Summer Sale 2026', 'Brand Awareness Q2', 'New Product Launch', 'Retention Campaign', 'Flash Sale'];
-  const rows: DataRow[] = [];
-
-  for (let i = 0; i < 90; i++) {
-    const date = new Date('2026-04-01');
-    date.setDate(date.getDate() + i);
-    const channelIdx = Math.floor(Math.random() * channels.length);
-    const baseRevenue = [8000000, 15000000, 25000000, 5000000, 3000000, 7000000, 20000000][channelIdx];
-    const revenue = Math.round(baseRevenue * (0.7 + Math.random() * 0.9));
-    const cost = Math.round(revenue * (0.2 + Math.random() * 0.4));
-    rows.push({
-      'Ngày': new Date(date),
-      'Kênh Marketing': channels[channelIdx],
-      'Chiến dịch': campaigns[Math.floor(Math.random() * campaigns.length)],
-      'Doanh thu ($)': revenue,
-      'Chi phí ($)': cost,
-      'Impressions': Math.round(Math.random() * 50000 + 5000),
-      'Clicks': Math.round(Math.random() * 2000 + 100),
-    });
-  }
-  return rows;
-}
-
-const MOCK_HEADERS = ['Ngày', 'Kênh Marketing', 'Chiến dịch', 'Doanh thu ($)', 'Chi phí ($)', 'Impressions', 'Clicks'];
 
 function computeKPI(rows: DataRow[], mapping: ColumnMapping): KPIData {
   const hasRevenue = mapping.revenueCol !== NONE;
@@ -274,17 +242,7 @@ export default function App() {
     setScreen('dashboard');
   }, []);
 
-  const handleLoadMockData = useCallback(() => {
-    resetChannelColors();
-    const rows = generateMockRows();
-    setAllRows(rows);
-    setHeaders(MOCK_HEADERS);
-    setColumnTypes(detectColumns(rows, MOCK_HEADERS));
-    setMapping(MOCK_MAPPING);
-    setFilename('du_lieu_mau_marketing.xlsx');
-    setFilters({ dateStart: '', dateEnd: '', categories: [] });
-    setScreen('dashboard');
-  }, []);
+
 
   const handleReset = useCallback(() => {
     setScreen('upload');
