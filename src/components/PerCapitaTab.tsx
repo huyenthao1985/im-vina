@@ -1021,7 +1021,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 {lang === 'vi' ? 'TTL nhân lực x tỉ lệ ca (DAY/NIGHT)' : lang === 'ko' ? '근무인원 x 근무비율 (추정)' : 'Headcount x shift ratio (estimated)'}
               </span>
             </div>
-            <div id={ids.current.c1} style={{ minHeight: '450px' }} />
+            <div id={ids.current.c1} style={{ minHeight: '300px' }} />
           </div>
 
           {/* Chart 2: 생산 현황 */}
@@ -1032,7 +1032,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 {lang === 'vi' ? `Nhân lực x tỉ lệ ca x ${targetPC} sp/người` : lang === 'ko' ? `근무인원 x 근무비율 x ${targetPC}개/인 (추정)` : `Headcount x ratio x ${targetPC} pcs/cap`}
               </span>
             </div>
-            <div id={ids.current.c2} style={{ minHeight: '450px' }} />
+            <div id={ids.current.c2} style={{ minHeight: '300px' }} />
           </div>
 
           {/* Chart 3: 근무 인력 현황 */}
@@ -1050,7 +1050,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 </span>
               )}
             </div>
-            <div id={ids.current.c3} style={{ minHeight: '450px' }} />
+            <div id={ids.current.c3} style={{ minHeight: '300px' }} />
           </div>
 
           {/* Chart 4 + Chart 5 — 2 cột */}
