@@ -117,6 +117,7 @@ function buildLabelOrder(
 interface PCTabData {
   // model → label → avg manpower (từ TTL ManPower AVG)
   byModelLabel: Record<string, Record<string, number>>;
+  pcByModelLabel: Record<string, Record<string, number>>; // per capita production data
   ttlByLabel: Record<string, number>;       // TTL headcount per label
   ttlStandard: number | null;               // YR24 standard
   allLabels: { label: string; dateMs: number }[];
@@ -127,17 +128,19 @@ interface PCTabData {
 
 function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabData {
   return useMemo(() => {
-    const mpRows = rows.filter(r =>
-      String(r.type || r.Type || '').toLowerCase().includes('manpower')
-    );
+    const mpRows = rows.filter(r => {
+      const typeStr = String(r.type || r.Type || '').toLowerCase();
+      return typeStr.includes('manpower') || typeStr.includes('인당생산수');
+    });
     if (mpRows.length === 0) {
-      return { byModelLabel: {}, ttlByLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
+      return { byModelLabel: {}, pcByModelLabel: {}, ttlByLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
     }
 
     // Standard
     const stdRow = mpRows.find(r =>
       String(r.model || r.Model || '').trim().toUpperCase() === 'TTL' &&
-      String(r.date || r.Date || '').trim().toUpperCase() === 'YR24'
+      String(r.date || r.Date || '').trim().toUpperCase() === 'YR24' &&
+      String(r.type || r.Type || '').toLowerCase().includes('manpower')
     );
     const ttlStandard = stdRow ? Number(stdRow.value ?? stdRow.Value) : null;
 
@@ -161,16 +164,25 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       !x.label.startsWith('JAN-') && x.label !== 'YR24'
     );
 
-    // Build byModelLabel (avg per model per label)
+    // Build byModelLabel and pcByModelLabel
     const groups: Record<string, Record<string, number[]>> = {};
+    const pcGroups: Record<string, Record<string, number[]>> = {};
     (filtered as any[]).forEach(r => {
       const model = String(r.model || r.Model || '').trim().toUpperCase();
       const label = r._label;
       const val   = Number(r.value ?? r.Value);
+      const typeStr = String(r.type || r.Type || '').toLowerCase();
       if (!model || isNaN(val) || val == null) return;
-      if (!groups[model]) groups[model] = {};
-      if (!groups[model][label]) groups[model][label] = [];
-      groups[model][label].push(val);
+      
+      if (typeStr.includes('manpower')) {
+        if (!groups[model]) groups[model] = {};
+        if (!groups[model][label]) groups[model][label] = [];
+        groups[model][label].push(val);
+      } else if (typeStr.includes('인당생산수')) {
+        if (!pcGroups[model]) pcGroups[model] = {};
+        if (!pcGroups[model][label]) pcGroups[model][label] = [];
+        pcGroups[model][label].push(val);
+      }
     });
 
     const byModelLabel: Record<string, Record<string, number>> = {};
@@ -178,6 +190,14 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       byModelLabel[model] = {};
       Object.entries(lblMap).forEach(([lbl, vals]) => {
         byModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const pcByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(pcGroups).forEach(([model, lblMap]) => {
+      pcByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        pcByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
       });
     });
 
@@ -205,7 +225,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       .filter(m => m !== 'TTL')
       .sort();
 
-    return { byModelLabel, ttlByLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
+    return { byModelLabel, pcByModelLabel, ttlByLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
   }, [rows, dateFrom, dateTo]);
 }
 
@@ -500,9 +520,13 @@ function buildChart5(
     return { traces: [], layout: {} };
   }
 
+  // Use pcByModelLabel if available, otherwise fallback to byModelLabel (manpower)
+  const hasPcData = Object.keys(data.pcByModelLabel || {}).length > 0;
+  const activeDataMap = hasPcData ? data.pcByModelLabel : data.byModelLabel;
+
   // Lọc các label có ít nhất 1 model có dữ liệu, lấy tối đa 6 label cuối
   const labelsWithData = displayLabels.filter(lbl =>
-    models.some(m => (data.byModelLabel[m]?.[lbl] ?? 0) > 0)
+    models.some(m => (activeDataMap[m]?.[lbl] ?? 0) > 0)
   );
   const selectedLabels = labelsWithData.slice(-6);
 
@@ -512,7 +536,7 @@ function buildChart5(
 
   // Chỉ giữ models có ít nhất 1 giá trị > 0 trong các selectedLabels
   const modelsWithData = models.filter(m =>
-    selectedLabels.some(lbl => (data.byModelLabel[m]?.[lbl] ?? 0) > 0)
+    selectedLabels.some(lbl => (activeDataMap[m]?.[lbl] ?? 0) > 0)
   );
   if (modelsWithData.length === 0) return { traces: [], layout: {} };
 
@@ -520,7 +544,7 @@ function buildChart5(
   const modelsClosed = [...modelsWithData, modelsWithData[0]];
 
   const traces: any[] = selectedLabels.map((lbl, i) => {
-    const rVals = modelsClosed.map(m => r1(data.byModelLabel[m]?.[lbl] ?? 0));
+    const rVals = modelsClosed.map(m => r1(activeDataMap[m]?.[lbl] ?? 0));
     return {
       type: 'scatterpolar',
       r: rVals,
