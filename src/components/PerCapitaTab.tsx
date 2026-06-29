@@ -549,8 +549,8 @@ function buildChart5(
       },
     },
     font: { color: textColor, size: 13 },
-    margin: { t: 40, r: 60, b: 60, l: 60 },
-    legend: { orientation: 'h', y: -0.15, font: { size: 13, color: textColor } },
+    margin: { t: 25, r: 85, b: 25, l: 45 },
+    legend: { orientation: 'v', x: 1.05, y: 0.5, xanchor: 'left', yanchor: 'middle', font: { size: 13, color: textColor } },
     showlegend: true,
   };
   return { traces, layout };
@@ -1034,8 +1034,8 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
             {/* Chart 4: Phân bố nhân lực theo Model — Giai đoạn gần nhất */}
             <div className="panel">
-              <div className="panel-head">
-                <h3>
+              <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0 }}>
                   {lang === 'vi'
                     ? 'Phân bố nhân lực theo Model — Giai đoạn gần nhất'
                     : lang === 'ko'
@@ -1043,24 +1043,24 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                     : 'Headcount by Model — Latest Period'}
                 </h3>
               </div>
-              <div id={ids.current.c4} style={{ minHeight: '320px' }} />
+              <div id={ids.current.c4} style={{ minHeight: '450px' }} />
             </div>
 
             {/* Chart 5: Phân bố Model theo Giai đoạn (Spider) */}
             <div className="panel">
-              <div className="panel-head">
-                <h3>
+              <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0 }}>
                   {lang === 'vi'
                     ? 'Phân bố Model theo Giai đoạn (Spider)'
                     : lang === 'ko'
                     ? '기간별 모델 분포 (Spider)'
                     : 'Model Distribution by Period (Spider)'}
                 </h3>
-                <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
                   {lang === 'vi' ? 'Tối đa 6 giai đoạn gần nhất' : lang === 'ko' ? '최근 6기간' : 'Up to last 6 periods'}
                 </span>
               </div>
-              <div id={ids.current.c5} style={{ minHeight: '320px' }} />
+              <div id={ids.current.c5} style={{ minHeight: '450px' }} />
             </div>
 
           </div>
