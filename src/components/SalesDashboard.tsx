@@ -31,9 +31,9 @@ declare global {
 export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   rows,
   theme,
-  onToggleTheme,
+  onToggleTheme: _onToggleTheme,
   lang,
-  setLang,
+  setLang: _setLang,
   onFileSelected
 }) => {
   // ── Stable rows cache ──────────────────────────────────────────────────────

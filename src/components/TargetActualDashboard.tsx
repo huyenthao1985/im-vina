@@ -235,9 +235,9 @@ interface TargetActualDashboardProps {
 export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   rows,
   theme,
-  onToggleTheme,
+  onToggleTheme: _onToggleTheme,
   lang,
-  setLang,
+  setLang: _setLang,
   onFileSelected
 }) => {
   const t = translations[lang];

@@ -177,13 +177,14 @@ function useManpowerData(
     }
 
     // Parse dates and validate
-    const parsedRows = mpRows.map(r => {
-      const dateVal = r.date || r.Date || '';
+    type ParsedManpowerRow = DataRow & { _parsedDate: Date | null; _dateType: RowDateType };
+    const parsedRows = (mpRows.map(r => {
+      const dateVal = (r as any).date || (r as any).Date || '';
       const parsedDate = parseManpowerDate(dateVal);
       const dateType = classifyRowDateType(dateVal);
       return { ...r, _parsedDate: parsedDate, _dateType: dateType };
-    }).filter(r =>
-      r._parsedDate !== null && String(r.date || r.Date || '').trim().toUpperCase() !== 'YR24'
+    }) as ParsedManpowerRow[]).filter(r =>
+      r._parsedDate !== null && String((r as any).date || (r as any).Date || '').trim().toUpperCase() !== 'YR24'
     ) as (DataRow & { _parsedDate: Date; _dateType: RowDateType })[];
 
     // Chỉ giữ tầng dữ liệu khớp granularity hiện tại (year → dùng tạm tầng month)
@@ -437,67 +438,6 @@ function buildWeeklyChart(
   return { traces, layout };
 }
 
-function buildModelBarChart(
-  data: ManpowerData,
-  chartTextColor: string,
-  chartGridColor: string,
-  models: string[]
-): { traces: any[]; layout: any; isEmpty: boolean } {
-  const latestPeriod = data.activeLabels.length > 0 ? data.activeLabels[data.activeLabels.length - 1] : '';
-
-  // Chỉ giữ models (non-TTL) có value > 0 tại latestPeriod
-  const displayModels = models.filter(m => (data.byModelPeriod[m]?.[latestPeriod] ?? 0) > 0);
-
-  // Nếu không có non-TTL data → thử dùng TTL và các models khác trong byModelPeriod
-  const fallbackModels = displayModels.length === 0
-    ? Object.keys(data.byModelPeriod).filter(m => (data.byModelPeriod[m]?.[latestPeriod] ?? 0) > 0)
-    : displayModels;
-
-  // Không có data gì cả → trả isEmpty
-  if (fallbackModels.length === 0) {
-    return { traces: [], layout: {}, isEmpty: true };
-  }
-
-  const vals = fallbackModels.map(m => round1(data.byModelPeriod[m]?.[latestPeriod] ?? 0));
-  const target = 90;
-
-  const traces: any[] = [
-    {
-      x: fallbackModels,
-      y: vals,
-      type: 'bar',
-      marker: { color: fallbackModels.map((m, idx) => getModelColor(m, idx)) },
-      text: vals.map(v => v > 0 ? fmt1(v) : ''),
-      textposition: 'outside',
-      textfont: { size: 11, color: chartTextColor, weight: 'bold' },
-      hovertemplate: `<b>%{x}</b><br>${latestPeriod} avg: %{y:.1f}<extra></extra>`,
-      name: `${latestPeriod} avg`,
-    },
-    {
-      x: fallbackModels,
-      y: Array(fallbackModels.length).fill(target),
-      type: 'scatter',
-      mode: 'lines',
-      line: { color: '#f59e0b', width: 2, dash: 'dash' },
-      name: 'Target 90',
-      hoverinfo: 'skip',
-    },
-  ];
-
-  const maxVal = vals.length > 0 ? Math.max(...vals, 120) : 120;
-  const layout = {
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { family: 'Inter, sans-serif', color: chartTextColor, size: 11 },
-    margin: { l: 45, r: 20, t: 12, b: 80 },
-    legend: { orientation: 'h', y: -0.25, font: { size: 10 } },
-    xaxis: { gridcolor: chartGridColor, tickfont: { size: 10 }, tickangle: -30 },
-    yaxis: { gridcolor: chartGridColor, tickfont: { size: 9 }, range: [0, maxVal * 1.3] },
-    hovermode: 'x unified',
-  };
-
-  return { traces, layout, isEmpty: false };
-}
 
 function buildDailyChart(
   data: ManpowerData,
@@ -568,76 +508,6 @@ function buildDailyChart(
   return { traces, layout };
 }
 
-function buildRadarChart(
-  data: ManpowerData,
-  chartTextColor: string,
-  models: string[]
-): { traces: any[]; layout: any; isEmpty: boolean } {
-  // Dùng 5 period gần nhất làm trục radar
-  const radarLabels = data.activeLabels.slice(-5);
-  if (radarLabels.length === 0) {
-    return { traces: [], layout: {}, isEmpty: true };
-  }
-
-  // Chỉ giữ models có ít nhất 1 giá trị > 0 trong radarLabels
-  const modelsForRadar = models.filter(m =>
-    radarLabels.some(l => (data.byModelPeriod[m]?.[l] ?? 0) > 0)
-  );
-
-  // Fallback: nếu không có non-TTL data → dùng tất cả models trong byModelPeriod có data
-  const finalModels = modelsForRadar.length > 0
-    ? modelsForRadar
-    : Object.keys(data.byModelPeriod).filter(m =>
-        radarLabels.some(l => (data.byModelPeriod[m]?.[l] ?? 0) > 0)
-      );
-
-  if (finalModels.length === 0) {
-    return { traces: [], layout: {}, isEmpty: true };
-  }
-
-  const traces: any[] = finalModels.map((model, index) => {
-    const vals = [...radarLabels, radarLabels[0]].map(l =>
-      round1(data.byModelPeriod[model]?.[l] ?? 0)
-    );
-    return {
-      type: 'scatterpolar',
-      r: vals,
-      theta: [...radarLabels, radarLabels[0]],
-      fill: 'toself',
-      name: model,
-      line: { color: getModelColor(model, index), width: 2 },
-      marker: { size: 5 },
-      fillcolor: getModelColor(model, index) + '22',
-      hovertemplate: `<b>${model}</b><br>%{theta}: %{r:.1f}<extra></extra>`,
-    };
-  });
-
-  // Tính max để set radialaxis range tự động
-  const allVals = finalModels.flatMap(m =>
-    radarLabels.map(l => data.byModelPeriod[m]?.[l] ?? 0)
-  );
-  const maxVal = allVals.length > 0 ? Math.max(...allVals) : 100;
-
-  const layout = {
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    polar: {
-      bgcolor: 'rgba(0,0,0,0)',
-      radialaxis: {
-        visible: true,
-        range: [0, maxVal * 1.15],
-        gridcolor: chartTextColor + '30',
-        tickfont: { size: 9, color: chartTextColor },
-      },
-      angularaxis: { tickfont: { size: 10, color: chartTextColor } },
-    },
-    font: { family: 'Inter, sans-serif', color: chartTextColor, size: 11 },
-    margin: { l: 60, r: 60, t: 30, b: 30 },
-    legend: { orientation: 'h', y: -0.15, font: { size: 10 } },
-    showlegend: true,
-  };
-
-  return { traces, layout, isEmpty: false };
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
@@ -812,48 +682,6 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
-  };
-
-  const handleExportExcel = () => {
-    try {
-      const sourceRows = effectiveRows;
-      const mpRows = sourceRows.filter(r => String(r.type || r.Type || '').toLowerCase().includes('manpower'));
-
-      const parsedRows = mpRows.map(r => {
-        const dateVal = r.date || r.Date || '';
-        const parsedDate = parseManpowerDate(dateVal);
-        return { ...r, _parsedDate: parsedDate };
-      }).filter(r => r._parsedDate !== null) as (DataRow & { _parsedDate: Date })[];
-
-      let filtered = parsedRows;
-      if (dateFrom) {
-        filtered = filtered.filter(r => r._parsedDate >= new Date(dateFrom));
-      }
-      if (dateTo) {
-        const toLimit = new Date(dateTo);
-        toLimit.setHours(23, 59, 59, 999);
-        filtered = filtered.filter(r => r._parsedDate <= toLimit);
-      }
-      if (modelFilter !== 'all') {
-        filtered = filtered.filter(r => String(r.model || r.Model || '').trim().toUpperCase() === modelFilter.toUpperCase());
-      }
-
-      const exportData = filtered.map(r => ({
-        [lang === 'vi' ? 'Model' : lang === 'ko' ? '모델' : 'Model']: r.model || r.Model || '',
-        [lang === 'vi' ? 'Phân loại' : lang === 'ko' ? '구분' : 'Type']: r.type || r.Type || '',
-        [lang === 'vi' ? 'Ngày/Kỳ' : lang === 'ko' ? '날짜/기간' : 'Date']: r.date || r.Date || '',
-        [lang === 'vi' ? 'Giá trị' : lang === 'ko' ? '값' : 'Value']: r.value || r.Value || 0,
-      }));
-
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'ManpowerData');
-
-      const fName = `Manpower_${dateFrom || 'start'}_${dateTo || 'end'}.xlsx`;
-      XLSX.writeFile(workbook, fName);
-    } catch (err) {
-      console.error("Failed to export manpower excel:", err);
-    }
   };
 
   return (
