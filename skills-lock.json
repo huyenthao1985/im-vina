@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "loop-library": {
+      "source": "Forward-Future/loop-library",
+      "sourceType": "github",
+      "skillPath": "skills/loop-library/SKILL.md",
+      "computedHash": "b18443dccd5c399e771aef04431efb7575d3c3cc286fcf8059333a05b9ce7375"
+    }
+  }
+}

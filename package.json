@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check-excel": "node scratch_check_excel.cjs",
+    "measure": "node scratch_measure_http.cjs",
+    "run-measure-js": "node scratch_measure.cjs",
+    "screenshot": "node scratch_screenshot.cjs",
+    "get-console": "node scratch_get_console.cjs",
+    "test-per-capita": "node scratch_test_per_capita.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

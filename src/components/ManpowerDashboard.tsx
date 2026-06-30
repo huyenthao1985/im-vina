@@ -140,7 +140,10 @@ function useManpowerData(
     const mpRows = rows.filter(r => String(r.type || r.Type || '').toLowerCase().includes('manpower'));
 
     if (mpRows.length === 0) {
-      return { byModelPeriod: {}, ttlStandard: null, activeModels: [], labels: [] };
+      // FIX: thiếu field `activeLabels` ở nhánh early-return này gây lỗi
+      // "Cannot read properties of undefined (reading 'length')" tại mọi nơi
+      // dùng data.activeLabels.length (KPI cards, charts...).
+      return { byModelPeriod: {}, ttlStandard: null, activeModels: [], labels: [], activeLabels: [] };
     }
 
     // Retrieve Standard YR24 (independent of filters)
@@ -649,6 +652,28 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   const chartTextColor = isDark ? '#e2e8f0' : '#1e293b';
   const chartGridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
 
+  // ── Stable rows cache ──────────────────────────────────────────────────────
+  // Đối xứng với SalesDashboard: khi allRows bị ghi đè bởi Test_1/Test_2 (dữ
+  // liệu Sales không có type='manpower'), ManpowerDashboard sẽ mất data.
+  // Fix: cache snapshot cuối cùng có manpower rows; nếu rows mới không phải
+  // dữ liệu Mục 3 thì dùng lại snapshot cũ thay vì reset charts.
+  const stableRowsRef = useRef<DataRow[]>([]);
+
+  const effectiveRows = useMemo(() => {
+    if (rows.length === 0) return stableRowsRef.current;
+    // Nhận dạng: dữ liệu Mục 3 có ít nhất 1 dòng type chứa 'manpower'
+    const hasManpower = rows.some(r =>
+      String((r as any).type || (r as any).Type || '').toLowerCase().includes('manpower')
+    );
+    if (hasManpower) {
+      stableRowsRef.current = rows;
+      return rows;
+    }
+    // Rows từ dashboard khác → giữ lại snapshot cũ
+    return stableRowsRef.current.length > 0 ? stableRowsRef.current : rows;
+  }, [rows]);
+  // ──────────────────────────────────────────────────────────────────────────
+
   // ── Tab state: 'manpower' | 'percapita' ──────────────────────────────────
   const [activeTab, setActiveTab] = useState<'manpower' | 'percapita'>('manpower');
 
@@ -680,8 +705,9 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     return `${hh}:${mm}:${ss} ${day}/${month}/${year}`;
   };
 
-  // Nguồn data: dùng trực tiếp rows global từ App.tsx (đồng bộ với Production Per Capita Dashboard)
-  const data = useManpowerData(rows, dateFrom, dateTo, granularity);
+  // Nguồn data: dùng effectiveRows (stable cache) thay vì rows raw
+  // để tránh bị reset khi allRows bị ghi đè bởi upload ở dashboard khác
+  const data = useManpowerData(effectiveRows, dateFrom, dateTo, granularity);
 
   const hasData = data.activeLabels.length > 0;
 
@@ -790,7 +816,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
   const handleExportExcel = () => {
     try {
-      const sourceRows = rows;
+      const sourceRows = effectiveRows;
       const mpRows = sourceRows.filter(r => String(r.type || r.Type || '').toLowerCase().includes('manpower'));
 
       const parsedRows = mpRows.map(r => {
@@ -986,7 +1012,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
           unmount/remount mất Plotly chart khi đổi ngôn ngữ / dark-light mode ── */}
       <div style={{ display: activeTab === 'percapita' ? 'block' : 'none' }}>
         <PerCapitaTab
-          rows={rows}
+          rows={effectiveRows}
           theme={theme}
           lang={lang}
           onToggleTheme={onToggleTheme}

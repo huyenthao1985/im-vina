@@ -27,6 +27,8 @@ export interface TranslationDict {
   filtersApplied: string;
   rowsPill: string;
   allOption: string;
+  startDate: string;
+  endDate: string;
   
   // KPIs
   totalSales: string;
@@ -96,6 +98,21 @@ export interface TranslationDict {
   colValue: string;
   showingRows: string;
   rowsPerPage: string;
+  
+  // Dashboard 2 specific
+  dash2Title: string;
+  tabMonthlyStatus: string;
+  tabSalesAmtDetail: string;
+  tabShipmentDetail: string;
+  salesQtyChartTitle: string;
+  salesAmtChartTitle: string;
+  salesSummaryChartTitle: string;
+  rateGaugeChartTitle: string;
+  customQtyChartTitle: string;
+  customAmtChartTitle: string;
+  targetLabel: string;
+  actualLabel: string;
+  rateLabel: string;
 }
 
 export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
@@ -119,11 +136,13 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     partner: 'Custom',
     customer: 'Khách hàng',
     resetBtn: 'Đặt lại',
-    loadExcelBtn: 'Tải Excel khác',
+    loadExcelBtn: 'Tải Excel',
     saveToCloudBtn: '☁️ Lên mây (Lưu)',
     filtersApplied: 'bộ lọc đang áp dụng',
     rowsPill: 'dòng dữ liệu',
     allOption: 'Tất cả',
+    startDate: 'Ngày bắt đầu',
+    endDate: 'Ngày kết thúc',
     totalSales: 'Tổng Doanh số',
     totalShipment: 'Tổng Xuất hàng',
     totalProduction: 'Tổng Sản xuất',
@@ -177,7 +196,22 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     colMonth: 'Tháng',
     colValue: 'Giá trị',
     showingRows: 'Hiển thị {start} đến {end} trong số {total} dòng',
-    rowsPerPage: 'Dòng/trang:'
+    rowsPerPage: 'Dòng/trang:',
+    
+    // Dashboard 2
+    dash2Title: 'Báo cáo doanh số',
+    tabMonthlyStatus: 'TÌNH HÌNH DOANH SỐ',
+    tabSalesAmtDetail: 'DOANH SỐ SALES AMT(K$)',
+    tabShipmentDetail: 'SẢN LƯỢNG SHIPMENT(K)',
+    salesQtyChartTitle: 'Sản lượng Bán hàng Q`TY',
+    salesAmtChartTitle: 'Doanh số Bán hàng AMT',
+    salesSummaryChartTitle: 'DOANH SỐ BÁN HÀNG THÁNG',
+    rateGaugeChartTitle: 'Tỷ lệ hoàn thành % Rate',
+    customQtyChartTitle: 'Khách hàng (Qty)',
+    customAmtChartTitle: 'Khách hàng (AMT)',
+    targetLabel: 'Target (Mục tiêu)',
+    actualLabel: 'Actual (Thực tế)',
+    rateLabel: '% Rate (Đạt được)'
   },
   en: {
     marketingInsights: 'Marketing Insights',
@@ -199,11 +233,13 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     partner: 'Custom',
     customer: 'Customer',
     resetBtn: 'Reset',
-    loadExcelBtn: 'Load other Excel',
+    loadExcelBtn: 'Upload Excel',
     saveToCloudBtn: '☁️ Save to Cloud',
     filtersApplied: 'filters applied',
     rowsPill: 'rows of data',
     allOption: 'All',
+    startDate: 'Start Date',
+    endDate: 'End Date',
     totalSales: 'Total Sales',
     totalShipment: 'Total Shipment',
     totalProduction: 'Total Production',
@@ -257,7 +293,22 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     colMonth: 'Month',
     colValue: 'Value',
     showingRows: 'Showing {start} to {end} of {total} rows',
-    rowsPerPage: 'Rows/page:'
+    rowsPerPage: 'Rows/page:',
+    
+    // Dashboard 2
+    dash2Title: 'Sales Status Dashboard',
+    tabMonthlyStatus: 'MONTHLY STATUS',
+    tabSalesAmtDetail: 'SALES AMT(K$)',
+    tabShipmentDetail: 'SHIPMENT(K)',
+    salesQtyChartTitle: 'Sales Q`TY',
+    salesAmtChartTitle: 'Sales AMT',
+    salesSummaryChartTitle: 'SALES AMT OF',
+    rateGaugeChartTitle: '% Rate by Customer',
+    customQtyChartTitle: 'Custom (Qty)',
+    customAmtChartTitle: 'Custom (AMT)',
+    targetLabel: 'Target',
+    actualLabel: 'Actual',
+    rateLabel: '% Rate'
   },
   ko: {
     marketingInsights: '마케팅 인사이트',
@@ -279,11 +330,13 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     partner: '커스텀',
     customer: '고객',
     resetBtn: '초기화',
-    loadExcelBtn: '다른 Excel 업로드',
+    loadExcelBtn: 'Excel 업로드',
     saveToCloudBtn: '☁️ 클라우드 저장',
     filtersApplied: '개의 필터 적용됨',
     rowsPill: '행의 데이터',
     allOption: '전체',
+    startDate: '시작일',
+    endDate: '종료일',
     totalSales: '총 매출',
     totalShipment: '총 출하',
     totalProduction: '총 생산',
@@ -337,6 +390,21 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     colMonth: '월',
     colValue: '값',
     showingRows: '{total}개 중 {start}~{end} 행 표시',
-    rowsPerPage: '페이지당 행 수:'
+    rowsPerPage: '페이지당 행 수:',
+    
+    // Dashboard 2
+    dash2Title: '매출 현황',
+    tabMonthlyStatus: '매출 현황',
+    tabSalesAmtDetail: 'SALES AMT(K$)',
+    tabShipmentDetail: 'SHIPMENT(K)',
+    salesQtyChartTitle: '판매 Q`TY',
+    salesAmtChartTitle: '판매 AMT',
+    salesSummaryChartTitle: 'SALES AMT OF',
+    rateGaugeChartTitle: '% Rate 달성률',
+    customQtyChartTitle: 'Custom (Qty)',
+    customAmtChartTitle: 'Custom (AMT)',
+    targetLabel: 'Target (목표)',
+    actualLabel: 'Actual (실적)',
+    rateLabel: '% Rate (달성률)'
   }
 };

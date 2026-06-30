@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import type { DataRow, SortState, ColumnMapping } from '../types';
 import { formatCellValue, exportToCSV, toNumber, fmtVND } from '../utils';
+import { usePagination } from '../hooks/usePagination';
 import * as XLSX from 'xlsx';
 
 interface DetailTableProps {
@@ -15,8 +16,6 @@ const NONE = '__none__';
 export const DetailTable: React.FC<DetailTableProps> = ({ rows, headers, mapping }) => {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortState>({ column: null, direction: null });
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
   const [showExport, setShowExport] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
@@ -92,13 +91,15 @@ export const DetailTable: React.FC<DetailTableProps> = ({ rows, headers, mapping
     });
   }, [filtered, sort]);
 
-  // Paginate
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paged = useMemo(() => {
-    const start = (safePage - 1) * pageSize;
-    return sorted.slice(start, start + pageSize);
-  }, [sorted, safePage, pageSize]);
+  const {
+    page: safePage,
+    pageSize,
+    setPage,
+    setPageSize,
+    totalPages,
+    pagedData: paged,
+    pageNums,
+  } = usePagination(sorted, 25);
 
   const handleSort = (col: string) => {
     setSort(prev => {
@@ -167,20 +168,7 @@ export const DetailTable: React.FC<DetailTableProps> = ({ rows, headers, mapping
     return <span className="sort-icon">{sort.direction === 'asc' ? '↑' : '↓'}</span>;
   };
 
-  // Page numbers to show
-  const pageNums = useMemo(() => {
-    const nums: (number | '...')[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) nums.push(i);
-    } else {
-      nums.push(1);
-      if (safePage > 3) nums.push('...');
-      for (let i = Math.max(2, safePage - 1); i <= Math.min(totalPages - 1, safePage + 1); i++) nums.push(i);
-      if (safePage < totalPages - 2) nums.push('...');
-      nums.push(totalPages);
-    }
-    return nums;
-  }, [totalPages, safePage]);
+
 
   return (
     <div className="table-panel">
@@ -217,106 +205,109 @@ export const DetailTable: React.FC<DetailTableProps> = ({ rows, headers, mapping
         </div>
       </div>
 
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              {headers.map(h => (
-                <th
-                  key={h}
-                  className={`sortable ${sort.column === h ? 'sorted' : ''}`}
-                  onClick={() => handleSort(h)}
-                >
-                  {h} {getSortIcon(h)}
-                </th>
-              ))}
-              {hasRevenue && hasCost && (
-                <th style={{ textAlign: 'right' }}>Lợi nhuận {getSortIcon('__profit__')}</th>
-              )}
-            </tr>
-            <tr className="filter-row">
-              {headers.map(h => {
-                const uniqueVals = getUniqueValues(h);
-                const isCategorical = uniqueVals.length > 0 && uniqueVals.length <= 25;
-                return (
-                  <th key={`filter-${h}`} style={{ padding: '6px 8px' }}>
-                    {isCategorical ? (
-                      <select
-                        className="column-filter-select"
-                        value={columnFilters[h] || ''}
-                        onChange={e => handleColumnFilterChange(h, e.target.value)}
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <option value="">Tất cả ({uniqueVals.length})</option>
-                        {uniqueVals.map(v => (
-                          <option key={v} value={v}>{v}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        className="column-filter-input"
-                        placeholder={`Lọc ${h}...`}
-                        value={columnFilters[h] || ''}
-                        onChange={e => handleColumnFilterChange(h, e.target.value)}
-                        onClick={e => e.stopPropagation()}
-                      />
-                    )}
+      <div className="table-container" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 250px)' }}>
+        <div className="table-scroll" style={{ overflowY: 'auto', flex: 1 }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
+              <tr style={{ background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 20 }}>
+                {headers.map(h => (
+                  <th
+                    key={h}
+                    className={`sortable ${sort.column === h ? 'sorted' : ''}`}
+                    onClick={() => handleSort(h)}
+                    style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--surface)', borderBottom: '1px solid var(--border-soft)' }}
+                  >
+                    {h} {getSortIcon(h)}
                   </th>
+                ))}
+                {hasRevenue && hasCost && (
+                  <th style={{ textAlign: 'right', position: 'sticky', top: 0, zIndex: 20, background: 'var(--surface)', borderBottom: '1px solid var(--border-soft)' }}>Lợi nhuận {getSortIcon('__profit__')}</th>
+                )}
+              </tr>
+              <tr className="filter-row" style={{ position: 'sticky', top: '38px', zIndex: 19, background: 'var(--surface)' }}>
+                {headers.map(h => {
+                  const uniqueVals = getUniqueValues(h);
+                  const isCategorical = uniqueVals.length > 0 && uniqueVals.length <= 25;
+                  return (
+                    <th key={`filter-${h}`} style={{ padding: '6px 8px', position: 'sticky', top: '38px', zIndex: 19, background: 'var(--surface)', borderBottom: '1px solid var(--border-soft)' }}>
+                      {isCategorical ? (
+                        <select
+                          className="column-filter-select"
+                          value={columnFilters[h] || ''}
+                          onChange={e => handleColumnFilterChange(h, e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <option value="">Tất cả ({uniqueVals.length})</option>
+                          {uniqueVals.map(v => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          className="column-filter-input"
+                          placeholder={`Lọc ${h}...`}
+                          value={columnFilters[h] || ''}
+                          onChange={e => handleColumnFilterChange(h, e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      )}
+                    </th>
+                  );
+                })}
+                {hasRevenue && hasCost && (
+                  <th key="filter-profit" style={{ padding: '6px 8px', position: 'sticky', top: '38px', zIndex: 19, background: 'var(--surface)', borderBottom: '1px solid var(--border-soft)' }}>
+                    <input
+                      type="text"
+                      className="column-filter-input"
+                      placeholder="Lọc..."
+                      value={columnFilters['__profit__'] || ''}
+                      onChange={e => handleColumnFilterChange('__profit__', e.target.value)}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.length === 0 ? (
+                <tr>
+                  <td colSpan={headers.length + (hasRevenue && hasCost ? 1 : 0)} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)' }}>
+                    Không tìm thấy dữ liệu phù hợp
+                  </td>
+                </tr>
+              ) : paged.map((row, ri) => {
+                const profit = hasRevenue && hasCost
+                  ? toNumber(row[mapping.revenueCol]) - toNumber(row[mapping.costCol])
+                  : null;
+                return (
+                  <tr key={ri}>
+                    {headers.map(h => (
+                      <td key={h} style={getCellStyle(h, row[h])}>
+                        {(h === mapping.revenueCol || h === mapping.costCol) && 
+                         isNumeric(row[h]) &&
+                         !['year', 'năm', 'nam'].some(k => h.toLowerCase().includes(k)) &&
+                         !isYearValue(row[h])
+                          ? fmtVND(toNumber(row[h]), mapping.currency)
+                          : formatCellValue(row[h])}
+                      </td>
+                    ))}
+                    {profit !== null && (
+                      <td style={{
+                        textAlign: 'right',
+                        fontVariantNumeric: 'tabular-nums',
+                        color: profit >= 0 ? 'var(--emerald)' : 'var(--rose)',
+                        fontWeight: 600,
+                      }}>
+                        {profit >= 0 ? '+' : ''}{fmtVND(profit, mapping.currency)}
+                      </td>
+                    )}
+                  </tr>
                 );
               })}
-              {hasRevenue && hasCost && (
-                <th key="filter-profit" style={{ padding: '6px 8px' }}>
-                  <input
-                    type="text"
-                    className="column-filter-input"
-                    placeholder="Lọc..."
-                    value={columnFilters['__profit__'] || ''}
-                    onChange={e => handleColumnFilterChange('__profit__', e.target.value)}
-                    onClick={e => e.stopPropagation()}
-                  />
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {paged.length === 0 ? (
-              <tr>
-                <td colSpan={headers.length + (hasRevenue && hasCost ? 1 : 0)} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)' }}>
-                  Không tìm thấy dữ liệu phù hợp
-                </td>
-              </tr>
-            ) : paged.map((row, ri) => {
-              const profit = hasRevenue && hasCost
-                ? toNumber(row[mapping.revenueCol]) - toNumber(row[mapping.costCol])
-                : null;
-              return (
-                <tr key={ri}>
-                  {headers.map(h => (
-                    <td key={h} style={getCellStyle(h, row[h])}>
-                      {(h === mapping.revenueCol || h === mapping.costCol) && 
-                       isNumeric(row[h]) &&
-                       !['year', 'năm', 'nam'].some(k => h.toLowerCase().includes(k)) &&
-                       !isYearValue(row[h])
-                        ? fmtVND(toNumber(row[h]), mapping.currency)
-                        : formatCellValue(row[h])}
-                    </td>
-                  ))}
-                  {profit !== null && (
-                    <td style={{
-                      textAlign: 'right',
-                      fontVariantNumeric: 'tabular-nums',
-                      color: profit >= 0 ? 'var(--emerald)' : 'var(--rose)',
-                      fontWeight: 600,
-                    }}>
-                      {profit >= 0 ? '+' : ''}{fmtVND(profit, mapping.currency)}
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="pagination-bar">

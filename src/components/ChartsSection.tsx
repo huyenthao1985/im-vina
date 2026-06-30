@@ -78,10 +78,10 @@ export const ChartsSection: React.FC<ChartsSectionProps> = ({ rows, mapping, the
   const doughnutInstance = useRef<Chart | null>(null);
   const barInstance = useRef<Chart | null>(null);
 
-  const hasDate = mapping.dateCol !== NONE;
-  const hasCategory = mapping.categoryCol !== NONE;
-  const hasRevenue = mapping.revenueCol !== NONE;
-  const hasCost = mapping.costCol !== NONE;
+  const hasDate = !!mapping.dateCol && mapping.dateCol !== NONE;
+  const hasCategory = !!mapping.categoryCol && mapping.categoryCol !== NONE;
+  const hasRevenue = !!mapping.revenueCol && mapping.revenueCol !== NONE;
+  const hasCost = !!mapping.costCol && mapping.costCol !== NONE;
 
   useEffect(() => {
     const { textColor, gridColor } = chartDefaults(theme);

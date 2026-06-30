@@ -57,6 +57,20 @@
 
   --transition: 0.2s ease;
   --transition-slow: 0.35s ease;
+
+  --label-color-target: #ffffff;
+  --label-color-actual: #ffffff;
+  --axis-text-color: #E8E8F0;
+
+  /* Sidebar dark theme variables */
+  --sidebar-bg-start: #0d3b3e;
+  --sidebar-bg-end: #0a1f24;
+  --sidebar-text: #cfe8e6;
+  --sidebar-text-active: #ffffff;
+  --sidebar-active-bg: rgba(45, 212, 191, 0.18);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+  --sidebar-accent: #2dd4bf;
+  --sidebar-badge-bg: rgba(45, 212, 191, 0.25);
 }
 
 [data-theme="light"] {
@@ -68,6 +82,9 @@
   --border: rgba(0, 0, 0, 0.09);
   --border-soft: rgba(0, 0, 0, 0.06);
   --border-hover: rgba(139, 92, 246, 0.5);
+  --label-color-target: #1e293b;
+  --label-color-actual: #ffffff;
+  --axis-text-color: #1A1A2E;
 
   --purple-soft: rgba(139, 92, 246, 0.08);
   --purple-glow: rgba(139, 92, 246, 0.15);
@@ -80,13 +97,23 @@
 
   --text-0: #1a1636;
   --text-1: #4b4570;
-  --text-2: #8580aa;
+  --text-2: #5a547e;          /* tăng từ #8580aa → #5a547e (~3.8:1 trên nền trắng) */
   --text-3: #b0aac8;
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.1);
   --shadow-purple: 0 8px 32px rgba(139, 92, 246, 0.15);
+
+  /* Sidebar light theme variables */
+  --sidebar-bg-start: #e8f7f3;
+  --sidebar-bg-end: #ffffff;
+  --sidebar-text: #355e58;
+  --sidebar-text-active: #0f5b52;
+  --sidebar-active-bg: rgba(45, 212, 191, 0.15);
+  --sidebar-hover-bg: rgba(15, 91, 82, 0.05);
+  --sidebar-accent: #14b8a6;
+  --sidebar-badge-bg: rgba(20, 184, 166, 0.18);
 }
 
 /* ==================== RESET & BASE ==================== */
@@ -248,7 +275,11 @@ body {
   background: rgba(255, 255, 255, 0.02);
   backdrop-filter: blur(20px);
   position: sticky;
-  top: 0;
+  /* ── Đẩy xuống dưới Global Header Bar (Lang/Theme) ─────────────────────
+     Global header bar cao ~48px và cũng dùng position:sticky; top:0.
+     Nếu .topbar cũng top:0, hai sticky element chồng lên nhau (không tự
+     đẩy nhau xuống). Đặt top = chiều cao global bar để xếp đúng thứ tự. */
+  top: 48px;
   z-index: 100;
   flex-wrap: wrap;
   gap: 12px;
@@ -732,13 +763,13 @@ body {
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 14px;
+  gap: 10px;
 }
 .kpi-card {
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
-  padding: 10px 16px;
+  padding: 8px 12px;
   position: relative;
   overflow: hidden;
   transition: all var(--transition);
@@ -760,46 +791,45 @@ body {
 .kpi-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 .kpi-card-icon {
-  width: 36px; height: 36px;
-  border-radius: var(--radius-sm);
-  background: var(--kpi-bg, var(--purple-soft));
+  width: 40px; height: 40px;
+  border-radius: 50% !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  margin-bottom: 12px;
+  font-size: 18px !important;
+  margin-bottom: 0;
 }
 .kpi-card-header .kpi-card-icon {
   margin-bottom: 0;
 }
 .kpi-card-label {
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: 0.07em;
-  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
 }
 .kpi-card-header .kpi-card-label {
   margin-bottom: 0;
 }
 .kpi-card-value {
   font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 21px;
+  font-weight: 800;
   color: var(--text-0);
   line-height: 1.1;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 .kpi-card-badge {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1793,7 +1823,7 @@ tbody tr:last-child td { border-bottom: none; }
 .topbar-filters {
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 16px;
   flex-wrap: wrap;
   flex: 1;
   justify-content: center;
@@ -1801,14 +1831,15 @@ tbody tr:last-child td { border-bottom: none; }
 .filter-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .filter-field label {
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-2);
+  color: var(--text-1);          /* dark: #f3f4f6 | light: #4b4570 */
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  margin-bottom: 2px;
 }
 .filter-field select {
   font-family: var(--font-body);
@@ -2189,6 +2220,34 @@ tbody tr:last-child td { border-bottom: none; }
   }
 }
 
+/* ================================================================
+   NATIVE <select> — color-scheme fix so browser renders
+   option-list in the correct dark/light palette
+   ================================================================ */
+:root {
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* Base style for every native select in the dashboard */
+select {
+  color-scheme: inherit;
+}
+
+/* option list background/text via color-scheme (best cross-browser we can do
+   for native selects that are NOT replaced by CustomSelect) */
+:root select option {
+  background: #1e293b;
+  color: #f9fafb;
+}
+[data-theme="light"] select option {
+  background: #ffffff;
+  color: #1a1636;
+}
+
+/* lang-select (kept for date inputs still using this class) */
 .lang-select {
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -2200,6 +2259,7 @@ tbody tr:last-child td { border-bottom: none; }
   outline: none;
   cursor: pointer;
   transition: all var(--transition);
+  color-scheme: inherit;
 }
 .lang-select:hover {
   border-color: var(--purple);
@@ -2207,5 +2267,549 @@ tbody tr:last-child td { border-bottom: none; }
 }
 [data-theme="light"] .lang-select {
   background: #ffffff;
+}
+
+/* ================================================================
+   CUSTOM SELECT COMPONENT — full theme control
+   ================================================================ */
+
+/* ── Dropdown variables ── */
+:root {
+  --csel-bg:          #1e293b;
+  --csel-border:      rgba(139, 92, 246, 0.55);
+  --csel-text:        #f9fafb;
+  --csel-hover-bg:    rgba(139, 92, 246, 0.22);
+  --csel-active-bg:   rgba(139, 92, 246, 0.38);
+  --csel-active-text: #c4b5fd;
+  --csel-shadow:      0 8px 28px rgba(0, 0, 0, 0.55);
+}
+[data-theme="light"] {
+  --csel-bg:          #ffffff;
+  --csel-border:      rgba(139, 92, 246, 0.45);
+  --csel-text:        #1a1636;
+  --csel-hover-bg:    rgba(139, 92, 246, 0.08);
+  --csel-active-bg:   rgba(139, 92, 246, 0.15);
+  --csel-active-text: #6d28d9;
+  --csel-shadow:      0 8px 28px rgba(0, 0, 0, 0.14);
+}
+
+/* Trigger button — looks identical to the old <select> */
+.csel-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-0);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+  white-space: nowrap;
+  min-width: 0;
+  text-align: left;
+  width: 100%;
+  height: 38px;
+  box-sizing: border-box;
+}
+
+/* Custom class for date inputs in filter bar */
+.filter-date-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-0);
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+  transition: all var(--transition);
+  color-scheme: inherit;
+  min-width: 150px;
+  width: auto;
+  height: 38px;
+  box-sizing: border-box;
+}
+.filter-date-input:hover {
+  border-color: var(--purple);
+  background: var(--purple-soft);
+}
+[data-theme="light"] .filter-date-input {
+  background: #ffffff;
+}
+.csel-trigger:hover,
+.csel-trigger--open {
+  border-color: var(--csel-border);
+  background: var(--csel-hover-bg);
+}
+[data-theme="light"] .csel-trigger {
+  background: #ffffff;
+}
+
+.csel-trigger__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csel-caret {
+  font-size: 11px;
+  color: var(--text-3);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.csel-caret--up {
+  transform: rotate(180deg);
+}
+
+/* Dropdown list panel */
+.csel-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 9999;
+  min-width: 100%;
+  background: var(--csel-bg);
+  border: 1.5px solid var(--csel-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--csel-shadow);
+  list-style: none;
+  padding: 4px 0;
+  margin: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  animation: cselFadeIn 0.14s ease;
+  /* Prevent native option override */
+  color-scheme: unset;
+}
+@keyframes cselFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* Option item */
+.csel-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--csel-text);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+.csel-option:hover {
+  background: var(--csel-hover-bg);
+}
+.csel-option--selected {
+  background: var(--csel-active-bg);
+  color: var(--csel-active-text);
+  font-weight: 600;
+}
+.csel-option__check {
+  font-size: 11px;
+  flex-shrink: 0;
+  width: 14px;
+}
+
+/* Scrollbar inside menu */
+.csel-menu::-webkit-scrollbar { width: 4px; }
+.csel-menu::-webkit-scrollbar-thumb {
+  background: var(--csel-border);
+  border-radius: 2px;
+}
+
+/* ================================================================
+   SIDEBAR & LAYOUT SYSTEM
+   ================================================================ */
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--text);
+  position: relative;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 260px;
+  background: linear-gradient(160deg, var(--sidebar-bg-start), var(--sidebar-bg-end));
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1000;
+  box-sizing: border-box;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.sidebar.collapsed {
+  width: 68px;
+}
+
+.sidebar-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-soft);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .sidebar-header {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--sidebar-hover-bg);
+  color: var(--sidebar-text-active);
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--sidebar-text-active);
+  font-size: 15px;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar.collapsed .sidebar-logo {
+  display: none;
+}
+
+.sidebar-menu {
+  list-style: none;
+  padding: 16px 8px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sidebar.collapsed .sidebar-menu {
+  padding: 16px 4px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  box-sizing: border-box;
+  overflow: hidden;
+  position: relative;
+}
+
+.sidebar-item:hover {
+  background: var(--sidebar-hover-bg);
+}
+
+.sidebar-item.active {
+  background: var(--sidebar-active-bg);
+  border-left-color: var(--sidebar-accent);
+  color: var(--sidebar-text-active);
+  font-weight: 600;
+}
+
+.sidebar-item-index {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sidebar-badge-bg);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin-right: 12px;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+
+.sidebar-item.active .sidebar-item-index {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-text-active);
+}
+
+.sidebar-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--sidebar-badge-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.sidebar-item-label {
+  font-size: 13.5px;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.sidebar.collapsed .sidebar-item-label {
+  opacity: 0;
+  width: 0;
+  pointer-events: none;
+}
+
+.sidebar.collapsed .sidebar-item {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.sidebar.collapsed .sidebar-item-index {
+  margin-right: 0;
+}
+
+/* Active indicator dot when collapsed */
+.sidebar-item-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: var(--sidebar-accent);
+  border-radius: 50%;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+}
+
+.sidebar-item.active .sidebar-item-dot {
+  display: block;
+}
+
+.sidebar.collapsed .sidebar-item-dot {
+  right: 6px;
+  top: 6px;
+  transform: none;
+  border: 1.5px solid var(--sidebar-bg-start);
+}
+
+.app-content {
+  margin-left: 260px;
+  flex: 1;
+  min-width: 0;
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.app-layout.sidebar-collapsed .app-content {
+  margin-left: 68px;
+}
+
+/* ================================================================
+   LIGHT MODE CONTRAST FIX
+   Vấn đề: --text-2 = #8580aa (tím nhạt) tương phản thấp trên nền trắng
+   Giải pháp: Override tất cả selector dùng --text-2 sang --text-1 / --text-0
+   ================================================================ */
+
+/* ── 1. Filter field labels (NGÀY BẮT ĐẦU, NGÀY KẾT THÚC, KHÁCH HÀNG...) ── */
+[data-theme="light"] .filter-field label {
+  color: var(--text-0);          /* #1a1636 — tối đa, tương phản tối đa */
+}
+
+/* ── 1b. Group header labels (SẢN LƯỢNG QTY / DOANH SỐ AMT) ── */
+[data-theme="light"] .col-group-label,
+[data-theme="light"] .group-header-label {
+  color: var(--text-0);
+}
+
+/* ── 2. Filter bar label ("KHOẢNG THỜI GIAN"...) ── */
+[data-theme="light"] .filter-label {
+  color: var(--text-1);
+}
+
+/* ── 3. Mapping field labels ── */
+[data-theme="light"] .mapping-field label {
+  color: var(--text-1);
+}
+
+/* ── 4. KPI card label (chỉ tiêu nhỏ bên trên giá trị) ── */
+[data-theme="light"] .kpi-card-label {
+  color: var(--text-1);
+}
+
+/* ── 5. Panel subtitle (bên dưới tiêu đề panel) ── */
+[data-theme="light"] .panel-subtitle {
+  color: var(--text-1);
+}
+
+/* ── 6. Chart legend items ── */
+[data-theme="light"] .legend-item {
+  color: var(--text-1);
+}
+
+/* ── 7. Table header text ── */
+[data-theme="light"] thead th {
+  color: var(--text-1);
+}
+
+/* ── 8. Table count chip ── */
+[data-theme="light"] .table-count-chip {
+  color: var(--text-1);
+}
+
+/* ── 9. Pagination info ── */
+[data-theme="light"] .pagination-info {
+  color: var(--text-1);
+}
+
+/* ── 10. Pagination buttons ── */
+[data-theme="light"] .page-btn {
+  color: var(--text-1);
+}
+
+/* ── 11. Quick filter pills (inactive state) ── */
+[data-theme="light"] .quick-filter-btn {
+  color: var(--text-1);
+}
+
+/* ── 12. Sales KPI card label ── */
+[data-theme="light"] .sales-kpi-card .label {
+  color: var(--text-1);
+}
+
+/* ── 13. Donut sub-panel title ── */
+[data-theme="light"] .donut-sub-panel .donut-title {
+  color: var(--text-1);
+}
+
+/* ── 14. Ring legend item name ── */
+[data-theme="light"] .ring-legend-item .name {
+  color: var(--text-1);
+}
+
+/* ── 15. Monthly KPI mini label & sub ── */
+[data-theme="light"] .monthly-kpi-mini .mkpi-label,
+[data-theme="light"] .monthly-kpi-mini .mkpi-sub {
+  color: var(--text-1);
+}
+
+/* ── 16. Year/Month selector title ── */
+[data-theme="light"] .ym-selector-title {
+  color: var(--text-1);
+}
+
+/* ── 17. Filter btn pills (inactive) ── */
+[data-theme="light"] .filter-btn-pill {
+  color: var(--text-1);
+}
+
+/* ── 18. Category pills (inactive) ── */
+[data-theme="light"] .category-pill {
+  color: var(--text-1);
+}
+
+/* ── 19. Panel head paragraph ── */
+[data-theme="light"] .panel-head p {
+  color: var(--text-1);
+}
+
+/* ── 20. Date input container label ── */
+[data-theme="light"] .date-input-container .label {
+  color: var(--text-1);
+}
+
+/* ── 21. Table body td (row text) ── */
+[data-theme="light"] tbody td {
+  color: var(--text-0);
+}
+
+/* ── 22. Topbar section-title / heading ── */
+[data-theme="light"] .section-title {
+  color: var(--text-0);
+}
+
+/* ── 23. Sales filter item separator ── */
+[data-theme="light"] .sales-filter-item .filter-sep {
+  color: var(--text-1);
+}
+
+/* ── 24. Sales-filters section title ── */
+[data-theme="light"] .sales-filters-wrapper .filter-section-title {
+  color: var(--text-1);
+}
+
+/* ── 25. Badge neutral chip ── */
+[data-theme="light"] .badge-neutral {
+  color: var(--text-1);
+}
+
+/* ── 26. Btn-text secondary button ── */
+[data-theme="light"] .btn-text {
+  color: var(--text-1);
+}
+
+/* ── 27. Upload hero paragraph ── */
+[data-theme="light"] .upload-hero p {
+  color: var(--text-1);
+}
+
+/* ── 28. Dropzone sub-label ── */
+[data-theme="light"] .dropzone .dz-sub {
+  color: var(--text-1);
+}
+
+/* ── 29. Empty state paragraph ── */
+[data-theme="light"] .empty-state p {
+  color: var(--text-1);
+}
+
+/* ── 30. Table panel thead th ── */
+[data-theme="light"] .table-panel thead th {
+  color: var(--text-0);
 }
 
