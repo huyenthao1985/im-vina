@@ -1902,9 +1902,9 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         </h1>
         <GlobalHeaderControls 
           lang={lang} 
-          setLang={setLang} 
+          setLang={_setLang} 
           isDark={theme === 'dark'} 
-          onToggleTheme={onToggleTheme} 
+          onToggleTheme={_onToggleTheme} 
         />
       </div>
 
