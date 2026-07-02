@@ -26,9 +26,9 @@
  */
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import * as XLSX from 'xlsx';
 import type { DataRow } from '../types';
 import { parseManpowerDate } from './ManpowerDashboard';
+import { CustomSelect } from './CustomSelect';
 import { supabase } from '../lib/supabase';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -112,7 +112,10 @@ function buildLabelOrder(
 ): { label: string; dateMs: number }[] {
   const seen: Record<string, number> = {};
   rows.forEach(r => {
-    const raw = String(r.date || r.Date || '').trim().toUpperCase();
+    // FIX: Khi load từ Supabase, Excel "Date" được lưu vào cột schema `month`
+    // (ManpowerDashboard.handleSaveToCloud: month = String(rawDate)).
+    // Nên phải check cả r.month / r.Month làm fallback.
+    const raw = String(r.date || (r as any).Date || (r as any).month || (r as any).Month || '').trim().toUpperCase();
     if (!raw || raw === 'YR24' || raw === 'JAN-JUN') return;
     const d = parseManpowerDate(raw);
     if (!d) return;
@@ -154,9 +157,10 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
 
     // Standard
     const stdRow = mpRows.find(r =>
-      String(r.model || r.Model || '').trim().toUpperCase() === 'TTL' &&
-      String(r.date || r.Date || '').trim().toUpperCase() === 'YR24' &&
-      String(r.type || r.Type || '').toLowerCase().includes('manpower')
+      String(r.model || (r as any).Model || '').trim().toUpperCase() === 'TTL' &&
+      // FIX: check cả r.date và r.month (khi load từ Supabase, Date được lưu vào month)
+      String(r.date || (r as any).Date || (r as any).month || (r as any).Month || '').trim().toUpperCase() === 'YR24' &&
+      String(r.type || (r as any).Type || '').toLowerCase().includes('manpower')
     );
     const ttlStandard = stdRow ? Number(stdRow.value ?? stdRow.Value) : null;
 
@@ -773,6 +777,12 @@ function buildChart5(
 
   const traces: any[] = selectedLabels.map((lbl, i) => {
     const rVals = modelsClosed.map(m => r1(activeDataMap[m]?.[lbl] ?? 0));
+    // FIX(spider-labels): hiển thị giá trị từng điểm theo đúng màu của trace để
+    // đọc số trực tiếp trên biểu đồ, không cần hover. Điểm cuối bị lặp lại
+    // (đóng vòng radar) nên bỏ trống label để tránh chồng số lên chính nó.
+    const textVals = rVals.map((v, idx) =>
+      idx === rVals.length - 1 ? '' : (v > 0 ? fmt1(v) : '')
+    );
     return {
       type: 'scatterpolar',
       r: rVals,
@@ -780,6 +790,12 @@ function buildChart5(
       fill: 'toself',
       fillcolor: radarColors[i % radarColors.length] + '22', // 13% opacity
       line: { color: radarColors[i % radarColors.length], width: 2 },
+      mode: 'lines+markers+text',
+      marker: { color: radarColors[i % radarColors.length], size: 5 },
+      text: textVals,
+      texttemplate: '%{text}',
+      textposition: 'top center',
+      textfont: { color: radarColors[i % radarColors.length], size: 10, family: 'inherit' },
       name: lbl,
       hovertemplate: `${lbl}<br>%{theta}: %{r}<extra></extra>`,
     };
@@ -821,11 +837,17 @@ interface PerCapitaTabProps {
 }
 
 export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
-  rows, theme, lang, onToggleTheme: _onToggleTheme, setLang: _setLang, onFileSelected, isVisible = true,
+  // FIX(upload-1-lan): PerCapitaTab không còn nút Tải Excel riêng — dữ liệu
+  // luôn đến từ prop `rows` dùng chung với tab Nhân lực (ManpowerDashboard),
+  // vốn đã được App.tsx nạp 1 lần cho cả 2 tab. Giữ prop trong interface để
+  // không phá signature/API của component, chỉ đánh dấu unused ở đây.
+  rows, theme, lang, onToggleTheme: _onToggleTheme, setLang: _setLang, onFileSelected: _onFileSelected, isVisible = true,
 }) => {
   const isDark = theme === 'dark';
   const textColor = isDark ? '#e2e8f0' : '#1e293b';
   const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  // FIX(toolbar-chuan-hoa): đồng bộ y hệt màu label với TargetActualDashboard (ảnh 3)
+  const filterLabelColor = theme === 'light' ? 'var(--text-0)' : 'var(--text-2)';
 
   // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
   // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
@@ -887,23 +909,9 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     }
   };
 
-  // ── File upload (giống ManpowerDashboard) ──────────────────────────────────
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const fileData = new Uint8Array(evt.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(fileData, { type: 'array', cellDates: true });
-        onFileSelected(file, workbook);
-      } catch {
-        alert(lang === 'vi' ? 'Lỗi đọc tệp Excel!' : lang === 'ko' ? '엑셀 파일 읽기 오류!' : 'Error reading Excel file!');
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
+  // FIX(upload-1-lan): đã bỏ handleFileUpload riêng của tab này — upload chỉ
+  // còn 1 điểm duy nhất ở tab Nhân lực (ManpowerDashboard), dữ liệu tự share
+  // sang đây qua prop `rows`.
 
   // ── Save to Cloud (đồng nhất với ManpowerDashboard — cùng bảng/origin 'Manpower'
   // vì PerCapitaTab dùng chung nguồn dữ liệu Manpower, chỉ khác cách hiển thị) ──
@@ -1053,112 +1061,68 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     <div style={{ padding: '0 0 24px' }}>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          TOOLBAR — đồng nhất với ManpowerDashboard Tab 1
-          Layout: [Clock] ── [Từ/Đến + Model + Granularity] ── [Tải Excel + Lên mây]
+          TOOLBAR — FIX(toolbar-chuan-hoa): đồng bộ y hệt cấu trúc/kích thước/
+          font-size với toolbar chuẩn tham chiếu ở TargetActualDashboard.tsx
+          (ảnh 3) — layout 2 dòng (dòng nhãn + dòng control), đồng hồ dạng text
+          thường, input ngày cao 38px, CustomSelect cho Model.
          ══════════════════════════════════════════════════════════════════════ */}
-      <div
-        className="filter-bar"
-        style={{
-          display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px', flexWrap: 'wrap',
-          maxWidth: '1080px',
-          margin: '12px auto',
-          padding: '10px 14px',
-          background: 'var(--surface-1)',
-          border: '1px solid var(--border-soft)',
-          borderRadius: '10px',
-        }}
-      >
-
-        {/* ── LEFT: Clock only — nút Tải tệp đã bỏ, đồng bộ với ManpowerDashboard ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-
-          {/* Clock */}
-          <span
-            className="pill-rows"
-            style={{
-              margin: 0, fontSize: '12px', padding: '6px 10px',
-              height: '34px', display: 'inline-flex', alignItems: 'center',
-              fontWeight: 600,
-            }}
-          >
-            ⏰ {formatClock(currentTime)}
-          </span>
+      <div className="topbar-dash" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+        {/* Dòng 1 (labels) */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          {/* Cụm trái dòng 1: Đồng hồ */}
+          <div style={{ width: '170px', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: '13px', color: filterLabelColor, fontWeight: '700', whiteSpace: 'nowrap' }}>
+            {formatClock(currentTime)}
+          </div>
+          {/* Cụm giữa dòng 1: Labels */}
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
+            <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              {lang === 'vi' ? 'NGÀY BẮT ĐẦU' : lang === 'ko' ? '시작일' : 'START DATE'}
+            </span>
+            <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              {lang === 'vi' ? 'NGÀY KẾT THÚC' : lang === 'ko' ? '종료일' : 'END DATE'}
+            </span>
+            <span style={{ width: '140px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              {lang === 'vi' ? 'MODEL' : lang === 'ko' ? '모델' : 'MODEL'}
+            </span>
+            <span style={{ width: '220px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              {lang === 'vi' ? 'XEM THEO' : lang === 'ko' ? '보기 방식' : 'VIEW BY'}
+            </span>
+          </div>
+          {/* Cụm phải dòng 1: Spacers matching Dòng 2 (badge dùng chung + Lên mây) */}
+          <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+            <div style={{ width: '220px' }}></div>
+            {supabase && <div style={{ width: '120px' }}></div>}
+          </div>
         </div>
 
-        {/* ── CENTER: Từ/Đến + Model + Granularity pills ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-
-          {/* Date range */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '130px', textAlign: 'center' }}>
-                {lang === 'vi' ? 'Ngày bắt đầu' : lang === 'ko' ? '시작일' : 'Start Date'}
-              </span>
-              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '130px', textAlign: 'center' }}>
-                {lang === 'vi' ? 'Ngày kết thúc' : lang === 'ko' ? '종료일' : 'End Date'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input
-                type="date" value={dateFrom}
-                onChange={e => handleDateFromChange(e.target.value)}
-                style={{
-                  height: '34px', padding: '4px 8px', fontSize: '13px',
-                  borderRadius: '4px', border: '1px solid var(--border)',
-                  background: 'var(--surface-2)', color: 'var(--text-0)',
-                  width: '130px',
-                }}
-              />
-              <input
-                type="date" value={dateTo}
-                onChange={e => handleDateToChange(e.target.value)}
-                style={{
-                  height: '34px', padding: '4px 8px', fontSize: '13px',
-                  borderRadius: '4px', border: '1px solid var(--border)',
-                  background: 'var(--surface-2)', color: 'var(--text-0)',
-                  width: '130px',
-                }}
-              />
-              {dateError && (
-                <span style={{ color: 'var(--rose)', fontSize: '11px', fontWeight: 500 }}>
-                  ⚠️ {dateError}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Model dropdown */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>
-              {lang === 'vi' ? 'Model' : lang === 'ko' ? '모델' : 'Model'}
-            </span>
-            <select
+        {/* Dòng 2 (values/controls) */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          {/* Cụm trái dòng 2: Trống để giữ căn lề */}
+          <div style={{ width: '170px', flexShrink: 0 }}></div>
+          {/* Cụm giữa dòng 2: Controls */}
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px', alignItems: 'center' }}>
+            <input
+              type="date" value={dateFrom}
+              onChange={e => handleDateFromChange(e.target.value)}
+              className="filter-date-input"
+              style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
+            />
+            <input
+              type="date" value={dateTo}
+              onChange={e => handleDateToChange(e.target.value)}
+              className="filter-date-input"
+              style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
+            />
+            <CustomSelect
               value={modelFilter}
-              onChange={e => setModelFilter(e.target.value)}
-              style={{
-                height: '34px', padding: '4px 8px', fontSize: '13px',
-                borderRadius: '4px', border: '1px solid var(--border)',
-                background: 'var(--surface-2)', color: 'var(--text-0)',
-                minWidth: '110px',
-              }}
-            >
-              <option value="all">
-                {lang === 'vi' ? 'Tất cả' : lang === 'ko' ? '전체' : 'All'}
-              </option>
-              {data.activeModels.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Granularity pills */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>
-              {lang === 'vi' ? 'Xem theo' : lang === 'ko' ? '보기 방식' : 'View By'}
-            </span>
-            <div style={{ display: 'flex', gap: '0px', height: '34px' }}>
+              onChange={setModelFilter}
+              options={[
+                { value: 'all', label: lang === 'vi' ? 'Tất cả' : lang === 'ko' ? '전체' : 'All' },
+                ...data.activeModels.map(m => ({ value: m, label: m })),
+              ]}
+              style={{ width: '140px', height: '38px' }}
+            />
+            <div style={{ display: 'flex', gap: '0px', height: '38px', width: '220px', flexShrink: 0 }}>
               {(['day', 'week', 'month', 'year'] as const).map(mode => {
                 const labels: Record<string, Record<string, string>> = {
                   day:   { vi: 'Ngày',  en: 'Day',   ko: '일별' },
@@ -1172,7 +1136,8 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                     key={mode}
                     onClick={() => setGranularity(mode)}
                     style={{
-                      padding: '0 10px', fontSize: '12px', fontWeight: 600,
+                      flex: 1,
+                      padding: '6px 0', fontSize: '13px', fontWeight: 600,
                       borderRadius: mode === 'day' ? '6px 0 0 6px' : mode === 'year' ? '0 6px 6px 0' : '0',
                       border: '1px solid var(--border)',
                       borderRight: mode !== 'year' ? 'none' : '1px solid var(--border)',
@@ -1188,44 +1153,44 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                     {labels[mode][lang]}
                   </button>
                 );
-            })}
-          </div>
-          </div>
-        </div>
-
-        {/* ── RIGHT: Tải Excel (upload) + Lên mây (Save to Cloud) — đồng bộ với ManpowerDashboard ── */}
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-          <label className="btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-1)', background: 'transparent', border: '1px solid var(--border)', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}>
-            <input
-              type="file"
-              accept=".xlsx, .xls"
-              style={{ display: 'none' }}
-              onChange={handleFileUpload}
-            />
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
-              <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
-              <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-              <path d="M3 16v5h5" />
-              <path d="M16 3h5v5" />
-            </svg>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {lang === 'vi' ? 'Tải Excel' : lang === 'ko' ? '엑셀 다운로드' : 'Export Excel'}
-            </span>
-          </label>
-
-          {supabase && (
-            <button
-              className="btn-outline"
-              type="button"
-              onClick={handleSaveToCloud}
-              disabled={isSaving}
-              style={{ borderColor: '#14b8a6', color: '#14b8a6', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
-            >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {isSaving ? '⏳...' : (lang === 'vi' ? 'Lên mây' : lang === 'ko' ? '클라우드 저장' : 'Save to Cloud')}
+              })}
+            </div>
+            {dateError && (
+              <span style={{ color: 'var(--rose)', fontSize: '11px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                ⚠️ {dateError}
               </span>
-            </button>
-          )}
+            )}
+          </div>
+
+          {/* Cụm phải dòng 2: badge "dữ liệu dùng chung" (FIX upload-1-lan) + Lên mây */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+            <span
+              title={lang === 'vi' ? 'Dữ liệu được nạp chung từ tab Nhân lực — chỉ cần tải Excel 1 lần' : lang === 'ko' ? '근무 인력 탭과 데이터를 공유합니다 — 엑셀은 한 번만 업로드하면 됩니다' : 'Data is shared from the Manpower tab — upload Excel only once'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                height: '38px', width: '220px', padding: '0 12px', boxSizing: 'border-box',
+                fontSize: '12px', fontWeight: 600, color: 'var(--text-2)',
+                background: 'var(--surface-2)', border: '1px dashed var(--border)',
+                borderRadius: '8px', whiteSpace: 'nowrap',
+              }}
+            >
+              🔗 {lang === 'vi' ? 'Dữ liệu chung với tab Nhân lực' : lang === 'ko' ? '근무 인력 탭과 데이터 공유' : 'Shared with Manpower tab'}
+            </span>
+
+            {supabase && (
+              <button
+                className="btn-outline"
+                type="button"
+                onClick={handleSaveToCloud}
+                disabled={isSaving}
+                style={{ borderColor: '#14b8a6', color: '#14b8a6', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {isSaving ? '⏳...' : (lang === 'vi' ? 'Lên mây' : lang === 'ko' ? '클라우드 저장' : 'Save to Cloud')}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

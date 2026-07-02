@@ -165,7 +165,13 @@ export default function App() {
   const hasHydratedRef = useRef(false);
   // Trạng thái đồng bộ Supabase khi upload thủ công — có thể dùng để hiện
   // badge "Đang đồng bộ..." / "Đã lên Cloud" / "Lỗi đồng bộ" trên UI nếu cần.
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+
+  // Cờ loading cho lần tải dữ liệu đầu tiên từ Supabase/cache. Trong lúc
+  // headers vẫn còn rỗng, dashboardMode sẽ mặc định rơi vào 'marketing' —
+  // nếu không có cờ này, người dùng sẽ thấy màn "Marketing Insights" (rỗng)
+  // lóe lên trước khi dashboard thật hiện ra. true = đang tải lần đầu.
+  const [isInitialDataLoading, setIsInitialDataLoading] = useState(true);
 
   // Persist 3 bucket ra localStorage mỗi khi có thay đổi (sau khi đã hydrate
   // lần đầu) — cho phép reload trang mà KHÔNG mất bucket nào, kể cả khi bucket
@@ -182,37 +188,110 @@ export default function App() {
   // Load from Supabase on mount — Supabase luôn được ưu tiên.
   // Cache local chỉ là fallback khi Supabase không khả dụng.
   useEffect(() => {
+    // ── BƯỚC 0: Hiển thị NGAY dữ liệu cache local (nếu có) trong lúc chờ
+    // Supabase tải bản mới nhất ở nền — kiểu "stale-while-revalidate". Trước
+    // đây mỗi lần F5 đều phải đợi Supabase tải xong (nhiều giây) mới hiện gì
+    // đó, dù máy này đã từng tải thành công và có sẵn cache. Giờ cache hiện
+    // ra gần như tức thì, Supabase âm thầm cập nhật lại phía sau khi xong —
+    // người dùng thấy dữ liệu (có thể hơi cũ vài giây) ngay lập tức thay vì
+    // nhìn spinner 12-15s mỗi lần.
+    try {
+      const cachedBuckets = localStorage.getItem('cached_dashboard_buckets');
+      if (cachedBuckets) {
+        const parsed = JSON.parse(cachedBuckets);
+        const sales = parsed.sales || [];
+        const manpower = parsed.manpower || [];
+        const targetActual = parsed.targetActual || [];
+        const combined = [...sales, ...manpower, ...targetActual];
+        if (combined.length > 0) {
+          setSalesRows(sales);
+          setManpowerRows(manpower);
+          setTargetActualRows(targetActual);
+          setAllRows(combined);
+          setHeaders(Object.keys(combined[0]).map(k => k.trim()));
+          setFilename('Cached Local Database');
+          setScreen('dashboard');
+          hasHydratedRef.current = true;
+          setIsInitialDataLoading(false);
+          console.log('Hiện ngay từ cache local, đang đồng bộ Supabase ở nền...');
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     async function loadSupabaseData() {
 
-      // ── BƯỚC 1: Luôn thử Supabase trước ──────────────────────────────────
+      // ── BƯỚC 1: Luôn tải Supabase để lấy bản mới nhất — nếu BƯỚC 0 đã
+      // hiện cache, việc này chạy NGẦM phía sau, không che dashboard đang
+      // hiển thị (chỉ âm thầm thay dữ liệu khi có bản mới hơn).
       if (supabase) {
+        // Gán ra const cục bộ: TypeScript chỉ giữ được narrowing (khác null)
+        // của `supabase` cho tới khi hết block try/catch NGOÀI cùng — bên
+        // trong closure lồng (Array.from callback bên dưới), TS coi lại là
+        // "có thể null" vì biến gốc có thể bị gán lại trước khi closure chạy.
+        // `db` là const nên narrowing được giữ nguyên trong mọi closure.
+        const db = supabase;
         try {
           let allData: any[] = [];
-          let from = 0;
           const PAGE_SIZE = 1000;
-          let keepFetching = true;
 
-          while (keepFetching) {
-            const { data, error } = await supabase
-              .from('sales_data')
-              .select('*')
-              .order('year', { ascending: true })
-              .range(from, from + PAGE_SIZE - 1);
+          // Lấy tổng số dòng trước (head request, không tải data) để biết
+          // cần bao nhiêu trang, rồi bắn request theo từng đợt song song
+          // thay vì chờ tuần tự từng lô.
+          const { count, error: countError } = await db
+            .from('sales_data')
+            .select('*', { count: 'exact', head: true });
 
-            if (error) {
-              console.error('Supabase fetch error:', error);
-              break;
-            } else if (data && data.length > 0) {
-              allData = [...allData, ...data];
-              from += PAGE_SIZE;
-              if (data.length < PAGE_SIZE) keepFetching = false;
-            } else {
-              keepFetching = false;
+          if (countError) {
+            console.error('Supabase count error:', countError);
+          } else if (count && count > 0) {
+            const totalPages = Math.ceil(count / PAGE_SIZE);
+
+            // order theo 'id' (khoá chính, đã có index sẵn) để Postgres dùng
+            // index scan thay vì sort toàn bảng cho mỗi trang.
+            const fetchPage = (i: number) => {
+              const from = i * PAGE_SIZE;
+              return db
+                .from('sales_data')
+                .select('*')
+                .order('id', { ascending: true })
+                .range(from, from + PAGE_SIZE - 1);
+            };
+
+            // Giới hạn số request chạy đồng thời thay vì bắn hết cùng lúc,
+            // tránh áp đảo connection pool phía Supabase (gói Free có giới
+            // hạn kết nối thấp) — chạy theo từng đợt CONCURRENCY request.
+            const CONCURRENCY = 6;
+            const pageIndexes = Array.from({ length: totalPages }, (_, i) => i);
+            for (let i = 0; i < pageIndexes.length; i += CONCURRENCY) {
+              const batch = pageIndexes.slice(i, i + CONCURRENCY);
+              const results = await Promise.all(batch.map(fetchPage));
+              for (const { data, error } of results) {
+                if (error) {
+                  console.error('Supabase fetch error (1 trang):', error);
+                  continue;
+                }
+                // Đọc dòng từ Supabase: spread toàn bộ trường DB ra như row thường.
+                // source_tag được ghi đè rõ ràng để bucketByTag hoạt động đúng.
+                // Tương thích ngược: nếu có cột `payload` (từ schema cũ) thì
+                // ưu tiên dùng payload, nếu không thì dùng thẳng cột DB.
+                if (data) {
+                  allData = allData.concat(
+                    data.map((d: any) => ({
+                      ...(d.payload && typeof d.payload === 'object' ? d.payload : d),
+                      source_tag: d.source_tag,
+                      // Ensure month field is also accessible as 'date' for
+                      // components that read r.date (e.g. PerCapitaTab.buildLabelOrder)
+                      date: d.date ?? (d.payload?.date) ?? d.month ?? (d.payload?.month),
+                    }))
+                  );
+                }
+              }
             }
           }
 
           if (allData.length > 0) {
-            // Supabase có dữ liệu → dùng ngay, cập nhật cache local
+            // Supabase có dữ liệu → dùng ngay (thay thế cache nếu đang hiện),
+            // cập nhật lại cache local cho lần F5 sau.
             const { sales, manpower, targetActual } = bucketByTag(allData);
             setSalesRows(sales);
             setManpowerRows(manpower);
@@ -225,36 +304,23 @@ export default function App() {
               localStorage.setItem('cached_dashboard_buckets', JSON.stringify({ sales, manpower, targetActual }));
             } catch (e) { /* ignore */ }
             hasHydratedRef.current = true;
-            console.log('Loaded from Supabase:', allData.length, 'rows');
+            setIsInitialDataLoading(false);
+            console.log('Đã đồng bộ dữ liệu mới nhất từ Supabase:', allData.length, 'rows');
             return;
           }
-          console.log('Supabase connected but table is empty — falling back to local cache');
+          console.log('Supabase connected but table is empty — giữ nguyên cache (nếu có) hoặc để trống');
         } catch (err) {
           console.error('Supabase exception:', err);
         }
       } else {
-        console.warn('Supabase not configured — falling back to local cache');
+        console.warn('Supabase not configured — giữ nguyên cache (nếu có) hoặc để trống');
       }
 
-      // ── BƯỚC 2: Fallback — dùng cache local nếu Supabase không có dữ liệu ─
-      try {
-        const cachedBuckets = localStorage.getItem('cached_dashboard_buckets');
-        if (cachedBuckets) {
-          const parsed = JSON.parse(cachedBuckets);
-          setSalesRows(parsed.sales || []);
-          setManpowerRows(parsed.manpower || []);
-          setTargetActualRows(parsed.targetActual || []);
-          setAllRows([...(parsed.sales || []), ...(parsed.manpower || []), ...(parsed.targetActual || [])]);
-          setFilename('Cached Local Database');
-          setScreen('dashboard');
-          hasHydratedRef.current = true;
-          console.log('Loaded from local cache (3-bucket)');
-          return;
-        }
-      } catch (e) { /* ignore */ }
-
-      // ── BƯỚC 3: Không có dữ liệu nào ─────────────────────────────────────
+      // Nếu BƯỚC 0 đã hiện cache thành công mà Supabase lại lỗi/rỗng, KHÔNG
+      // xoá dashboard đang hiển thị — cứ để nguyên dữ liệu cache đó.
+      // Nếu chưa hề có cache nào (lần đầu mở máy này) thì để trống.
       hasHydratedRef.current = true;
+      setIsInitialDataLoading(false);
     }
     loadSupabaseData();
   }, []);
@@ -270,13 +336,16 @@ export default function App() {
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
-  // ── Đồng bộ dữ liệu upload thủ công lên Supabase ────────────────────────
-  // Trước đây upload thủ công CHỈ lưu vào localStorage. Vì loadSupabaseData
-  // luôn ưu tiên Supabase khi F5, dữ liệu upload tay sẽ "biến mất" khỏi màn
-  // hình (bị Supabase cũ/rỗng ghi đè) dù vẫn còn trong cache local. Hàm này
-  // đẩy ngay dữ liệu vừa upload lên Supabase để lần load sau luôn thấy nó.
+  // ── Đồng bộ dữ liệu upload lên Supabase ─────────────────────────────────
   // Chiến lược "replace-theo-bucket": mỗi lần upload thay thế toàn bộ dữ
   // liệu của đúng bucket đó trên Supabase, không cộng dồn/trùng lặp.
+  //
+  // ── FIX ROOT CAUSE "biểu đồ Mục 3 không hiện sau F5" ────────────────────
+  // Phiên bản cũ dùng { source_tag, payload: r } nhưng bảng sales_data có
+  // NOT NULL trên model/division/year/month/value. Mọi INSERT đều lỗi
+  // "null value in column 'model' violates not-null constraint" — dữ liệu
+  // KHÔNG BAO GIỜ lên được Supabase, biểu đồ F5 luôn trống.
+  // Fix: map Excel columns → schema columns đúng cột, đúng NOT NULL.
   const syncBucketToSupabase = useCallback(async (
     rows: DataRow[],
     bucketTag: 'Sales' | 'Manpower' | 'TargetActual'
@@ -288,10 +357,6 @@ export default function App() {
     setSyncStatus('syncing');
     try {
       // 1) Xoá toàn bộ dòng CŨ thuộc đúng bucket này trước khi insert dòng mới.
-      //    Riêng bucket 'Sales': dữ liệu Sales cũ trên Supabase có thể CHƯA có
-      //    cột source_tag (vì cột 'origin' của Sales là xuất xứ thật như
-      //    "Vietnam"/"Korea", không phải tag phân loại) → phải xoá cả những
-      //    dòng source_tag IS NULL, nếu không sẽ bị trùng lặp dữ liệu Sales.
       const deleteQuery = supabase.from('sales_data').delete();
       const { error: deleteError } = bucketTag === 'Sales'
         ? await deleteQuery.or('source_tag.eq.Sales,source_tag.is.null')
@@ -303,19 +368,88 @@ export default function App() {
         return;
       }
 
-      // 2) Gắn source_tag cho từng dòng trước khi insert, để lần load sau
-      //    (hàm bucketByTag) phân loại đúng bucket một cách chắc chắn.
-      const taggedRows = rows.map(r => ({ ...r, source_tag: bucketTag }));
+      // 2) Helper: lấy giá trị field case-insensitive (Excel thường Capitalize đầu)
+      const MONTH_ABBRS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+      function guessYear(rawDate: any): number {
+        if (rawDate instanceof Date) return rawDate.getFullYear();
+        const s = String(rawDate ?? '').trim().toUpperCase();
+        if (MONTH_ABBRS.includes(s) || /^W\d{1,2}$/.test(s) || /^\d{1,2}[/-]\d{1,2}$/.test(s)) {
+          return new Date().getFullYear();
+        }
+        const n = parseInt(s, 10);
+        return (!isNaN(n) && n > 2000 && n < 2100) ? n : new Date().getFullYear();
+      }
 
-      // 3) Insert theo từng lô để tránh vượt giới hạn payload của Supabase.
+      function gv(r: any, ...keys: string[]): any {
+        for (const k of keys) {
+          const v = r[k] ?? r[k.charAt(0).toUpperCase() + k.slice(1)] ?? r[k.toLowerCase()];
+          if (v !== undefined && v !== null && v !== '') return v;
+        }
+        return undefined;
+      }
+
+      // 3) Map Excel rows → schema columns theo từng bucket
+      let taggedRows: Record<string, any>[];
+
+      if (bucketTag === 'Manpower') {
+        taggedRows = rows.map(r => {
+          const rawDate = gv(r, 'date', 'Date', 'month', 'Month') ?? '';
+          return {
+            source_tag: 'Manpower',
+            model:    String(gv(r, 'model', 'Model') ?? '').trim() || 'N/A',
+            origin:   'Manpower',
+            customer: String(gv(r, 'customer', 'Customer') ?? '').trim(),
+            type:     String(gv(r, 'type', 'Type') ?? '').trim(),
+            division: 'production',
+            year:     guessYear(rawDate),
+            month:    String(rawDate).trim() || 'N/A',
+            value:    Number(gv(r, 'value', 'Value') ?? 0),
+          };
+        });
+      } else if (bucketTag === 'TargetActual') {
+        taggedRows = rows.map(r => {
+          const rawDate = gv(r, 'date', 'Date', 'month', 'Month') ?? '';
+          return {
+            source_tag: 'TargetActual',
+            model:    String(gv(r, 'model', 'Model') ?? '').trim() || 'N/A',
+            origin:   'TargetActual',
+            customer: String(gv(r, 'customer', 'Customer') ?? '').trim(),
+            type:     String(gv(r, 'type', 'Type', 'type1', 'Type1') ?? '').trim(),
+            division: String(gv(r, 'division', 'Division') ?? '').trim() || 'sales',
+            year:     Number(gv(r, 'year', 'Year') ?? guessYear(rawDate)),
+            month:    String(rawDate).trim() || 'N/A',
+            value:    Number(gv(r, 'value', 'Value') ?? 0),
+          };
+        });
+      } else {
+        // Sales bucket
+        taggedRows = rows.map(r => ({
+          source_tag: 'Sales',
+          model:    String(gv(r, 'model', 'Model') ?? '').trim() || 'N/A',
+          origin:   String(gv(r, 'origin', 'Origin', '출하지') ?? '').trim(),
+          customer: String(gv(r, 'customer', 'Customer', 'custom', 'Custom', 'CUSTOM') ?? '').trim(),
+          type:     String(gv(r, 'type', 'Type', 'type1', 'Type1') ?? '').trim(),
+          division: String(gv(r, 'division', 'Division') ?? '').trim() || 'sales',
+          year:     Number(gv(r, 'year', 'Year') ?? new Date().getFullYear()),
+          month:    String(gv(r, 'month', 'Month') ?? '').trim() || 'N/A',
+          value:    Number(gv(r, 'value', 'Value', "q'ty", "Q'TY") ?? 0),
+        }));
+      }
+
+      // 4) Insert theo từng lô để tránh vượt giới hạn payload Supabase.
       const CHUNK_SIZE = 500;
       for (let i = 0; i < taggedRows.length; i += CHUNK_SIZE) {
         const chunk = taggedRows.slice(i, i + CHUNK_SIZE);
         const { error: insertError } = await supabase.from('sales_data').insert(chunk);
         if (insertError) {
-          console.error(`Supabase insert error (${bucketTag}) tại lô bắt đầu dòng ${i}:`, insertError);
+          console.error(`Supabase insert error (${bucketTag}) tại lô dòng ${i}:`, insertError);
+          alert(
+            `⚠️ Đồng bộ Cloud thất bại (${bucketTag}, dòng ${i}–${i + chunk.length}).\n` +
+            `Dữ liệu vẫn hiển thị tạm trên máy này nhưng sẽ MẤT khi F5.\n` +
+            `Chi tiết lỗi: ${insertError.message}`
+          );
           setSyncStatus('error');
-          return; // các lô insert trước đó đã lên thành công, dừng tại đây
+          return;
         }
       }
 
@@ -327,32 +461,71 @@ export default function App() {
     }
   }, []);
 
-  // Parse sheet from workbook
-  const parseSheet = useCallback((wb: any, sheetName: string) => {
+  // Parse TOÀN BỘ workbook (mọi sheet), không chỉ sheet đầu tiên.
+  // ── FIX "Mục 3 không hiện dữ liệu ở Sheet 2" ────────────────────────────
+  // Root cause: hàm cũ (parseSheet) chỉ đọc đúng 1 sheet duy nhất —
+  // wb.SheetNames[0] — do handleFileSelected luôn gọi parseSheet(wb,
+  // wb.SheetNames[0]). File Manpower thường có Sheet 1 chứa dòng
+  // type="...ManPower AVG" (nuôi Tab 1 - 근무 인력 현황) và Sheet 2 chứa dòng
+  // type="인당생산수" (nuôi Tab 2 - Per Capita) — Sheet 2 bị bỏ qua hoàn
+  // toàn nên PerCapitaTab luôn thấy rows rỗng → "Không có dữ liệu nhân lực"
+  // dù Tab 1 vẫn có dữ liệu bình thường (vì Tab 1 chỉ cần Sheet 1).
+  // Fix: duyệt qua TẤT CẢ wb.SheetNames, gộp toàn bộ rows (và union headers)
+  // của mọi sheet lại làm MỘT trước khi phân loại bucket — vì trong thực tế
+  // 1 lần upload luôn là 1 file cho 1 dashboard/bucket, chỉ khác nhau ở việc
+  // dữ liệu được tách ra nhiều sheet cho gọn (theo tầng ngày/tuần/tháng hay
+  // theo loại chỉ số), không phải nhiều bucket khác nhau trong cùng 1 file.
+  const parseWorkbook = useCallback((wb: any) => {
     const XLSX_lib = XLSX;
-    const sheet = wb.Sheets[sheetName];
-    const rawHeaders = XLSX_lib.utils.sheet_to_json(sheet, { header: 1, defval: null })[0] as any[] || [];
-    const filteredHeaders = rawHeaders
-      .filter((h: any) => h !== null && h !== undefined && String(h).trim() !== '')
-      .map((h: any) => String(h).trim());
-    const parsedRowsRaw = XLSX_lib.utils.sheet_to_json(sheet, { defval: null }) as DataRow[];
-    const parsedRows = parsedRowsRaw.map(row => {
-      const trimmedRow: DataRow = {};
-      Object.keys(row).forEach(key => {
-        trimmedRow[key.trim()] = row[key];
+    const sheetNames: string[] = wb.SheetNames || [];
+
+    let combinedHeaders: string[] = [];
+    let combinedRows: DataRow[] = [];
+
+    sheetNames.forEach((sheetName: string) => {
+      const sheet = wb.Sheets[sheetName];
+      if (!sheet) return;
+      const rawHeaders = XLSX_lib.utils.sheet_to_json(sheet, { header: 1, defval: null })[0] as any[] || [];
+      const filteredHeaders = rawHeaders
+        .filter((h: any) => h !== null && h !== undefined && String(h).trim() !== '')
+        .map((h: any) => String(h).trim());
+      if (filteredHeaders.length === 0) return; // sheet rỗng/không có header → bỏ qua
+
+      const parsedRowsRaw = XLSX_lib.utils.sheet_to_json(sheet, { defval: null }) as DataRow[];
+      const parsedRows = parsedRowsRaw.map(row => {
+        const trimmedRow: DataRow = {};
+        Object.keys(row).forEach(key => {
+          trimmedRow[key.trim()] = row[key];
+        });
+        return trimmedRow;
       });
-      return trimmedRow;
+      if (parsedRows.length === 0) return;
+
+      // Union headers: giữ thêm cột mới nếu sheet sau có cột mà sheet trước
+      // chưa có (VD Sheet2 chỉ thêm vài cột phụ so với Sheet1).
+      filteredHeaders.forEach(h => { if (!combinedHeaders.includes(h)) combinedHeaders.push(h); });
+      combinedRows = combinedRows.concat(parsedRows);
     });
+
+    return { headers: combinedHeaders, rows: combinedRows };
+  }, []);
+
+  // Giữ tên `parseSheet` cho phần còn lại của pipeline (mapping, bucket
+  // routing...) không đổi — chỉ thay nguồn headers/rows đầu vào từ "1 sheet"
+  // sang "toàn bộ workbook đã gộp".
+  const parseSheet = useCallback((wb: any) => {
+    const { headers: filteredHeaders, rows: parsedRows } = parseWorkbook(wb);
     const types = detectColumns(parsedRows, filteredHeaders);
 
     setHeaders(filteredHeaders);
     setAllRows(parsedRows);
 
-    // Route sheet vừa upload vào ĐÚNG bucket của nó, KHÔNG đụng tới 2 bucket
-    // còn lại — đây là fix trực tiếp cho bug "upload Manpower thì Mục 1 mất data".
-    // Định tuyến data vào đúng bucket VÀ tự động chuyển sang tab phù hợp
-    // sau khi user upload thủ công. Supabase initial load KHÔNG tự chuyển
-    // (đã bỏ auto-switch effect) → trang luôn mở ở Mục 1 mặc định.
+    // Route dữ liệu (đã gộp mọi sheet) vào ĐÚNG bucket của nó, KHÔNG đụng tới
+    // 2 bucket còn lại — đây là fix trực tiếp cho bug "upload Manpower thì
+    // Mục 1 mất data". Định tuyến data vào đúng bucket VÀ tự động chuyển
+    // sang tab phù hợp sau khi user upload thủ công. Supabase initial load
+    // KHÔNG tự chuyển (đã bỏ auto-switch effect) → trang luôn mở ở Mục 1
+    // mặc định.
     const bucket = detectBucket(filteredHeaders, parsedRows);
     if (bucket === 'manpower') {
       setManpowerRows(parsedRows);
@@ -378,12 +551,12 @@ export default function App() {
       currency: 'VND',
     });
     setScreen('dashboard');
-  }, [syncBucketToSupabase]);
+  }, [parseWorkbook, syncBucketToSupabase]);
 
   const handleFileSelected = useCallback((file: File, wb: any) => {
     setFilename(file.name);
     if (wb.SheetNames.length > 0) {
-      parseSheet(wb, wb.SheetNames[0]);
+      parseSheet(wb);
     }
   }, [parseSheet]);
 
@@ -492,31 +665,33 @@ export default function App() {
             lang={lang}
           />
           
-          <main className="app-content" style={{ paddingTop: '48px', position: 'relative' }}>
+          <main className="app-content" style={{ position: 'relative' }}>
 
           {/* ── Global header bar: Lang + Theme ─────────────────────────────────
-              Dùng position:fixed nhưng giới hạn left = sidebar width, để nó
-              chỉ nổi trên vùng content (không đè sidebar). app-content có
-              paddingTop = đúng chiều cao bar này → nội dung KHÔNG BAO GIỜ
-              bị che dù scroll bao nhiêu, vì bar không nằm trong luồng scroll
-              của content nhưng content đã "nhường" đúng khoảng trống cho nó. */}
+              LỊCH SỬ FIX:
+              (1) Bar gốc dùng position:fixed + height CỨNG 48px khớp tay với
+                  paddingTop CỨNG 48px trên app-content → 2 số lệch nhau làm
+                  control bên trong tràn xuống, đè lên hàng đầu mọi tab.
+              (2) Đã đổi sang position:'sticky' để tự "chiếm chỗ" đúng theo
+                  chiều cao thật — hết lỗi tràn (1). NHƯNG sticky vẫn giữ
+                  hành vi "dính ở đầu khi cuộn" (giống fixed): nội dung phía
+                  dưới cuộn LÊN thì vẫn chui XUỐNG DƯỚI bar này về mặt thị
+                  giác → đúng như phản ánh "cuộn xuống là đè lên các mục
+                  khác". Người dùng không cần bar này dính lại khi cuộn.
+              FIX CUỐI: bỏ hẳn position đặc biệt — để bar nằm trong luồng
+              layout bình thường (static/relative mặc định) như mọi phần tử
+              khác. Nó chỉ hiện ở đầu trang và CUỘN ĐI CÙNG nội dung, không
+              bao giờ còn nằm "nổi" trên bất cứ thứ gì nữa. */}
           <div
             style={{
-              position: 'fixed',
-              top: 0,
-              left: sidebarCollapsed ? 68 : 260,
-              right: 0,
-              height: '48px',
-              zIndex: 500,
               display: 'flex',
               justifyContent: 'flex-end',
               alignItems: 'center',
+              flexWrap: 'wrap',
               padding: '6px 20px',
               boxSizing: 'border-box',
               background: 'var(--surface, #fff)',
               borderBottom: '1px solid var(--border-soft, #e5e7eb)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
-              transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
             <GlobalHeaderControls
@@ -587,7 +762,27 @@ export default function App() {
               </div>
             )}
 
-            {activeViewId === 'overview' && dashboardMode === 'marketing' && (
+            {activeViewId === 'overview' && isInitialDataLoading && (
+              <div
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  justifyContent: 'center', minHeight: '60vh', gap: '16px',
+                }}
+              >
+                <div className="spinner" style={{
+                  width: '36px', height: '36px', borderRadius: '50%',
+                  border: '3px solid var(--border-soft, #e5e7eb)',
+                  borderTopColor: 'var(--primary, #6366f1)',
+                  animation: 'spin 0.8s linear infinite',
+                }} />
+                <p style={{ color: 'var(--text-2)' }}>
+                  {lang === 'vi' ? 'Đang tải dữ liệu...' : lang === 'en' ? 'Loading data...' : '데이터 로딩 중...'}
+                </p>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              </div>
+            )}
+
+            {activeViewId === 'overview' && !isInitialDataLoading && dashboardMode === 'marketing' && (
               <div className="dashboard-screen">
                 <header className="topbar">
                   <div className="topbar-left">
