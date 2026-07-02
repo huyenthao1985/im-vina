@@ -1259,11 +1259,11 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
             <div key={i} className="kpi-card">
               <div className="kpi-card-header">
                 <div className="kpi-card-icon" style={{ background: kpi.bg, color: kpi.color }}>{kpi.icon}</div>
-                <div className="kpi-card-label" style={{ fontSize: '15px', fontWeight: 700 }}>{kpi.label}</div>
+                <div className="kpi-card-label" style={{ fontSize: '12px', fontWeight: 700 }}>{kpi.label}</div>
               </div>
-              <div className="kpi-card-value" style={{ fontSize: '38px' }}>
+              <div className="kpi-card-value" style={{ fontSize: '30px' }}>
                 {kpi.value}
-                <span style={{ fontSize: '20px', color: 'var(--text-3)', marginLeft: '4px' }}>{kpi.unit}</span>
+                <span style={{ fontSize: '16px', color: 'var(--text-3)', marginLeft: '4px' }}>{kpi.unit}</span>
               </div>
             </div>
           ))}
