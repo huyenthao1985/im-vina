@@ -243,6 +243,27 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   const t = translations[lang];
   const isLightMode = theme === 'light';
 
+  // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
+  // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
+  // tại thời điểm effect vẽ chart chạy lần đầu. Guard cũ chỉ kiểm tra
+  // `typeof window.Plotly === 'undefined'` rồi bail ra — và vì không có gì
+  // trigger effect chạy lại sau khi Plotly tải xong, chart bị TRỐNG VĨNH VIỄN
+  // dù data đã có sẵn. Fix: poll tới khi Plotly sẵn sàng rồi set state để
+  // effect vẽ chart tự chạy lại.
+  const [plotlyReady, setPlotlyReady] = useState<boolean>(
+    typeof window !== 'undefined' && !!(window as any).Plotly
+  );
+  useEffect(() => {
+    if (plotlyReady) return;
+    const id = setInterval(() => {
+      if (typeof window !== 'undefined' && (window as any).Plotly) {
+        setPlotlyReady(true);
+        clearInterval(id);
+      }
+    }, 150);
+    return () => clearInterval(id);
+  }, [plotlyReady]);
+
   // Mapping States
   const [mapModel, setMapModel] = useState<string>('');
   const [mapCustomer, setMapCustomer] = useState<string>('');
@@ -470,7 +491,64 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       }).filter((r): r is NonNullable<typeof r> => r !== null && r.model !== '');
     }
 
-    // 1.3 Fallback to default user-defined mapping
+    // 1.3 Supabase TargetActual format (được reconstruct từ nhiều dòng phân mảnh lưu trên cloud)
+    const isSupabaseTargetActual = rows.some(r => r.source_tag === 'TargetActual' || r.origin === 'TargetActual');
+
+    if (isSupabaseTargetActual) {
+      const grouped: Record<string, any> = {};
+      const monthsArr = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+      
+      rows.forEach(r => {
+        const model = String(r.model || r.Model || '').trim();
+        if (!model) return;
+        const customer = String(r.customer || r.Customer || 'Unknown').trim();
+        const month = String(r.month || r.Month || 'JAN').toUpperCase();
+        const year = Number(r.year || r.Year) || 2026;
+        
+        const key = `${model}|${customer}|${month}|${year}`;
+        if (!grouped[key]) {
+          const mIdx = monthsArr.indexOf(month);
+          const monthNum = mIdx !== -1 ? mIdx + 1 : 1;
+          grouped[key] = {
+            model,
+            customer,
+            date: new Date(year, mIdx !== -1 ? mIdx : 0, 1),
+            month,
+            qtyTarget: 0,
+            qtyActual: 0,
+            amtTarget: 0,
+            amtActual: 0,
+            monthNum,
+            year,
+            week: 'W1' as const
+          };
+        }
+        
+        const val = Number(r.value || r.Value) || 0;
+        const div = String(r.division || r.Division || '').toUpperCase();
+        const typeStr = String(r.type || r.Type || '').toLowerCase();
+        
+        if (div === 'SHIPMENT' || div === 'SUB1' || div === 'SUB2') {
+          if (typeStr === 'plan') {
+            grouped[key].qtyTarget += val;
+          }
+        } else if (div === 'OIS') {
+          if (typeStr === 'final sales' || typeStr === 'final_sales' || typeStr === 'finalsales') {
+            grouped[key].qtyActual += val;
+          }
+        } else if (div.startsWith('AMT')) {
+          if (typeStr === 'plan') {
+            grouped[key].amtTarget += val;
+          } else if (typeStr === 'actual') {
+            grouped[key].amtActual += val;
+          }
+        }
+      });
+      
+      return Object.values(grouped);
+    }
+
+    // 1.4 Fallback to default user-defined mapping
     if (!mapModel || !mapValue) return [];
 
     return rows.map(r => {
@@ -569,15 +647,23 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
 
   const defaultStartDateStr = useMemo(() => {
     if (!dateBounds.max) return '';
-    const y = dateBounds.max.getFullYear();
-    const m = dateBounds.max.getMonth() + 1;
+    const now = new Date();
+    // Ưu tiên "hôm nay" làm mốc mặc định nếu nó nằm trong phạm vi dữ liệu hiện có.
+    // Nếu dữ liệu không phủ tới ngày hiện tại (VD chỉ có data quá khứ hoặc chỉ có
+    // kế hoạch tương lai) → fallback về tháng của ngày mới nhất trong data như cũ.
+    const useToday = !!dateBounds.min && now >= dateBounds.min && now <= dateBounds.max;
+    const refDate = useToday ? now : dateBounds.max;
+    const y = refDate.getFullYear();
+    const m = refDate.getMonth() + 1;
     return formatDateToYYYYMMDD(getDefaultStartDate(m, y));
-  }, [dateBounds.max]);
+  }, [dateBounds.max, dateBounds.min]);
 
   const defaultEndDateStr = useMemo(() => {
     if (!dateBounds.max) return '';
-    return formatDateToYYYYMMDD(dateBounds.max);
-  }, [dateBounds.max]);
+    const now = new Date();
+    const useToday = !!dateBounds.min && now >= dateBounds.min && now <= dateBounds.max;
+    return formatDateToYYYYMMDD(useToday ? now : dateBounds.max);
+  }, [dateBounds.max, dateBounds.min]);
 
   const selectedMonthDays = useMemo(() => {
     const dStr = selectedDateEnd || defaultEndDateStr;
@@ -924,23 +1010,74 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   }, [bottomTableRows]);
 
   // Handle Save to Cloud
+  // CHỈ xóa/ghi các dòng có source_tag = 'TargetActual' trong bảng dùng chung
+  // 'sales_data' — KHÔNG xóa toàn bộ bảng (bug cũ), để tránh ghi đè dữ liệu
+  // Sales / Manpower đã lưu trước đó. Vẫn giữ origin: 'TargetActual' để tương
+  // thích ngược với dữ liệu cloud cũ, nhưng source_tag mới là cột dùng để lọc.
   const handleSaveToCloud = async () => {
     if (!supabase) return;
     setIsSaving(true);
     try {
-      // Clear previous database rows and insert new ones
-      await supabase.from('sales_data').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      // Clear only this dashboard's rows
+      await supabase.from('sales_data').delete().eq('source_tag', 'TargetActual');
       
-      // Map to db schema format
-      const dbRows = normalizedRows.map(r => ({
-        model: r.model,
-        customer: r.customer,
-        month: r.month,
-        division: 'sales', // Use sales division as placeholder or customize
-        year: 2026, // Default year
-        value: r.amtActual, // Store AMT actual
-        origin: 'TargetActual'
-      }));
+      // Map to db schema format - split each normalized row into up to 4 rows
+      const dbRows: any[] = [];
+      normalizedRows.forEach(r => {
+        const year = r.year || 2026;
+        if (r.qtyTarget > 0) {
+          dbRows.push({
+            model: r.model,
+            customer: r.customer,
+            month: r.month,
+            division: 'Shipment',
+            type: 'Plan',
+            year,
+            value: r.qtyTarget,
+            origin: 'TargetActual',
+            source_tag: 'TargetActual'
+          });
+        }
+        if (r.qtyActual > 0) {
+          dbRows.push({
+            model: r.model,
+            customer: r.customer,
+            month: r.month,
+            division: 'OIS',
+            type: 'Final Sales',
+            year,
+            value: r.qtyActual,
+            origin: 'TargetActual',
+            source_tag: 'TargetActual'
+          });
+        }
+        if (r.amtTarget > 0) {
+          dbRows.push({
+            model: r.model,
+            customer: r.customer,
+            month: r.month,
+            division: 'AMT K$',
+            type: 'Plan',
+            year,
+            value: r.amtTarget,
+            origin: 'TargetActual',
+            source_tag: 'TargetActual'
+          });
+        }
+        if (r.amtActual > 0) {
+          dbRows.push({
+            model: r.model,
+            customer: r.customer,
+            month: r.month,
+            division: 'AMT K$',
+            type: 'Actual',
+            year,
+            value: r.amtActual,
+            origin: 'TargetActual',
+            source_tag: 'TargetActual'
+          });
+        }
+      });
 
       const BATCH_SIZE = 500;
       for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
@@ -952,7 +1089,13 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           return;
         }
       }
-      alert(lang === 'vi' ? 'Đã đồng bộ dữ liệu Target-Actual lên Supabase Cloud!' : 'Synced Target-Actual data to Supabase!');
+      alert(lang === 'vi' ? 'Đã đồng bộ dữ liệu Target-Actual lên Supabase Cloud!\n(Khi mở lại trang, dữ liệu sẽ được tải tự động từ Supabase)' : 'Synced Target-Actual data to Supabase!\n(Data will auto-load from Supabase on next open)');
+      // Xóa cờ và cache local để lần reload tiếp theo tải dữ liệu từ Supabase
+      try {
+        localStorage.removeItem('manual_upload_flag');
+        localStorage.removeItem('cached_sales_data');
+        localStorage.removeItem('cached_dashboard_buckets');
+      } catch (e) { /* ignore */ }
     } catch (err: any) {
       alert('Error: ' + err.message);
     }
@@ -968,7 +1111,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       salesQtyChartWidth: document.getElementById('salesQtyChart')?.clientWidth,
       salesQtyChartHeight: document.getElementById('salesQtyChart')?.clientHeight,
     });
-    if (filteredRecords.length === 0 || typeof window.Plotly === 'undefined') return;
+    if (filteredRecords.length === 0 || !plotlyReady) return;
 
     const isDark = theme === 'dark';
     const axisTextColor = typeof window !== 'undefined'
@@ -1487,7 +1630,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
 
     window.Plotly.newPlot('customAmtChart', [traceDonutAmt] as any, layoutDonutAmt as any, { displayModeBar: false, responsive: true });
 
-  }, [filteredRecords, lang, theme, selectedDateStart, selectedDateEnd, viewMode, activeTab]);
+  }, [filteredRecords, lang, theme, selectedDateStart, selectedDateEnd, viewMode, activeTab, plotlyReady]);
 
   // Aggregate values for quick statistics
   const summaryStats = useMemo(() => {

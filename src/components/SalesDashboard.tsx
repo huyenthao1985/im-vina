@@ -36,6 +36,27 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   setLang: _setLang,
   onFileSelected
 }) => {
+  // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
+  // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
+  // tại thời điểm effect vẽ chart chạy lần đầu. Guard cũ chỉ kiểm tra
+  // `typeof window.Plotly === 'undefined'` rồi bail ra — và vì không có gì
+  // trigger effect chạy lại sau khi Plotly tải xong, chart bị TRỐNG VĨNH VIỄN
+  // dù data đã có sẵn. Fix: poll tới khi Plotly sẵn sàng rồi set state để
+  // effect vẽ chart tự chạy lại.
+  const [plotlyReady, setPlotlyReady] = useState<boolean>(
+    typeof window !== 'undefined' && !!window.Plotly
+  );
+  useEffect(() => {
+    if (plotlyReady) return;
+    const id = setInterval(() => {
+      if (typeof window !== 'undefined' && window.Plotly) {
+        setPlotlyReady(true);
+        clearInterval(id);
+      }
+    }, 150);
+    return () => clearInterval(id);
+  }, [plotlyReady]);
+
   // ── Stable rows cache ──────────────────────────────────────────────────────
   // Mục 1 nhận rows từ allRows global. Khi user upload file ở Mục 3 (Test_3),
   // allRows bị thay thế bởi dữ liệu Manpower không có cột 'division'
@@ -133,15 +154,24 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [isSaving, setIsSaving] = useState(false);
 
+  // Save to Cloud: CHỈ xóa/ghi các dòng có source_tag = 'Sales' trong bảng dùng chung
+  // 'sales_data' — KHÔNG xóa toàn bộ bảng (bug cũ), để tránh ghi đè dữ liệu
+  // Manpower / Target-Actual đã lưu trước đó.
+  // Lưu ý: KHÔNG dùng cột 'origin' để đánh dấu nguồn dữ liệu vì 'origin' ở đây
+  // là dữ liệu nghiệp vụ thật (xuất xứ/출하지 theo từng dòng Sales) — nếu gán
+  // origin: 'Sales' sẽ ghi đè mất giá trị xuất xứ thật của từng dòng.
+  // Dùng cột riêng 'source_tag' để phân vùng dữ liệu giữa các dashboard.
   const handleSaveToCloud = async () => {
     if (!supabase) return;
     setIsSaving(true);
     try {
-      await supabase.from('sales_data').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      
+      await supabase.from('sales_data').delete().eq('source_tag', 'Sales');
+
+      const taggedRows = normalizedRows.map(r => ({ ...r, source_tag: 'Sales' }));
+
       const BATCH_SIZE = 500;
-      for (let i = 0; i < normalizedRows.length; i += BATCH_SIZE) {
-        const batch = normalizedRows.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < taggedRows.length; i += BATCH_SIZE) {
+        const batch = taggedRows.slice(i, i + BATCH_SIZE);
         const { error } = await supabase.from('sales_data').insert(batch);
         if (error) {
           console.error("Save error:", error);
@@ -150,12 +180,19 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
           return;
         }
       }
-      alert('Đã đồng bộ thành công dữ liệu lên Supabase Cloud!');
+      // Xóa cờ và cache local để lần reload tiếp theo tải dữ liệu từ Supabase
+      try {
+        localStorage.removeItem('manual_upload_flag');
+        localStorage.removeItem('cached_sales_data');
+        localStorage.removeItem('cached_dashboard_buckets');
+      } catch (e) { /* ignore */ }
+      alert('Đã đồng bộ thành công dữ liệu lên Supabase Cloud!\n(Khi mở lại trang, dữ liệu sẽ được tải tự động từ Supabase)');
     } catch (err: any) {
       alert('Lỗi: ' + err.message);
     }
     setIsSaving(false);
   };
+
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -335,9 +372,23 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   const ttl = useMemo(() => filteredRecords.filter(r => r.month === 'TTL'), [filteredRecords]);
   
   const sumBy = (arr: any[], div: string) => arr.filter(r => r.division === div).reduce((s, r) => s + r.value, 0);
-  const totalSales = useMemo(() => sumBy(ttl, 'sales'), [ttl]);
-  const totalShipment = useMemo(() => sumBy(ttl, 'shipment'), [ttl]);
-  const totalProduction = useMemo(() => sumBy(ttl, 'production'), [ttl]);
+  // Fallback khi không có dòng TTL (vd dữ liệu Supabase chỉ có monthly rows):
+  // KPI card và chart không bị hiện 0 trống nữa mà tựng hợp từ monthly.
+  const totalSales = useMemo(() => {
+    const v = sumBy(ttl, 'sales');
+    if (v > 0) return v;
+    return filteredRecords.filter(r => r.division === 'sales' && r.month !== 'TTL').reduce((s, r) => s + r.value, 0);
+  }, [ttl, filteredRecords]);
+  const totalShipment = useMemo(() => {
+    const v = sumBy(ttl, 'shipment');
+    if (v > 0) return v;
+    return filteredRecords.filter(r => r.division === 'shipment' && r.month !== 'TTL').reduce((s, r) => s + r.value, 0);
+  }, [ttl, filteredRecords]);
+  const totalProduction = useMemo(() => {
+    const v = sumBy(ttl, 'production');
+    if (v > 0) return v;
+    return filteredRecords.filter(r => r.division === 'production' && r.month !== 'TTL').reduce((s, r) => s + r.value, 0);
+  }, [ttl, filteredRecords]);
 
   // YoY Growth logic
   const growthData = useMemo(() => {
@@ -541,7 +592,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
 
   // Render Plotly charts dynamically
   useEffect(() => {
-    if (filteredRecords.length === 0 || typeof window.Plotly === 'undefined') return;
+    if (filteredRecords.length === 0 || !plotlyReady) return;
 
     try {
       const isDark = theme === 'dark';
@@ -565,6 +616,17 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
         ttl.filter(r => r.division === 'shipment').forEach(r => {
           shipByYear[r.year] = (shipByYear[r.year] || 0) + r.value;
         });
+        // Fallback khi không có dòng TTL: tổng hợp từ monthly non-TTL
+        if (Object.keys(salesByYear).length === 0) {
+          filteredRecords.filter(r => r.division === 'sales' && r.month !== 'TTL').forEach(r => {
+            salesByYear[r.year] = (salesByYear[r.year] || 0) + r.value;
+          });
+        }
+        if (Object.keys(shipByYear).length === 0) {
+          filteredRecords.filter(r => r.division === 'shipment' && r.month !== 'TTL').forEach(r => {
+            shipByYear[r.year] = (shipByYear[r.year] || 0) + r.value;
+          });
+        }
         const yrsList = Object.keys(salesByYear).map(Number).sort((a, b) => a - b);
         const chartYears = yrsList.length ? yrsList : Object.keys(shipByYear).map(Number).sort((a, b) => a - b);
         xList = chartYears.map(String);
@@ -1029,7 +1091,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
       errorDiv.innerText = "Error rendering charts: " + err.message + "\nStack: " + err.stack;
       document.querySelector('.dash-container')?.prepend(errorDiv);
     }
-  }, [filteredRecords, chartFilteredRecords, viewMode, theme, lang, t, selectedPeriod, selectedPeriodLabel]);
+  }, [filteredRecords, chartFilteredRecords, viewMode, theme, lang, t, selectedPeriod, selectedPeriodLabel, plotlyReady]);
 
   // Detail table data
   const tableRows = useMemo(() => {

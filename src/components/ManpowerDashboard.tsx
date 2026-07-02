@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import type { DataRow } from '../types';
 import { parseToDate } from '../utils';
 import { PerCapitaTab } from './PerCapitaTab';
+import { supabase } from '../lib/supabase';
 
 interface ManpowerDashboardProps {
   rows: DataRow[];
@@ -21,7 +22,7 @@ const MODEL_COLORS: Record<string, string> = {
   SO1C2EF: '#10b981',
   SO1C2G:  '#f59e0b',
   SO3560:  '#ef4444',
-  TTL:     '#a855f7',
+  TTL:     '#14b8a6',
 };
 
 // ─── i18n ─────────────────────────────────────────────────────────────────────
@@ -37,7 +38,7 @@ const T = {
   chartModel:{ vi: 'Phân bổ nhân lực theo Model — Giai đoạn gần nhất', en: 'Manpower by Model — Latest Period', ko: '모델별 인원 현황 (최근 기간)' },
   chartDay:  { vi: 'Nhân lực hàng ngày (TTL)', en: 'Daily Manpower (TTL)', ko: '일별 인원 현황 (TTL)' },
   chartRadar:{ vi: 'Phân bổ Model theo Giai đoạn (Spider)', en: 'Model Distribution by Period (Radar)', ko: '모델 인원 분포 (레이더)' },
-  noData:    { vi: 'Không có dữ liệu nhân lực (Test_3)', en: 'No manpower data found (Test_3)', ko: '인력 데이터가 없습니다 (Test_3)' },
+  noData:    { vi: 'Không có dữ liệu nhân lực', en: 'No manpower data found', ko: '인력 데이터가 없습니다' },
   standard:  { vi: 'Tiêu chuẩn YR24', en: 'YR24 Standard', ko: 'YR24 기준' },
   persons:   { vi: 'người', en: 'prs', ko: '명' },
   
@@ -48,6 +49,8 @@ const T = {
   allModels: { vi: 'Tất cả Model', en: 'All Models', ko: '전체 모델' },
   uploadBtn: { vi: 'Tải tệp', en: 'Upload File', ko: '파일 업로드' },
   exportBtn: { vi: 'Tải Excel', en: 'Export Excel', ko: '엑셀 다운로드' },
+  saveToCloudBtn: { vi: 'Lên mây', en: 'Save to Cloud', ko: '클라우드 저장' },
+  saveToCloudSuccess: { vi: 'Đã đồng bộ dữ liệu Manpower lên Supabase Cloud!', en: 'Synced Manpower data to Supabase!', ko: 'Manpower 데이터가 Supabase에 동기화되었습니다!' },
   dateError: { vi: 'Từ ngày phải nhỏ hơn hoặc bằng Đến ngày', en: 'From Date must be <= To Date', ko: '시작일은 종료일보다 이전이어야 합니다' },
   viewBy: { vi: 'XEM THEO', en: 'VIEW BY', ko: '보기 방식' },
   day: { vi: 'Ngày', en: 'Day', ko: '일별' },
@@ -179,13 +182,14 @@ function useManpowerData(
     // Parse dates and validate
     type ParsedManpowerRow = DataRow & { _parsedDate: Date | null; _dateType: RowDateType };
     const parsedRows = (mpRows.map(r => {
-      const dateVal = (r as any).date || (r as any).Date || '';
+      const dateVal = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
       const parsedDate = parseManpowerDate(dateVal);
       const dateType = classifyRowDateType(dateVal);
       return { ...r, _parsedDate: parsedDate, _dateType: dateType };
-    }) as ParsedManpowerRow[]).filter(r =>
-      r._parsedDate !== null && String((r as any).date || (r as any).Date || '').trim().toUpperCase() !== 'YR24'
-    ) as (DataRow & { _parsedDate: Date; _dateType: RowDateType })[];
+    }) as ParsedManpowerRow[]).filter(r => {
+      const dateVal = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
+      return r._parsedDate !== null && String(dateVal).trim().toUpperCase() !== 'YR24';
+    }) as (DataRow & { _parsedDate: Date; _dateType: RowDateType })[];
 
     // Chỉ giữ tầng dữ liệu khớp granularity hiện tại (year → dùng tạm tầng month)
     const wantedType: RowDateType = granularity === 'year' ? 'month' : granularity;
@@ -319,11 +323,11 @@ function buildMonthlyChart(
     type: 'scatter',
     mode: 'lines+markers+text',
     cliponaxis: false,
-    line: { color: '#a855f7', width: 2.5, dash: 'dot' },
-    marker: { size: 7, color: '#a855f7' },
+    line: { color: '#14b8a6', width: 2.5, shape: 'spline', smoothing: 1 },
+    marker: { size: 7, color: '#14b8a6' },
     text: ttlMonthly.map(v => v != null && v > 0 ? fmt1(v) : ''),
     textposition: 'top center',
-    textfont: { size: 10, color: '#a855f7', weight: 'bold' },
+    textfont: { size: 10, color: '#14b8a6', weight: 'bold' },
     yaxis: 'y2',
     hovertemplate: `<b>TTL</b><br>%{x}: %{y:.1f}<extra></extra>`,
   });
@@ -336,7 +340,7 @@ function buildMonthlyChart(
       name: t('standard', lang),
       type: 'scatter',
       mode: 'lines',
-      line: { color: '#f43f5e', width: 1.5, dash: 'dash' },
+      line: { color: '#f43f5e', width: 1.5, dash: 'dash', shape: 'spline', smoothing: 1 },
       yaxis: 'y2',
       hoverinfo: 'skip',
     });
@@ -399,11 +403,11 @@ function buildWeeklyChart(
     type: 'scatter',
     mode: 'lines+markers+text',
     cliponaxis: false,
-    line: { color: '#a855f7', width: 2.5, dash: 'dot' },
-    marker: { size: 7, color: '#a855f7' },
+    line: { color: '#14b8a6', width: 2.5, shape: 'spline', smoothing: 1 },
+    marker: { size: 7, color: '#14b8a6' },
     text: ttlWeekly.map(v => v != null && v > 0 ? fmt1(v) : ''),
     textposition: 'top center',
-    textfont: { size: 10, color: '#a855f7', weight: 'bold' },
+    textfont: { size: 10, color: '#14b8a6', weight: 'bold' },
     yaxis: 'y2',
     hovertemplate: `<b>TTL</b><br>%{x}: %{y:.1f}<extra></extra>`,
   });
@@ -416,7 +420,7 @@ function buildWeeklyChart(
       name: t('standard', lang),
       type: 'scatter',
       mode: 'lines',
-      line: { color: '#f43f5e', width: 1.5, dash: 'dash' },
+      line: { color: '#f43f5e', width: 1.5, dash: 'dash', shape: 'spline', smoothing: 1 },
       yaxis: 'y2',
       hoverinfo: 'skip',
     });
@@ -466,7 +470,7 @@ function buildDailyChart(
       type: 'scatter',
       mode: 'lines+markers',
       connectgaps: false,
-      line: { color: getModelColor(model, index), width: 1.8 },
+      line: { color: getModelColor(model, index), width: 1.8, shape: 'spline', smoothing: 1 },
       marker: { size: 5, color: getModelColor(model, index) },
       hovertemplate: `<b>${model}</b><br>%{x}: %{y:.0f}<extra></extra>`,
     });
@@ -484,11 +488,11 @@ function buildDailyChart(
     mode: 'lines+markers+text',
     connectgaps: false,
     cliponaxis: false,
-    line: { color: '#a855f7', width: 2.5 },
-    marker: { size: 7, color: '#a855f7' },
+    line: { color: '#14b8a6', width: 2.5, shape: 'spline', smoothing: 1 },
+    marker: { size: 7, color: '#14b8a6' },
     text: ttlVals.map(v => v != null && v > 0 ? fmt1(v) : ''),
     textposition: 'top center',
-    textfont: { size: 9, color: '#a855f7', weight: 'bold' },
+    textfont: { size: 9, color: '#14b8a6', weight: 'bold' },
     yaxis: 'y2',
     hovertemplate: `<b>TTL</b><br>%{x}: %{y:.0f}<extra></extra>`,
   });
@@ -521,6 +525,27 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   const isDark = theme === 'dark';
   const chartTextColor = isDark ? '#e2e8f0' : '#1e293b';
   const chartGridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+
+  // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
+  // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
+  // tại thời điểm effect vẽ chart chạy lần đầu. Guard cũ chỉ kiểm tra
+  // `typeof window.Plotly === 'undefined'` rồi bail ra — và vì không có gì
+  // trigger effect chạy lại sau khi Plotly tải xong, chart bị TRỐNG VĨNH VIỄN
+  // dù data đã có sẵn. Fix: poll tới khi Plotly sẵn sàng rồi set state để
+  // effect vẽ chart tự chạy lại.
+  const [plotlyReady, setPlotlyReady] = useState<boolean>(
+    typeof window !== 'undefined' && !!(window as any).Plotly
+  );
+  useEffect(() => {
+    if (plotlyReady) return;
+    const id = setInterval(() => {
+      if (typeof window !== 'undefined' && (window as any).Plotly) {
+        setPlotlyReady(true);
+        clearInterval(id);
+      }
+    }, 150);
+    return () => clearInterval(id);
+  }, [plotlyReady]);
 
   // ── Stable rows cache ──────────────────────────────────────────────────────
   // Đối xứng với SalesDashboard: khi allRows bị ghi đè bởi Test_1/Test_2 (dữ
@@ -555,6 +580,9 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
   // Error States
   const [dateError, setDateError] = useState<string | null>(null);
+
+  // Save to Cloud state
+  const [isSaving, setIsSaving] = useState(false);
 
   // Clock state
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -625,7 +653,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     // Only draw when the Manpower tab is active — chart holder divs are not in the
     // DOM when activeTab !== 'manpower', so Plotly would throw a "Script error".
     if (activeTab !== 'manpower') return;
-    if (!hasData || typeof window.Plotly === 'undefined') return;
+    if (!hasData || !plotlyReady) return;
 
     const draw = () => {
       const ids = chartIds.current;
@@ -645,7 +673,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
     const timerId = setTimeout(draw, 0);
     return () => clearTimeout(timerId);
-  }, [data, chartTextColor, chartGridColor, lang, hasData, modelFilter, modelsToPlot, activeTab]);
+  }, [data, chartTextColor, chartGridColor, lang, hasData, modelFilter, modelsToPlot, activeTab, plotlyReady]);
 
   // Toolbar Handlers
   const handleDateFromChange = (val: string) => {
@@ -684,6 +712,59 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     e.target.value = '';
   };
 
+  // Save to Cloud: CHỈ xóa/ghi các dòng có origin = 'Manpower' trong bảng dùng chung
+  // 'sales_data' — KHÔNG xóa toàn bộ bảng như Mục 1/Mục 2 đang làm, để tránh
+  // ghi đè dữ liệu Sales / Target-Actual đã lưu trước đó.
+  const handleSaveToCloud = async () => {
+    if (!supabase) return;
+    setIsSaving(true);
+    try {
+      const mpRows = effectiveRows.filter(r =>
+        String((r as any).type || (r as any).Type || '').toLowerCase().includes('manpower')
+      );
+
+      await supabase.from('sales_data').delete().eq('source_tag', 'Manpower');
+
+      const dbRows = mpRows.map(r => {
+        const rawDate = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
+        const parsedDate = parseManpowerDate(rawDate);
+        const year = parsedDate ? parsedDate.getFullYear() : 2026;
+        return {
+          model: String((r as any).model || (r as any).Model || '').trim(),
+          origin: 'Manpower',
+          customer: String((r as any).customer || (r as any).Customer || '').trim(),
+          type: String((r as any).type || (r as any).Type || '').trim(),
+          division: 'production',
+          year: year,
+          month: String(rawDate).trim(),
+          value: Number((r as any).value ?? (r as any).Value) || 0,
+          source_tag: 'Manpower',
+        };
+      });
+
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
+        const batch = dbRows.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('sales_data').insert(batch);
+        if (error) {
+          alert((lang === 'vi' ? 'Lỗi lưu: ' : 'Error: ') + error.message);
+          setIsSaving(false);
+          return;
+        }
+      }
+      alert(t('saveToCloudSuccess', lang));
+      // Xóa cờ và cache local để lần reload tiếp theo tải dữ liệu từ Supabase
+      try {
+        localStorage.removeItem('manual_upload_flag');
+        localStorage.removeItem('cached_sales_data');
+        localStorage.removeItem('cached_dashboard_buckets');
+      } catch (e) { /* ignore */ }
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
+    setIsSaving(false);
+  };
+
   return (
     <div className="sales-dashboard" style={{ padding: '24px', boxSizing: 'border-box' }}>
       
@@ -698,8 +779,8 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
         {/* ── Tab Navigation ── */}
         <div style={{ display: 'flex', gap: '0px', marginTop: '12px', borderBottom: '2px solid var(--border-soft)' }}>
           {([
-            { id: 'manpower', label: lang === 'vi' ? '👷 근무 인력 현황' : lang === 'ko' ? '👷 근무 인력 현황' : '👷 Manpower Status' },
-            { id: 'percapita', label: lang === 'vi' ? '📐 인당 생산수 현황' : lang === 'ko' ? '📐 인당 생산수 현황' : '📐 Per Capita Output' },
+            { id: 'manpower', label: lang === 'vi' ? '👷 근무 인력 현황 - Tình hình nhân lực' : lang === 'ko' ? '👷 근무 인력 현황' : '👷 Manpower Status' },
+            { id: 'percapita', label: lang === 'vi' ? '📐 인당 생산수 현황 - Sản lượng theo đầu người' : lang === 'ko' ? '📐 인당 생산수 현황' : '📐 Per Capita Output' },
           ] as const).map(tab => (
             <button
               key={tab.id}
@@ -724,22 +805,12 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
         {/* ── Toolbar Row — chỉ hiển thị khi ở tab Manpower ── */}
         {activeTab === 'manpower' && (
-        <div className="filter-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginTop: '12px', padding: '10px 14px' }}>
-          {/* Left: Clock & Upload */}
+        <div className="filter-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', maxWidth: '1080px', margin: '12px auto', padding: '10px 14px', background: 'var(--surface-1)', border: '1px solid var(--border-soft)', borderRadius: '10px' }}>
+          {/* Left: Clock only — nút Tải tệp đã chuyển sang bên phải, đồng bộ vị trí với Mục 2 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span className="pill-rows" style={{ margin: 0, fontSize: '12px', padding: '6px 10px', height: '34px', display: 'inline-flex', alignItems: 'center', fontWeight: '600' }}>
               ⏰ {formatClock(currentTime)}
             </span>
-            
-            <label className="btn btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', padding: '6px 12px', height: '34px', boxSizing: 'border-box' }}>
-              <input 
-                type="file" 
-                accept=".xlsx, .xls" 
-                style={{ display: 'none' }} 
-                onChange={handleFileUpload} 
-              />
-              📤 {t('uploadBtn', lang)}
-            </label>
           </div>
 
           {/* Center: Date Filters + Model Filter + Granularity — with column labels (matching PerCapitaTab) */}
@@ -829,8 +900,36 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
           </div>
 
-          {/* Right: empty — Export Excel đã xóa theo yêu cầu */}
-          <div />
+          {/* Right: Tải Excel (upload) + Lên mây (Save to Cloud) — đồng bộ vị trí/style với Mục 2 */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+            <label className="btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-1)', background: 'transparent', border: '1px solid var(--border)', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}>
+              <input
+                type="file"
+                accept=".xlsx, .xls"
+                style={{ display: 'none' }}
+                onChange={handleFileUpload}
+              />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
+                <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
+                <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                <path d="M3 16v5h5" />
+                <path d="M16 3h5v5" />
+              </svg>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('exportBtn', lang)}</span>
+            </label>
+
+            {supabase && (
+              <button
+                className="btn-outline"
+                type="button"
+                onClick={handleSaveToCloud}
+                disabled={isSaving}
+                style={{ borderColor: '#14b8a6', color: '#14b8a6', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isSaving ? '⏳...' : t('saveToCloudBtn', lang)}</span>
+              </button>
+            )}
+          </div>
 
         </div>
         )} {/* end activeTab === 'manpower' toolbar */}
@@ -959,7 +1058,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                   {lang === 'vi' ? 'Bảng tổng hợp nhân lực' : lang === 'en' ? 'Manpower Summary Table' : '인력 현황 종합표'}
                 </h3>
               </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-2)' }}>
                     <th style={thStyle}>Model</th>
@@ -1040,7 +1139,7 @@ const thStyle: React.CSSProperties = {
   padding: '7px 8px',
   textAlign: 'center',
   fontWeight: 600,
-  fontSize: '11px',
+  fontSize: '13px',
   color: 'var(--text-2)',
   borderBottom: '1px solid var(--border)',
   whiteSpace: 'nowrap',
@@ -1051,5 +1150,5 @@ const tdStyle: React.CSSProperties = {
   textAlign: 'center',
   borderBottom: '1px solid var(--border-soft)',
   color: 'var(--text-1)',
-  fontSize: '12px',
+  fontSize: '14px',
 };

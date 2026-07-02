@@ -14,6 +14,12 @@
  *  Chart 3 — 근무 인력 현황 (Manpower Trend)
  *    Bar DAY + Bar NIGHT (group) + Line TTL + dashed 기준인력 Standard
  *
+ *  Chart 6 — 생산 LINE 수 현황 (Production Line Qty Trend) [bổ sung]
+ *    Bar DAY LINE Q'TY + Bar NIGHT LINE Q'TY (group) + Line TTL LINE Q'TY
+ *    Cùng bố cục/tông màu với Chart 3 (DAY=#3b82f6, NIGHT=#ef4444, TTL=xanh ngọc/teal),
+ *    chỉ khác nguồn: lineDay/lineNight/lineTtlByModelLabel (type "*LINE Q'TY")
+ *    thay vì ManPower AVG. Chỉ hiển thị khi dữ liệu Line Q'TY tồn tại.
+ *
  * Tất cả dùng data từ rows (Test_3 TTL ManPower AVG), không hard-code.
  * DAY_RATIO = 0.507, NIGHT_RATIO = 0.493 theo bản tham chiếu.
  * TARGET_PER_CAPITA = 160 (경영목표 기준, có thể override từ stdRow YR24).
@@ -23,6 +29,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import type { DataRow } from '../types';
 import { parseManpowerDate } from './ManpowerDashboard';
+import { supabase } from '../lib/supabase';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DAY_RATIO   = 0.507;   // ca ngày / tổng
@@ -35,7 +42,7 @@ const MODEL_COLORS: Record<string, string> = {
   SO1C2G:    '#f59e0b',
   SO3560:    '#ef4444',
   SO2701:    '#06b6d4',
-  TTL:       '#a855f7',
+  TTL:       '#14b8a6',
   SO1C2EH:   '#ec4899',
   SO1C2EDL:  '#14b8a6',
   SO1C2EDM:  '#f43f5e',
@@ -53,9 +60,9 @@ function getModelColor(model: string, idx: number) {
 const T = {
   title:        { vi: '인당 생산수 & 생산 현황 (근무인력 기준)', en: 'Per Capita Output & Production (Headcount Based)', ko: '인당 생산수 & 생산 현황 (근무인력 기준)' },
   subtitle:     { vi: 'Ước lượng từ dữ liệu nhân lực (DAY 50.7% / NIGHT 49.3%)', en: 'Estimated from manpower data (DAY 50.7% / NIGHT 49.3%)', ko: '근무인원 기준 추정 (DAY 50.7% / NIGHT 49.3%)' },
-  chart1Title:  { vi: '인당생산수', en: 'Per Capita Output', ko: '인당생산수' },
-  chart2Title:  { vi: '생산 현황 (ước lượng)', en: 'Production Status (estimated)', ko: '생산 현황' },
-  chart3Title:  { vi: '근무 인력 현황', en: 'Manpower Trend', ko: '근무 인력 현황' },
+  chart1Title:  { vi: '인당생산수 - Sản lượng theo đầu người', en: 'Per Capita Output', ko: '인당생산수' },
+  chart2Title:  { vi: '생산 현황 - Tình hình sản xuất', en: 'Production Status (estimated)', ko: '생산 현황' },
+  chart3Title:  { vi: '근무 인력 현황 - Tình hình nhân lực đi làm', en: 'Manpower Trend', ko: '근무 인력 현황' },
   dayPc:        { vi: 'DAY 인당생산수', en: 'DAY Per Capita', ko: 'DAY 인당생산수' },
   nightPc:      { vi: 'NIGHT 인당생산수', en: 'NIGHT Per Capita', ko: 'NIGHT 인당생산수' },
   ttlPc:        { vi: 'TTL 인당생산수', en: 'TTL Per Capita', ko: 'TTL 인당생산수' },
@@ -69,14 +76,19 @@ const T = {
   nightMP:      { vi: 'NIGHT ManPower AVG', en: 'NIGHT ManPower AVG', ko: 'NIGHT ManPower AVG' },
   ttlMP:        { vi: 'TTL ManPower AVG', en: 'TTL ManPower AVG', ko: 'TTL ManPower AVG' },
   standard:     { vi: 'TTL 기준인력 Standard AVG', en: 'TTL Standard AVG', ko: 'TTL 기준인력 Standard AVG' },
+  chart6Title:  { vi: "생산 LINE 수 현황 - Tình hình số Line sản xuất", en: 'Production Line Qty Trend', ko: "생산 LINE 수 현황" },
+  dayLineQty:   { vi: "DAY LINE Q'TY", en: "DAY LINE Q'TY", ko: "DAY LINE Q'TY" },
+  nightLineQty: { vi: "NIGHT LINE Q'TY", en: "NIGHT LINE Q'TY", ko: "NIGHT LINE Q'TY" },
+  ttlLineQty:   { vi: "TTL LINE Q'TY", en: "TTL LINE Q'TY", ko: "TTL LINE Q'TY" },
+  lineQtyUnit:  { vi: 'line', en: 'lines', ko: '라인' },
   noData:       { vi: 'Không có dữ liệu nhân lực', en: 'No manpower data', ko: '인력 데이터 없음' },
   estimatedBadge: { vi: '⚠ Ước lượng', en: '⚠ Estimated', ko: '⚠ 추정값' },
   persons:      { vi: 'người', en: 'prs', ko: '명' },
   unit:         { vi: 'sp/người', en: 'pcs/cap', ko: '개/인' },
-  kpiDayPC:     { vi: 'DAY 인당생산수 TB', en: 'AVG DAY Per Capita', ko: 'DAY 인당생산수 평균' },
-  kpiNightPC:   { vi: 'NIGHT 인당생산수 TB', en: 'AVG NIGHT Per Capita', ko: 'NIGHT 인당생산수 평균' },
-  kpiTtlPC:     { vi: 'TTL 인당생산수 TB', en: 'AVG TTL Per Capita', ko: 'TTL 인당생산수 평균' },
-  kpiTarget:    { vi: '경영목표', en: 'Mgmt. Target', ko: '경영목표' },
+  kpiDayPC:     { vi: 'DAY 인당생산수 TB - Sản lượng đầu người ca ngày TB', en: 'AVG DAY Per Capita', ko: 'DAY 인당생산수 평균' },
+  kpiNightPC:   { vi: 'NIGHT 인당생산수 TB - Sản lượng đầu người ca đêm TB', en: 'AVG NIGHT Per Capita', ko: 'NIGHT 인당생산수 평균' },
+  kpiTtlPC:     { vi: 'TTL 인당생산수 TB - Sản lượng đầu người TTL TB', en: 'AVG TTL Per Capita', ko: 'TTL 인당생산수 평균' },
+  kpiTarget:    { vi: '경영목표 - Target', en: 'Mgmt. Target', ko: '경영목표' },
 };
 function t(key: keyof typeof T, lang: 'vi'|'en'|'ko') {
   return (T[key] as any)[lang] ?? (T[key] as any)['vi'];
@@ -118,6 +130,10 @@ interface PCTabData {
   // model → label → avg manpower (từ TTL ManPower AVG)
   byModelLabel: Record<string, Record<string, number>>;
   pcByModelLabel: Record<string, Record<string, number>>; // per capita production data
+  // Số line sản xuất theo Type: 'TTL LINE Q'TY' / 'DAY LINE Q'TY' / 'NIGHT LINE Q'TY'
+  lineTtlByModelLabel: Record<string, Record<string, number>>;
+  lineDayByModelLabel: Record<string, Record<string, number>>;
+  lineNightByModelLabel: Record<string, Record<string, number>>;
   ttlByLabel: Record<string, number>;       // TTL headcount per label
   ttlStandard: number | null;               // YR24 standard
   allLabels: { label: string; dateMs: number }[];
@@ -130,10 +146,10 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
   return useMemo(() => {
     const mpRows = rows.filter(r => {
       const typeStr = String(r.type || r.Type || '').toLowerCase();
-      return typeStr.includes('manpower') || typeStr.includes('인당생산수');
+      return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line');
     });
     if (mpRows.length === 0) {
-      return { byModelLabel: {}, pcByModelLabel: {}, ttlByLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
+      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
     }
 
     // Standard
@@ -146,7 +162,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
 
     // Parse all rows with dates
     const parsed = mpRows.map(r => {
-      const raw = String(r.date || r.Date || '').trim().toUpperCase();
+      const raw = String(r.date || r.Date || r.month || r.Month || '').trim().toUpperCase();
       const d = parseManpowerDate(raw);
       return { ...r, _label: raw, _date: d };
     }).filter(r => r._date && r._label !== 'YR24' && r._label !== 'JAN-JUN');
@@ -164,17 +180,33 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       !x.label.startsWith('JAN-') && x.label !== 'YR24'
     );
 
-    // Build byModelLabel and pcByModelLabel
+    // Build byModelLabel, pcByModelLabel và 3 nhóm số line sản xuất (TTL/DAY/NIGHT LINE Q'TY)
     const groups: Record<string, Record<string, number[]>> = {};
     const pcGroups: Record<string, Record<string, number[]>> = {};
+    const lineTtlGroups: Record<string, Record<string, number[]>> = {};
+    const lineDayGroups: Record<string, Record<string, number[]>> = {};
+    const lineNightGroups: Record<string, Record<string, number[]>> = {};
     (filtered as any[]).forEach(r => {
       const model = String(r.model || r.Model || '').trim().toUpperCase();
       const label = r._label;
       const val   = Number(r.value ?? r.Value);
       const typeStr = String(r.type || r.Type || '').toLowerCase();
       if (!model || isNaN(val) || val == null) return;
-      
-      if (typeStr.includes('manpower')) {
+
+      if (typeStr.includes('line')) {
+        // Type mẫu: "TTL LINE Q'TY", "DAY LINE Q'TY", "NIGHT LINE Q'TY"
+        // Kiểm tra DAY/NIGHT trước vì "TTL" có thể không xuất hiện tường minh
+        // trên 1 số dòng — mặc định còn lại (không phải DAY/NIGHT) là TTL.
+        let target = lineTtlGroups;
+        if (typeStr.includes('day') && !typeStr.includes('holiday')) {
+          target = lineDayGroups;
+        } else if (typeStr.includes('night')) {
+          target = lineNightGroups;
+        }
+        if (!target[model]) target[model] = {};
+        if (!target[model][label]) target[model][label] = [];
+        target[model][label].push(val);
+      } else if (typeStr.includes('manpower')) {
         if (!groups[model]) groups[model] = {};
         if (!groups[model][label]) groups[model][label] = [];
         groups[model][label].push(val);
@@ -198,6 +230,30 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       pcByModelLabel[model] = {};
       Object.entries(lblMap).forEach(([lbl, vals]) => {
         pcByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const lineTtlByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(lineTtlGroups).forEach(([model, lblMap]) => {
+      lineTtlByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        lineTtlByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const lineDayByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(lineDayGroups).forEach(([model, lblMap]) => {
+      lineDayByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        lineDayByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const lineNightByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(lineNightGroups).forEach(([model, lblMap]) => {
+      lineNightByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        lineNightByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
       });
     });
 
@@ -225,7 +281,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       .filter(m => m !== 'TTL')
       .sort();
 
-    return { byModelLabel, pcByModelLabel, ttlByLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
+    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
   }, [rows, dateFrom, dateTo]);
 }
 
@@ -242,8 +298,13 @@ function buildChart1(
   textColor: string,
   gridColor: string,
   lang: 'vi'|'en'|'ko',
-  targetPC: number
+  targetPC: number,
+  isDark: boolean
 ) {
+  // Màu accent đậm hơn ở light mode để chữ/đường không bị mờ trên nền sáng
+  const tealAccent = isDark ? '#14b8a6' : '#0f766e';
+  const roseAccent    = isDark ? '#f43f5e' : '#be123c';
+
   const dayVals    = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * DAY_RATIO));
   const nightVals  = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * NIGHT_RATIO));
   const ttlVals    = labels.map(l => r1((data.ttlByLabel[l] ?? 0)));
@@ -269,18 +330,18 @@ function buildChart1(
     {
       x: labels, y: ttlVals, name: t('ttlPc', lang),
       type: 'scatter', mode: 'lines+markers+text',
-      line: { color: '#a855f7', width: 2, dash: 'dot' },
-      marker: { color: '#a855f7', size: 8 },
+      line: { color: tealAccent, width: 2, shape: 'spline', smoothing: 1 },
+      marker: { color: tealAccent, size: 8 },
       text: ttlVals.map(v => v > 0 ? fmt1(v) : ''),
       textposition: 'top center',
-      textfont: { size: 13, color: '#a855f7' },
+      textfont: { size: 13, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
       hovertemplate: `<b>${t('ttlPc', lang)}</b>: %{y}<extra></extra>`,
     },
     {
       x: labels, y: targetVals, name: t('mgmtTarget', lang),
       type: 'scatter', mode: 'lines',
-      line: { color: '#f43f5e', width: 2, dash: 'dash' },
+      line: { color: roseAccent, width: 2, dash: 'dash', shape: 'spline', smoothing: 1 },
     },
   ];
 
@@ -311,8 +372,12 @@ function buildChart2(
   textColor: string,
   gridColor: string,
   lang: 'vi'|'en'|'ko',
-  targetPC: number
+  targetPC: number,
+  isDark: boolean
 ) {
+  const tealAccent = isDark ? '#14b8a6' : '#0f766e';
+  const amberAccent   = isDark ? '#f59e0b' : '#b45309';
+
   const dayPro   = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * DAY_RATIO   * targetPC));
   const nightPro = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * NIGHT_RATIO * targetPC));
   const ttlPro   = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * targetPC));
@@ -338,18 +403,18 @@ function buildChart2(
     {
       x: labels, y: ttlPro, name: t('ttlPro', lang),
       type: 'scatter', mode: 'lines+markers+text',
-      line: { color: '#a855f7', width: 2 },
-      marker: { color: '#a855f7', size: 8 },
+      line: { color: tealAccent, width: 2, shape: 'spline', smoothing: 1 },
+      marker: { color: tealAccent, size: 8 },
       text: ttlPro.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
       textposition: 'top center',
-      textfont: { size: 13, color: '#a855f7' },
+      textfont: { size: 13, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
       hovertemplate: `<b>${t('ttlPro', lang)}</b>: %{y:,.0f}<extra></extra>`,
     },
     {
       x: labels, y: planLine, name: t('targetPlan', lang),
       type: 'scatter', mode: 'lines',
-      line: { color: '#f59e0b', width: 1.5, dash: 'dash' },
+      line: { color: amberAccent, width: 1.5, dash: 'dash', shape: 'spline', smoothing: 1 },
     },
   ];
 
@@ -379,8 +444,12 @@ function buildChart3(
   labels: string[],
   textColor: string,
   gridColor: string,
-  lang: 'vi'|'en'|'ko'
+  lang: 'vi'|'en'|'ko',
+  isDark: boolean
 ) {
+  const tealAccent = isDark ? '#14b8a6' : '#0f766e';
+  const roseAccent    = isDark ? '#f43f5e' : '#be123c';
+
   const dayMP   = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * DAY_RATIO));
   const nightMP = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * NIGHT_RATIO));
   const ttlMP   = labels.map(l => r1(data.ttlByLabel[l] ?? 0));
@@ -410,11 +479,11 @@ function buildChart3(
       // TTL ManPower AVG: giữ nguyên dạng line để vẫn thấy xu hướng tổng
       x: labels, y: ttlMP, name: t('ttlMP', lang),
       type: 'scatter', mode: 'lines+markers+text',
-      line: { color: '#a855f7', width: 2.5 },
-      marker: { color: '#a855f7', size: 8, symbol: 'circle' },
+      line: { color: tealAccent, width: 2.5, shape: 'spline', smoothing: 1 },
+      marker: { color: tealAccent, size: 8, symbol: 'circle' },
       text: ttlMP.map(v => v > 0 ? fmt1(v) : ''),
       textposition: 'top center',
-      textfont: { size: 13, color: '#a855f7' },
+      textfont: { size: 13, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
       hovertemplate: `<b>${t('ttlMP', lang)}</b>: %{y}<extra></extra>`,
     },
@@ -424,11 +493,22 @@ function buildChart3(
     traces.push({
       x: labels, y: stdLine, name: t('standard', lang),
       type: 'scatter', mode: 'lines',
-      line: { color: '#f43f5e', width: 2, dash: 'dashdot' },
+      line: { color: roseAccent, width: 2, dash: 'dashdot', shape: 'spline', smoothing: 1 },
     });
   }
 
-  const maxVal = Math.max(...ttlMP, stdVal, ...dayMP, ...nightMP, 0);
+  // FIX: trục Y trước đây tính maxVal = max(ttlMP, stdVal, dayMP, nightMP) — nếu
+  // stdVal (chuẩn nhân lực YR24) bị lệch/sai định dạng và lớn hơn nhiều lần dữ
+  // liệu thực (vd 49.894 trong khi dữ liệu thực chỉ quanh 2.900–7.400), nó kéo
+  // giãn toàn bộ trục Y lên rất cao → cột DAY/NIGHT và line TTL thật bị dồn sát
+  // đáy biểu đồ, trông như "gạch ngang" phẳng lì phía trên (đúng lỗi trong ảnh).
+  // Cách sửa: trục Y chỉ auto-scale theo DỮ LIỆU THỰC (dayMP/nightMP/ttlMP).
+  // stdVal chỉ được tính vào nếu nó cùng bậc độ lớn với dữ liệu thực (≤ 3 lần
+  // giá trị lớn nhất) — nếu lệch quá xa thì bỏ qua khi tính range (đường standard
+  // vẫn được vẽ, chỉ có thể bị cắt ở mép trên thay vì phá vỡ cả biểu đồ).
+  const maxDataVal = Math.max(...ttlMP, ...dayMP, ...nightMP, 0);
+  const stdInRange = stdVal > 0 && stdVal <= maxDataVal * 3 ? stdVal : 0;
+  const maxVal = Math.max(maxDataVal, stdInRange, 0);
   const yRange = [0, maxVal > 0 ? maxVal * 1.15 : 10];
 
   const layout = {
@@ -446,8 +526,87 @@ function buildChart3(
 }
 
 /**
+ * Chart 6: 생산 LINE 수 현황 (Production Line Qty Trend)
+ * Bar DAY LINE Q'TY + Bar NIGHT LINE Q'TY (group) + Line TTL LINE Q'TY
+ * Layout/màu sắc đồng bộ với Chart 3 (근무 인력 현황): DAY=#3b82f6, NIGHT=#ef4444,
+ * TTL=tealAccent — chỉ khác nguồn dữ liệu (lineDay/lineNight/lineTtl thay vì
+ * ttlByLabel × DAY_RATIO/NIGHT_RATIO).
+ */
+function buildChart6(
+  data: PCTabData,
+  labels: string[],
+  textColor: string,
+  gridColor: string,
+  lang: 'vi'|'en'|'ko',
+  isDark: boolean
+) {
+  const tealAccent = isDark ? '#14b8a6' : '#0f766e';
+
+  // Một số dữ liệu Line Q'TY được nhập trực tiếp ở model 'TTL' (tổng sẵn);
+  // nếu không có, cộng dồn qua toàn bộ model đang active để ra tổng nhà máy.
+  const getVal = (map: Record<string, Record<string, number>>, l: string): number => {
+    const direct = map['TTL']?.[l];
+    if (direct != null && direct > 0) return direct;
+    return data.activeModels.reduce((sum, m) => sum + (map[m]?.[l] ?? 0), 0);
+  };
+
+  const dayVals   = labels.map(l => r1(getVal(data.lineDayByModelLabel, l)));
+  const nightVals = labels.map(l => r1(getVal(data.lineNightByModelLabel, l)));
+  const ttlVals   = labels.map(l => r1(getVal(data.lineTtlByModelLabel, l)));
+
+  const hasData = dayVals.some(v => v > 0) || nightVals.some(v => v > 0) || ttlVals.some(v => v > 0);
+
+  const traces: any[] = [
+    {
+      x: labels, y: dayVals, name: t('dayLineQty', lang),
+      type: 'bar', marker: { color: '#3b82f6' },
+      text: dayVals.map(v => v > 0 ? fmt1(v) : ''),
+      textposition: 'inside',
+      textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      insidetextanchor: 'middle',
+    },
+    {
+      x: labels, y: nightVals, name: t('nightLineQty', lang),
+      type: 'bar', marker: { color: '#ef4444' },
+      text: nightVals.map(v => v > 0 ? fmt1(v) : ''),
+      textposition: 'inside',
+      textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      insidetextanchor: 'middle',
+    },
+    {
+      x: labels, y: ttlVals, name: t('ttlLineQty', lang),
+      type: 'scatter', mode: 'lines+markers+text',
+      line: { color: tealAccent, width: 2.5, shape: 'spline', smoothing: 1 },
+      marker: { color: tealAccent, size: 8, symbol: 'circle' },
+      text: ttlVals.map(v => v > 0 ? fmt1(v) : ''),
+      textposition: 'top center',
+      textfont: { size: 13, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
+      cliponaxis: false,
+      hovertemplate: `<b>${t('ttlLineQty', lang)}</b>: %{y}<extra></extra>`,
+    },
+  ];
+
+  const maxVal = Math.max(...ttlVals, ...dayVals, ...nightVals, 0);
+  const yRange = [0, maxVal > 0 ? maxVal * 1.15 : 10];
+
+  const layout = {
+    barmode: 'group',
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { color: textColor, size: 14 },
+    margin: { t: 55, r: 15, b: 35, l: 60 },
+    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 13 } },
+    xaxis: { tickfont: { size: 14, color: textColor }, gridcolor: gridColor },
+    yaxis: { gridcolor: gridColor, tickfont: { size: 13 }, range: yRange },
+    hoverlabel: { font: { size: 13 } },
+  };
+  return { traces, layout, hasData };
+}
+
+/**
  * Chart 4: Phân bố nhân lực theo Model — Giai đoạn gần nhất
  * Bar chart: X = activeModels, Y = headcount tại label mới nhất có dữ liệu
+ * + Line chart (trục y phụ): số line sản xuất theo Model tại cùng giai đoạn (Type = 'Line')
  */
 function buildChart4(
   data: PCTabData,
@@ -473,10 +632,31 @@ function buildChart4(
   const yVals = modelsWithData.map(m => r1(data.byModelLabel[m]?.[latestLabel] ?? 0));
   const colors = modelsWithData.map((m, i) => getModelColor(m, i));
 
+  // Số line sản xuất theo Model — lấy từ Type = "TTL LINE Q'TY".
+  // LƯU Ý QUAN TRỌNG: Line Q'TY thường ít biến động nên có thể chỉ được nhập
+  // theo 1 tầng dữ liệu (VD: theo Tháng "JUN") trong khi bar chart nhân lực
+  // đang hiển thị theo tầng khác (VD: theo Ngày "06/25"). Nếu tra thẳng theo
+  // latestLabel của nhân lực thì sẽ luôn null ở tầng không khớp → line bị ẩn
+  // dù dữ liệu tồn tại. Fix: quét riêng qua TẤT CẢ label (mọi tầng: ngày/tuần/
+  // tháng/năm, sắp theo thời gian giảm dần) để tìm giai đoạn gần nhất có dữ
+  // liệu Line TTL cho các model đang hiển thị, độc lập với granularity đang chọn.
+  const allLabelsDesc = [...data.allLabels].sort((a, b) => b.dateMs - a.dateMs);
+  let lineLabel = '';
+  for (const { label } of allLabelsDesc) {
+    const hasAny = modelsWithData.some(m => (data.lineTtlByModelLabel[m]?.[label] ?? 0) > 0);
+    if (hasAny) { lineLabel = label; break; }
+  }
+
+  const lineTtlVals   = modelsWithData.map(m => data.lineTtlByModelLabel[m]?.[lineLabel] ?? null);
+  const lineDayVals   = modelsWithData.map(m => data.lineDayByModelLabel[m]?.[lineLabel] ?? null);
+  const lineNightVals = modelsWithData.map(m => data.lineNightByModelLabel[m]?.[lineLabel] ?? null);
+  const hasLineData = lineLabel !== '' && lineTtlVals.some(v => v != null && v > 0);
+
   const traces: any[] = [{
     x: modelsWithData,
     y: yVals,
     type: 'bar',
+    name: lang === 'vi' ? 'Nhân lực' : lang === 'ko' ? '인원' : 'Headcount',
     marker: { color: colors },
     text: yVals.map(v => v > 0 ? String(v) : ''),
     textposition: 'outside',
@@ -484,14 +664,50 @@ function buildChart4(
     hovertemplate: '%{x}: %{y}<extra></extra>',
   }];
 
-  const layout = {
+  if (hasLineData) {
+    const customdata = modelsWithData.map((_, i) => [
+      lineDayVals[i] != null ? r1(lineDayVals[i] as number) : null,
+      lineNightVals[i] != null ? r1(lineNightVals[i] as number) : null,
+    ]);
+    const dayLbl   = lang === 'vi' ? 'DAY' : lang === 'ko' ? 'DAY' : 'DAY';
+    const nightLbl = lang === 'vi' ? 'NIGHT' : lang === 'ko' ? 'NIGHT' : 'NIGHT';
+    // Nếu giai đoạn có dữ liệu Line khác giai đoạn đang hiển thị của cột nhân lực
+    // (VD: nhân lực xem theo Ngày "06/25" nhưng Line chỉ có theo Tháng "JUN"),
+    // ghi rõ giai đoạn đó ngay trong tên trace để không gây hiểu lầm 2 giá trị
+    // cùng 1 thời điểm.
+    const linePeriodSuffix = lineLabel && lineLabel !== latestLabel ? ` [${lineLabel}]` : '';
+    traces.push({
+      x: modelsWithData,
+      y: lineTtlVals.map(v => v != null ? r1(v) : null),
+      type: 'scatter',
+      mode: 'lines+markers+text',
+      name: (lang === 'vi' ? "Số line sản xuất (TTL LINE Q'TY)" : lang === 'ko' ? "생산 라인 수 (TTL LINE Q'TY)" : "Production Lines (TTL LINE Q'TY)") + linePeriodSuffix,
+      yaxis: 'y2',
+      line: { color: '#facc15', width: 2, shape: 'spline', smoothing: 1 },
+      marker: { color: '#facc15', size: 9, symbol: 'diamond' },
+      text: lineTtlVals.map(v => v != null && v > 0 ? fmt1(r1(v)) : ''),
+      textposition: 'top center',
+      textfont: { size: 12, color: '#facc15', family: 'Arial Black, Arial, sans-serif' },
+      cliponaxis: false,
+      customdata,
+      hovertemplate:
+        `${lang === 'vi' ? 'Số line (TTL)' : lang === 'ko' ? '라인 수 (TTL)' : 'Lines (TTL)'}: %{y}` +
+        `<br>${dayLbl}: %{customdata[0]}` +
+        `<br>${nightLbl}: %{customdata[1]}<extra></extra>`,
+    });
+  }
+
+  const lineMax = hasLineData ? Math.max(...lineTtlVals.filter((v): v is number => v != null)) : 0;
+
+  const layout: any = {
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
     font: { color: textColor, size: 13 },
-    margin: { t: 40, r: 20, b: 70, l: 60 },
+    margin: { t: 40, r: hasLineData ? 60 : 20, b: 70, l: 60 },
     xaxis: { tickfont: { size: 13, color: textColor }, gridcolor: gridColor, type: 'category' },
     yaxis: { gridcolor: gridColor, tickfont: { size: 12 }, title: { text: lang === 'vi' ? 'Nhân lực (người)' : lang === 'ko' ? '인원 (명)' : 'Headcount (prs)', font: { size: 13 } } },
-    showlegend: false,
+    showlegend: hasLineData,
+    legend: { orientation: 'h', y: -0.18, font: { size: 11, color: textColor } },
     annotations: latestLabel ? [{
       text: `${lang === 'vi' ? 'Giai đoạn' : lang === 'ko' ? '기간' : 'Period'}: ${latestLabel}`,
       xref: 'paper', yref: 'paper',
@@ -500,6 +716,18 @@ function buildChart4(
       font: { size: 12, color: textColor },
     }] : [],
   };
+
+  if (hasLineData) {
+    layout.yaxis2 = {
+      overlaying: 'y',
+      side: 'right',
+      showgrid: false,
+      tickfont: { size: 12, color: '#facc15' },
+      title: { text: lang === 'vi' ? 'Số line' : lang === 'ko' ? '라인 수' : 'Lines', font: { size: 13, color: '#facc15' } },
+      range: [0, lineMax > 0 ? lineMax * 1.4 : 10],
+    };
+  }
+
   return { traces, layout };
 }
 
@@ -599,12 +827,36 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   const textColor = isDark ? '#e2e8f0' : '#1e293b';
   const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
 
+  // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
+  // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
+  // tại thời điểm effect vẽ chart chạy lần đầu. Guard cũ chỉ kiểm tra
+  // `typeof window.Plotly === 'undefined'` rồi bail ra — và vì không có gì
+  // trigger effect chạy lại sau khi Plotly tải xong, chart bị TRỐNG VĨNH VIỄN
+  // dù data đã có sẵn. Fix: poll tới khi Plotly sẵn sàng rồi set state để
+  // effect vẽ chart tự chạy lại.
+  const [plotlyReady, setPlotlyReady] = useState<boolean>(
+    typeof window !== 'undefined' && !!(window as any).Plotly
+  );
+  useEffect(() => {
+    if (plotlyReady) return;
+    const id = setInterval(() => {
+      if (typeof window !== 'undefined' && (window as any).Plotly) {
+        setPlotlyReady(true);
+        clearInterval(id);
+      }
+    }, 150);
+    return () => clearInterval(id);
+  }, [plotlyReady]);
+
   // ── Toolbar states (đồng nhất với ManpowerDashboard) ──────────────────────
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo,   setDateTo]   = useState('');
   const [granularity, setGranularity] = useState<'day'|'week'|'month'|'year'>('month');
   const [modelFilter, setModelFilter] = useState<string>('all');
   const [dateError, setDateError] = useState<string | null>(null);
+
+  // Save to Cloud state (đồng nhất với ManpowerDashboard)
+  const [isSaving, setIsSaving] = useState(false);
 
   // Clock (giống ManpowerDashboard)
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -653,29 +905,57 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     e.target.value = '';
   };
 
-  // ── Export Excel ──────────────────────────────────────────────────────────
-  const handleExportExcel = () => {
+  // ── Save to Cloud (đồng nhất với ManpowerDashboard — cùng bảng/origin 'Manpower'
+  // vì PerCapitaTab dùng chung nguồn dữ liệu Manpower, chỉ khác cách hiển thị) ──
+  const handleSaveToCloud = async () => {
+    if (!supabase) return;
+    setIsSaving(true);
     try {
-      const mpRows = rows.filter(r =>
-        String(r.type || r.Type || '').toLowerCase().includes('manpower')
-      );
-      const exportData = mpRows.map(r => ({
-        [lang === 'vi' ? 'Model' : lang === 'ko' ? '모델' : 'Model']: r.model || r.Model || '',
-        [lang === 'vi' ? 'Phân loại' : lang === 'ko' ? '구분' : 'Type']: r.type || r.Type || '',
-        [lang === 'vi' ? 'Ngày/Kỳ' : lang === 'ko' ? '날짜/기간' : 'Date']: r.date || r.Date || '',
-        [lang === 'vi' ? 'Nhân lực' : lang === 'ko' ? '인원' : 'Value']: Number(r.value || r.Value) || 0,
-        ['DAY ' + (lang === 'vi' ? 'Ước lượng' : lang === 'ko' ? '추정' : 'Estimated')]:
-          r1((Number(r.value || r.Value) || 0) * DAY_RATIO),
-        ['NIGHT ' + (lang === 'vi' ? 'Ước lượng' : lang === 'ko' ? '추정' : 'Estimated')]:
-          r1((Number(r.value || r.Value) || 0) * NIGHT_RATIO),
-      }));
-      const ws = XLSX.utils.json_to_sheet(exportData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'PerCapita');
-      XLSX.writeFile(wb, `PerCapita_${dateFrom || 'all'}_${dateTo || 'all'}.xlsx`);
-    } catch (err) {
-      console.error('Export failed:', err);
+      const mpRows = rows.filter(r => {
+        const typeStr = String((r as any).type || (r as any).Type || '').toLowerCase();
+        return typeStr.includes('manpower') || typeStr.includes('인당생산수');
+      });
+
+      await supabase.from('sales_data').delete().eq('source_tag', 'Manpower');
+
+      const dbRows = mpRows.map(r => {
+        const rawDate = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
+        const parsedDate = parseManpowerDate(rawDate);
+        const year = parsedDate ? parsedDate.getFullYear() : 2026;
+        return {
+          model: String((r as any).model || (r as any).Model || '').trim(),
+          origin: 'Manpower',
+          customer: String((r as any).customer || (r as any).Customer || '').trim(),
+          type: String((r as any).type || (r as any).Type || '').trim(),
+          division: 'production',
+          year: year,
+          month: String(rawDate).trim(),
+          value: Number((r as any).value ?? (r as any).Value) || 0,
+          source_tag: 'Manpower',
+        };
+      });
+
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
+        const batch = dbRows.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('sales_data').insert(batch);
+        if (error) {
+          alert((lang === 'vi' ? 'Lỗi lưu: ' : 'Error: ') + error.message);
+          setIsSaving(false);
+          return;
+        }
+      }
+      alert(lang === 'vi' ? 'Đã đồng bộ dữ liệu Manpower lên Supabase Cloud!\n(Khi mở lại trang, dữ liệu sẽ được tải tự động từ Supabase)' : lang === 'ko' ? 'Manpower 데이터가 Supabase에 동기화되었습니다!' : 'Synced Manpower data to Supabase!\n(Data will auto-load from Supabase on next open)');
+      // Xóa cờ và cache local để lần reload tiếp theo tải dữ liệu từ Supabase
+      try {
+        localStorage.removeItem('manual_upload_flag');
+        localStorage.removeItem('cached_sales_data');
+        localStorage.removeItem('cached_dashboard_buckets');
+      } catch (e) { /* ignore */ }
+    } catch (err: any) {
+      alert('Error: ' + err.message);
     }
+    setIsSaving(false);
   };
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -683,8 +963,17 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
   const hasData = data.allLabels.length > 0 && Object.keys(data.ttlByLabel).length > 0;
 
-  const targetPC = data.ttlStandard && data.ttlStandard > 0
+  // FIX: cùng nguyên nhân với lỗi trục Y ở Chart 3 — nếu data.ttlStandard bị
+  // lệch/sai định dạng (vd quá lớn bất thường), targetPC suy ra từ nó cũng sẽ
+  // bị thổi phồng theo, kéo hỏng scale của Chart 1 & Chart 2 (dùng chung targetPC).
+  // Sanity check: targetPC hợp lệ chỉ nên cùng bậc độ lớn với DEFAULT_TARGET_PC
+  // (đơn vị sp/người, thường vài trăm) — nếu vượt quá 5 lần mức mặc định thì coi
+  // là dữ liệu nguồn có vấn đề và fallback về DEFAULT_TARGET_PC thay vì dùng số sai.
+  const computedTargetPC = data.ttlStandard && data.ttlStandard > 0
     ? r1(data.ttlStandard * DAY_RATIO)
+    : 0;
+  const targetPC = computedTargetPC > 0 && computedTargetPC <= DEFAULT_TARGET_PC * 5
+    ? computedTargetPC
     : DEFAULT_TARGET_PC;
 
   const labelsAll = data.allLabels.map(x => x.label);
@@ -708,10 +997,16 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   const avgNight = r1(avgTtl * NIGHT_RATIO);
 
   // Chart refs
-  const ids = useRef({ c1: 'pctab-chart1', c2: 'pctab-chart2', c3: 'pctab-chart3', c4: 'pctab-chart4', c5: 'pctab-chart5' });
+  const ids = useRef({ c1: 'pctab-chart1', c2: 'pctab-chart2', c3: 'pctab-chart3', c4: 'pctab-chart4', c5: 'pctab-chart5', c6: 'pctab-chart6' });
+
+  // Chart 6 (LINE Q'TY) chỉ có ý nghĩa khi dữ liệu nguồn thực sự chứa type Line;
+  // dùng để ẩn/hiện panel tương ứng trong JSX bên dưới.
+  const hasLineQtyData = Object.keys(data.lineTtlByModelLabel).length > 0
+    || Object.keys(data.lineDayByModelLabel).length > 0
+    || Object.keys(data.lineNightByModelLabel).length > 0;
 
   useEffect(() => {
-    if (!hasData || typeof window.Plotly === 'undefined') return;
+    if (!hasData || !plotlyReady) return;
     // Only draw when this tab is visible; charts are behind display:none otherwise
     // and Plotly will throw a "Script error" trying to measure a zero-size container.
     if (!isVisible) return;
@@ -719,13 +1014,13 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     const draw = () => {
       const labels = displayLabels;
       try {
-        const ch1 = buildChart1(data, labels, textColor, gridColor, lang, targetPC);
+        const ch1 = buildChart1(data, labels, textColor, gridColor, lang, targetPC, isDark);
         window.Plotly.react(ids.current.c1, ch1.traces, ch1.layout, { displayModeBar: false, responsive: true });
 
-        const ch2 = buildChart2(data, labels, textColor, gridColor, lang, targetPC);
+        const ch2 = buildChart2(data, labels, textColor, gridColor, lang, targetPC, isDark);
         window.Plotly.react(ids.current.c2, ch2.traces, ch2.layout, { displayModeBar: false, responsive: true });
 
-        const ch3 = buildChart3(data, labels, textColor, gridColor, lang);
+        const ch3 = buildChart3(data, labels, textColor, gridColor, lang, isDark);
         window.Plotly.react(ids.current.c3, ch3.traces, ch3.layout, { displayModeBar: false, responsive: true });
 
         const ch4 = buildChart4(data, labels, textColor, gridColor, lang);
@@ -733,6 +1028,11 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
         const ch5 = buildChart5(data, labels, textColor, gridColor, lang);
         window.Plotly.react(ids.current.c5, ch5.traces, ch5.layout, { displayModeBar: false, responsive: true });
+
+        if (hasLineQtyData) {
+          const ch6 = buildChart6(data, labels, textColor, gridColor, lang, isDark);
+          window.Plotly.react(ids.current.c6, ch6.traces, ch6.layout, { displayModeBar: false, responsive: true });
+        }
       } catch (err) {
         console.warn('[PerCapitaTab] Plotly render error (ignored):', err);
       }
@@ -743,7 +1043,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     // This prevents "Script error / no stack" on lang/theme change while hidden.
     const timerId = setTimeout(draw, 50);
     return () => clearTimeout(timerId);
-  }, [data, textColor, gridColor, lang, hasData, targetPC, displayLabels, isVisible]);
+  }, [data, textColor, gridColor, lang, hasData, targetPC, displayLabels, isVisible, isDark, hasLineQtyData, plotlyReady]);
 
   // ── CSS vars cho dark/light ────────────────────────────────────────────────
   // Tất cả màu dùng var(--...) để tự thích nghi theo theme; chỉ explicit color
@@ -754,7 +1054,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
       {/* ══════════════════════════════════════════════════════════════════════
           TOOLBAR — đồng nhất với ManpowerDashboard Tab 1
-          Layout: [Clock + Upload] ── [Từ/Đến + Model + Granularity] ── [Excel + Lang + Theme]
+          Layout: [Clock] ── [Từ/Đến + Model + Granularity] ── [Tải Excel + Lên mây]
          ══════════════════════════════════════════════════════════════════════ */}
       <div
         className="filter-bar"
@@ -762,12 +1062,16 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           display: 'flex', alignItems: 'center',
           justifyContent: 'space-between',
           gap: '12px', flexWrap: 'wrap',
-          marginBottom: '12px',
+          maxWidth: '1080px',
+          margin: '12px auto',
           padding: '10px 14px',
+          background: 'var(--surface-1)',
+          border: '1px solid var(--border-soft)',
+          borderRadius: '10px',
         }}
       >
 
-        {/* ── LEFT: Clock + Tải tệp ── */}
+        {/* ── LEFT: Clock only — nút Tải tệp đã bỏ, đồng bộ với ManpowerDashboard ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
 
           {/* Clock */}
@@ -781,26 +1085,6 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           >
             ⏰ {formatClock(currentTime)}
           </span>
-
-          {/* Tải tệp */}
-          <label
-            className="btn btn-outline"
-            style={{
-              cursor: 'pointer', margin: 0,
-              display: 'inline-flex', alignItems: 'center',
-              justifyContent: 'center', gap: '6px',
-              fontSize: '13px', padding: '6px 12px',
-              height: '34px', boxSizing: 'border-box',
-            }}
-          >
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              style={{ display: 'none' }}
-              onChange={handleFileUpload}
-            />
-            📤 {lang === 'vi' ? 'Tải tệp' : lang === 'ko' ? '파일 업로드' : 'Upload File'}
-          </label>
         </div>
 
         {/* ── CENTER: Từ/Đến + Model + Granularity pills ── */}
@@ -909,20 +1193,39 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           </div>
         </div>
 
-        {/* ── RIGHT: Xuất Excel button ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            className="btn btn-outline"
-            onClick={handleExportExcel}
-            style={{
-              display: 'inline-flex', alignItems: 'center',
-              justifyContent: 'center', gap: '6px',
-              fontSize: '13px', padding: '6px 12px',
-              height: '34px', boxSizing: 'border-box',
-            }}
-          >
-            📊 {lang === 'vi' ? 'Xuất Excel' : lang === 'ko' ? '엑셀 내보내기' : 'Export Excel'}
-          </button>
+        {/* ── RIGHT: Tải Excel (upload) + Lên mây (Save to Cloud) — đồng bộ với ManpowerDashboard ── */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+          <label className="btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-1)', background: 'transparent', border: '1px solid var(--border)', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}>
+            <input
+              type="file"
+              accept=".xlsx, .xls"
+              style={{ display: 'none' }}
+              onChange={handleFileUpload}
+            />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
+              <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
+              <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M3 16v5h5" />
+              <path d="M16 3h5v5" />
+            </svg>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {lang === 'vi' ? 'Tải Excel' : lang === 'ko' ? '엑셀 다운로드' : 'Export Excel'}
+            </span>
+          </label>
+
+          {supabase && (
+            <button
+              className="btn-outline"
+              type="button"
+              onClick={handleSaveToCloud}
+              disabled={isSaving}
+              style={{ borderColor: '#14b8a6', color: '#14b8a6', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {isSaving ? '⏳...' : (lang === 'vi' ? 'Lên mây' : lang === 'ko' ? '클라우드 저장' : 'Save to Cloud')}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -961,28 +1264,28 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           {[
             {
               icon: '☀️',
-              label: lang === 'vi' ? 'DAY 인당생산수 TB' : lang === 'ko' ? 'DAY 인당생산수 평균' : 'AVG DAY Per Capita',
+              label: lang === 'vi' ? 'Sản lượng đầu người ca ngày TB' : lang === 'ko' ? 'DAY 인당생산수 평균' : 'AVG DAY Per Capita',
               value: fmt1(avgDay),
               unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
               bg: 'var(--blue-soft)', color: '#3b82f6',
             },
             {
               icon: '🌙',
-              label: lang === 'vi' ? 'NIGHT 인당생산수 TB' : lang === 'ko' ? 'NIGHT 인당생산수 평균' : 'AVG NIGHT Per Capita',
+              label: lang === 'vi' ? 'Sản lượng đầu người ca đêm TB' : lang === 'ko' ? 'NIGHT 인당생산수 평균' : 'AVG NIGHT Per Capita',
               value: fmt1(avgNight),
               unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
               bg: 'var(--rose-soft)', color: '#ef4444',
             },
             {
               icon: '📊',
-              label: lang === 'vi' ? 'TTL 인당생산수 TB' : lang === 'ko' ? 'TTL 인당생산수 평균' : 'AVG TTL Per Capita',
+              label: lang === 'vi' ? 'Sản lượng đầu người tổng TB' : lang === 'ko' ? 'TTL 인당생산수 평균' : 'AVG TTL Per Capita',
               value: fmt1(avgTtl),
               unit: lang === 'vi' ? 'người' : lang === 'ko' ? '명' : 'prs',
-              bg: 'var(--purple-soft)', color: '#a855f7',
+              bg: 'var(--cyan-soft)', color: '#14b8a6',
             },
             {
               icon: '🎯',
-              label: lang === 'vi' ? '경영목표' : lang === 'ko' ? '경영목표' : 'Mgmt. Target',
+              label: lang === 'vi' ? 'Mục tiêu' : lang === 'ko' ? '경영목표' : 'Mgmt. Target',
               value: String(targetPC),
               unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
               bg: 'var(--rose-soft)', color: '#f43f5e',
@@ -991,11 +1294,11 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
             <div key={i} className="kpi-card">
               <div className="kpi-card-header">
                 <div className="kpi-card-icon" style={{ background: kpi.bg, color: kpi.color }}>{kpi.icon}</div>
-                <div className="kpi-card-label">{kpi.label}</div>
+                <div className="kpi-card-label" style={{ fontSize: '15px', fontWeight: 700 }}>{kpi.label}</div>
               </div>
-              <div className="kpi-card-value" style={{ fontSize: '22px' }}>
+              <div className="kpi-card-value" style={{ fontSize: '38px' }}>
                 {kpi.value}
-                <span style={{ fontSize: '13px', color: 'var(--text-3)', marginLeft: '4px' }}>{kpi.unit}</span>
+                <span style={{ fontSize: '20px', color: 'var(--text-3)', marginLeft: '4px' }}>{kpi.unit}</span>
               </div>
             </div>
           ))}
@@ -1016,7 +1319,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           {/* Chart 1: 인당생산수 */}
           <div className="panel">
             <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '인당생산수' : lang === 'ko' ? '인당생산수' : 'Per Capita Output'}</h3>
+              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '인당생산수 - Sản lượng theo đầu người' : lang === 'ko' ? '인당생산수' : 'Per Capita Output'}</h3>
               <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
                 {lang === 'vi' ? 'TTL nhân lực x tỉ lệ ca (DAY/NIGHT)' : lang === 'ko' ? '근무인원 x 근무비율 (추정)' : 'Headcount x shift ratio (estimated)'}
               </span>
@@ -1027,7 +1330,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           {/* Chart 2: 생산 현황 */}
           <div className="panel">
             <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '생산 현황 (ước lượng)' : lang === 'ko' ? '생산 현황' : 'Production Status (estimated)'}</h3>
+              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '생산 현황 - Tình hình sản xuất' : lang === 'ko' ? '생산 현황' : 'Production Status (estimated)'}</h3>
               <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
                 {lang === 'vi' ? `Nhân lực x tỉ lệ ca x ${targetPC} sp/người` : lang === 'ko' ? `근무인원 x 근무비율 x ${targetPC}개/인 (추정)` : `Headcount x ratio x ${targetPC} pcs/cap`}
               </span>
@@ -1038,7 +1341,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           {/* Chart 3: 근무 인력 현황 */}
           <div className="panel">
             <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '근무 인력 현황' : lang === 'ko' ? '근무 인력 현황' : 'Manpower Trend'}</h3>
+              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '근무 인력 현황 - Tình hình nhân lực đi làm' : lang === 'ko' ? '근무 인력 현황' : 'Manpower Trend'}</h3>
               {data.ttlStandard && (
                 <span style={{
                   fontSize: '13px', padding: '2px 8px', borderRadius: '4px',
@@ -1053,6 +1356,19 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
             <div id={ids.current.c3} style={{ minHeight: '300px' }} />
           </div>
 
+          {/* Chart 6: 생산 LINE 수 현황 — DAY/NIGHT LINE Q'TY (cột) + TTL LINE Q'TY (đường), tham chiếu style Chart 3 */}
+          {hasLineQtyData && (
+            <div className="panel">
+              <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0 }}>{t('chart6Title', lang)}</h3>
+                <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
+                  {lang === 'vi' ? "Số line sản xuất theo ca (DAY/NIGHT) & tổng (TTL)" : lang === 'ko' ? "근무조별 생산 라인 수 (DAY/NIGHT) & 합계 (TTL)" : "Production lines by shift (DAY/NIGHT) & total (TTL)"}
+                </span>
+              </div>
+              <div id={ids.current.c6} style={{ minHeight: '300px' }} />
+            </div>
+          )}
+
           {/* Chart 4 + Chart 5 — 2 cột */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
 
@@ -1066,6 +1382,11 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                     ? '모델별 인원 분포 — 최근 기간'
                     : 'Headcount by Model — Latest Period'}
                 </h3>
+                {Object.keys(data.lineTtlByModelLabel).length > 0 && (
+                  <span style={{ fontSize: '12px', color: '#facc15', display: 'inline-flex', alignItems: 'center' }}>
+                    {lang === 'vi' ? "● Kèm số line sản xuất (TTL LINE Q'TY)" : lang === 'ko' ? "● 생산 라인 수 포함 (TTL LINE Q'TY)" : "● Incl. production lines (TTL LINE Q'TY)"}
+                  </span>
+                )}
               </div>
               <div id={ids.current.c4} style={{ minHeight: '450px' }} />
             </div>

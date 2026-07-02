@@ -23,7 +23,7 @@ const ITEMS = [
     // Mục 3 = Manpower + ProductionPerCapita gộp lại, dùng tab bên trong
     id: 'manpower',
     index: '3',
-    name: { vi: '인당 생산수 & 근무 인력 현황', en: 'Production Per Capita & Manpower', ko: '인당 생산수 & 근무 인력 현황' },
+    name: { vi: 'Sản lượng đầu người & Nhân lực', en: 'Production Per Capita & Manpower', ko: '인당 생산수 & 근무 인력 현황' },
   },
   {
     id: 'placeholder',

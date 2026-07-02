@@ -23,7 +23,66 @@ import './App.css';
 
 const NONE = '__none__';
 
+// ── Bucket routing helpers ───────────────────────────────────────────────
+// Root cause of "mất data khi chuyển tab" (Image 1): trước đây cả 3 dashboard
+// (Sales / Target-Actual / Manpower) dùng chung 1 mảng `allRows` duy nhất.
+// Upload file cho Mục 3 sẽ THAY THẾ toàn bộ allRows → Mục 1 mất dữ liệu dù
+// chưa hề đổi gì ở Mục 1. Fix: tách thành 3 bucket độc lập, mỗi lần upload/
+// tải-từ-cloud chỉ cập nhật đúng bucket tương ứng, không đụng tới 2 bucket kia.
 
+function detectIsManpower(headers: string[], rows: DataRow[]): boolean {
+  const headersLower = headers.map(h => h.toLowerCase().trim());
+  const hasModel = headersLower.includes('model');
+  const hasType = headersLower.includes('type');
+  const hasDate = headersLower.includes('date');
+  const hasValue = headersLower.includes('value');
+  if (hasModel && hasType && hasDate && hasValue) {
+    return rows.some(r => String((r as any).type || (r as any).Type || '').toLowerCase().includes('manpower'));
+  }
+  return false;
+}
+
+function detectIsTargetActual(headers: string[]): boolean {
+  const headersLower = headers.map(h => h.toLowerCase().trim());
+  const headersStr = headersLower.join(' ');
+  const hasTarget = headersStr.includes('target') || headersStr.includes('목표');
+  const hasActual = headersStr.includes('actual') || headersStr.includes('실적');
+  if (hasTarget && hasActual) return true;
+
+  const hasModel = headersLower.includes('model');
+  const hasDivision = headersLower.includes('division');
+  const hasValue = headersLower.includes('value');
+  const hasDate = headersLower.includes('date');
+  const hasType = headersLower.includes('type') || headersLower.includes('type1');
+  const hasCustom = headersLower.includes('custom') || headersLower.includes('type2');
+  return hasModel && hasDivision && hasValue && hasDate && hasType && hasCustom;
+}
+
+// Quyết định 1 sheet vừa upload thuộc bucket nào (dùng cho upload thủ công)
+function detectBucket(headers: string[], rows: DataRow[]): 'sales' | 'manpower' | 'target_actual' {
+  if (detectIsManpower(headers, rows)) return 'manpower';
+  if (detectIsTargetActual(headers)) return 'target_actual';
+  return 'sales';
+}
+
+// Phân vùng dữ liệu tải về từ Supabase theo cột 'source_tag' (mới) với fallback
+// đọc cột 'origin' cho các dòng cũ (Manpower/TargetActual) đã lưu trước khi có
+// source_tag. Dòng Sales KHÔNG có source_tag/origin trùng 'Manpower' hay
+// 'TargetActual' nên rơi vào nhánh else một cách an toàn — 'origin' của dòng
+// Sales là dữ liệu xuất xứ thật (vd "Vietnam"/"Korea"), không bao giờ trùng 2 tag trên.
+function bucketByTag(rows: DataRow[]): { sales: DataRow[]; manpower: DataRow[]; targetActual: DataRow[] } {
+  const sales: DataRow[] = [];
+  const manpower: DataRow[] = [];
+  const targetActual: DataRow[] = [];
+  rows.forEach(r => {
+    const tag = (r as any).source_tag || (r as any).origin;
+    if (tag === 'Manpower') manpower.push(r);
+    else if (tag === 'TargetActual') targetActual.push(r);
+    else sales.push(r);
+  });
+  return { sales, manpower, targetActual };
+}
+// ─────────────────────────────────────────────────────────────────────────
 
 function computeKPI(rows: DataRow[], mapping: ColumnMapping): KPIData {
   const hasRevenue = mapping.revenueCol !== NONE;
@@ -91,37 +150,42 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(true);
   const [filename, setFilename] = useState('');
 
-  // Data state
+  // Data state — 3 bucket độc lập thay vì 1 mảng allRows dùng chung.
+  const [salesRows, setSalesRows] = useState<DataRow[]>([]);
+  const [manpowerRows, setManpowerRows] = useState<DataRow[]>([]);
+  const [targetActualRows, setTargetActualRows] = useState<DataRow[]>([]);
+  // allRows: giữ lại cho pipeline generic cũ (marketing fallback, KPI/mapping
+  // tổng quát) — luôn phản ánh sheet được upload/tải gần nhất, KHÔNG dùng để
+  // render 3 dashboard chính nữa (chúng dùng bucket riêng ở trên).
   const [allRows, setAllRows] = useState<DataRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<ColumnMapping>({
     dateCol: NONE, categoryCol: NONE, revenueCol: NONE, costCol: NONE, currency: 'VND',
   });
+  const hasHydratedRef = useRef(false);
+  // Trạng thái đồng bộ Supabase khi upload thủ công — có thể dùng để hiện
+  // badge "Đang đồng bộ..." / "Đã lên Cloud" / "Lỗi đồng bộ" trên UI nếu cần.
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
 
-  // Load from Supabase on mount
+  // Persist 3 bucket ra localStorage mỗi khi có thay đổi (sau khi đã hydrate
+  // lần đầu) — cho phép reload trang mà KHÔNG mất bucket nào, kể cả khi bucket
+  // đó chỉ tồn tại ở local (chưa "Lên mây").
+  useEffect(() => {
+    if (!hasHydratedRef.current) return;
+    try {
+      localStorage.setItem('cached_dashboard_buckets', JSON.stringify({
+        sales: salesRows, manpower: manpowerRows, targetActual: targetActualRows,
+      }));
+    } catch (e) { console.error('Cache limit exceeded'); }
+  }, [salesRows, manpowerRows, targetActualRows]);
+
+  // Load from Supabase on mount — Supabase luôn được ưu tiên.
+  // Cache local chỉ là fallback khi Supabase không khả dụng.
   useEffect(() => {
     async function loadSupabaseData() {
-      let finalData = null;
-      let hasError = false;
 
-      // ── Nếu đã có dữ liệu upload tay (Manpower/PerCapita...) thì dùng cache local,
-      //    KHÔNG fetch Supabase đè lên — tránh mất data khi reload/restart dev server.
-      let useLocalOnly = false;
-      try {
-        useLocalOnly = localStorage.getItem('manual_upload_flag') === '1';
-      } catch (e) { /* ignore */ }
-
-      if (useLocalOnly && typeof window !== 'undefined') {
-        try {
-          const cached = localStorage.getItem('cached_sales_data');
-          if (cached) {
-            finalData = JSON.parse(cached);
-            console.log('Loaded from manual-upload cache (skip Supabase to preserve uploaded data)');
-          }
-        } catch (e) { console.error(e); }
-      }
-
-      if (!finalData && supabase) {
+      // ── BƯỚC 1: Luôn thử Supabase trước ──────────────────────────────────
+      if (supabase) {
         try {
           let allData: any[] = [];
           let from = 0;
@@ -134,54 +198,67 @@ export default function App() {
               .select('*')
               .order('year', { ascending: true })
               .range(from, from + PAGE_SIZE - 1);
-              
+
             if (error) {
               console.error('Supabase fetch error:', error);
-              hasError = true;
               break;
             } else if (data && data.length > 0) {
               allData = [...allData, ...data];
               from += PAGE_SIZE;
-              if (data.length < PAGE_SIZE) {
-                keepFetching = false;
-              }
+              if (data.length < PAGE_SIZE) keepFetching = false;
             } else {
               keepFetching = false;
             }
           }
 
-          if (!hasError && allData.length > 0) {
-            finalData = allData;
-            try { localStorage.setItem('cached_sales_data', JSON.stringify(finalData)); } catch (e) { console.error('Cache limit exceeded'); }
+          if (allData.length > 0) {
+            // Supabase có dữ liệu → dùng ngay, cập nhật cache local
+            const { sales, manpower, targetActual } = bucketByTag(allData);
+            setSalesRows(sales);
+            setManpowerRows(manpower);
+            setTargetActualRows(targetActual);
+            setAllRows(allData);
+            setHeaders(Object.keys(allData[0]).map(k => k.trim()));
+            setFilename('Supabase Cloud Database');
+            setScreen('dashboard');
+            try {
+              localStorage.setItem('cached_dashboard_buckets', JSON.stringify({ sales, manpower, targetActual }));
+            } catch (e) { /* ignore */ }
+            hasHydratedRef.current = true;
+            console.log('Loaded from Supabase:', allData.length, 'rows');
+            return;
           }
+          console.log('Supabase connected but table is empty — falling back to local cache');
         } catch (err) {
           console.error('Supabase exception:', err);
-          hasError = true;
         }
-      } else if (!finalData) {
-        hasError = true;
+      } else {
+        console.warn('Supabase not configured — falling back to local cache');
       }
 
-      if (!finalData && (hasError) && typeof window !== 'undefined') {
-        try {
-          const cached = localStorage.getItem('cached_sales_data');
-          if (cached) {
-            finalData = JSON.parse(cached);
-            console.log('Loaded from local cache (Supabase paused or offline)');
-          }
-        } catch (e) { console.error(e); }
-      }
-      
-      if (finalData && finalData.length > 0) {
-        setAllRows(finalData);
-        const firstRowKeys = Object.keys(finalData[0]).map(k => k.trim());
-        setHeaders(firstRowKeys);
-        setFilename(useLocalOnly ? 'Manual Upload (Cached)' : hasError ? 'Cached Local Database' : 'Supabase Cloud Database');
-        setScreen('dashboard');
-      }
+      // ── BƯỚC 2: Fallback — dùng cache local nếu Supabase không có dữ liệu ─
+      try {
+        const cachedBuckets = localStorage.getItem('cached_dashboard_buckets');
+        if (cachedBuckets) {
+          const parsed = JSON.parse(cachedBuckets);
+          setSalesRows(parsed.sales || []);
+          setManpowerRows(parsed.manpower || []);
+          setTargetActualRows(parsed.targetActual || []);
+          setAllRows([...(parsed.sales || []), ...(parsed.manpower || []), ...(parsed.targetActual || [])]);
+          setFilename('Cached Local Database');
+          setScreen('dashboard');
+          hasHydratedRef.current = true;
+          console.log('Loaded from local cache (3-bucket)');
+          return;
+        }
+      } catch (e) { /* ignore */ }
+
+      // ── BƯỚC 3: Không có dữ liệu nào ─────────────────────────────────────
+      hasHydratedRef.current = true;
     }
     loadSupabaseData();
   }, []);
+
 
   // Filters
   const [filters, setFilters] = useState<FilterState>({ dateStart: '', dateEnd: '', categories: [] });
@@ -192,6 +269,63 @@ export default function App() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+
+  // ── Đồng bộ dữ liệu upload thủ công lên Supabase ────────────────────────
+  // Trước đây upload thủ công CHỈ lưu vào localStorage. Vì loadSupabaseData
+  // luôn ưu tiên Supabase khi F5, dữ liệu upload tay sẽ "biến mất" khỏi màn
+  // hình (bị Supabase cũ/rỗng ghi đè) dù vẫn còn trong cache local. Hàm này
+  // đẩy ngay dữ liệu vừa upload lên Supabase để lần load sau luôn thấy nó.
+  // Chiến lược "replace-theo-bucket": mỗi lần upload thay thế toàn bộ dữ
+  // liệu của đúng bucket đó trên Supabase, không cộng dồn/trùng lặp.
+  const syncBucketToSupabase = useCallback(async (
+    rows: DataRow[],
+    bucketTag: 'Sales' | 'Manpower' | 'TargetActual'
+  ) => {
+    if (!supabase) {
+      console.warn('Supabase not configured — bỏ qua đồng bộ, dữ liệu chỉ lưu local.');
+      return;
+    }
+    setSyncStatus('syncing');
+    try {
+      // 1) Xoá toàn bộ dòng CŨ thuộc đúng bucket này trước khi insert dòng mới.
+      //    Riêng bucket 'Sales': dữ liệu Sales cũ trên Supabase có thể CHƯA có
+      //    cột source_tag (vì cột 'origin' của Sales là xuất xứ thật như
+      //    "Vietnam"/"Korea", không phải tag phân loại) → phải xoá cả những
+      //    dòng source_tag IS NULL, nếu không sẽ bị trùng lặp dữ liệu Sales.
+      const deleteQuery = supabase.from('sales_data').delete();
+      const { error: deleteError } = bucketTag === 'Sales'
+        ? await deleteQuery.or('source_tag.eq.Sales,source_tag.is.null')
+        : await deleteQuery.eq('source_tag', bucketTag);
+
+      if (deleteError) {
+        console.error(`Supabase delete error (${bucketTag}):`, deleteError);
+        setSyncStatus('error');
+        return;
+      }
+
+      // 2) Gắn source_tag cho từng dòng trước khi insert, để lần load sau
+      //    (hàm bucketByTag) phân loại đúng bucket một cách chắc chắn.
+      const taggedRows = rows.map(r => ({ ...r, source_tag: bucketTag }));
+
+      // 3) Insert theo từng lô để tránh vượt giới hạn payload của Supabase.
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < taggedRows.length; i += CHUNK_SIZE) {
+        const chunk = taggedRows.slice(i, i + CHUNK_SIZE);
+        const { error: insertError } = await supabase.from('sales_data').insert(chunk);
+        if (insertError) {
+          console.error(`Supabase insert error (${bucketTag}) tại lô bắt đầu dòng ${i}:`, insertError);
+          setSyncStatus('error');
+          return; // các lô insert trước đó đã lên thành công, dừng tại đây
+        }
+      }
+
+      setSyncStatus('synced');
+      console.log(`Đã đồng bộ ${taggedRows.length} dòng (${bucketTag}) lên Supabase`);
+    } catch (err) {
+      console.error(`Supabase upsert exception (${bucketTag}):`, err);
+      setSyncStatus('error');
+    }
+  }, []);
 
   // Parse sheet from workbook
   const parseSheet = useCallback((wb: any, sheetName: string) => {
@@ -213,12 +347,26 @@ export default function App() {
 
     setHeaders(filteredHeaders);
     setAllRows(parsedRows);
-    
-    try {
-      localStorage.setItem('cached_sales_data', JSON.stringify(parsedRows));
-      localStorage.setItem('manual_upload_flag', '1');
-    } catch (e) { console.error('Cache limit exceeded'); }
 
+    // Route sheet vừa upload vào ĐÚNG bucket của nó, KHÔNG đụng tới 2 bucket
+    // còn lại — đây là fix trực tiếp cho bug "upload Manpower thì Mục 1 mất data".
+    // Định tuyến data vào đúng bucket VÀ tự động chuyển sang tab phù hợp
+    // sau khi user upload thủ công. Supabase initial load KHÔNG tự chuyển
+    // (đã bỏ auto-switch effect) → trang luôn mở ở Mục 1 mặc định.
+    const bucket = detectBucket(filteredHeaders, parsedRows);
+    if (bucket === 'manpower') {
+      setManpowerRows(parsedRows);
+      setActiveViewId('manpower');
+      syncBucketToSupabase(parsedRows, 'Manpower');
+    } else if (bucket === 'target_actual') {
+      setTargetActualRows(parsedRows);
+      setActiveViewId('target_actual');
+      syncBucketToSupabase(parsedRows, 'TargetActual');
+    } else {
+      setSalesRows(parsedRows);
+      setActiveViewId('overview');
+      syncBucketToSupabase(parsedRows, 'Sales');
+    }
 
     let autoDate = types.find(t => t.type === 'date')?.name || NONE;
     // ... (rest of auto-detect mapping logic unchanged)
@@ -230,7 +378,7 @@ export default function App() {
       currency: 'VND',
     });
     setScreen('dashboard');
-  }, []);
+  }, [syncBucketToSupabase]);
 
   const handleFileSelected = useCallback((file: File, wb: any) => {
     setFilename(file.name);
@@ -243,10 +391,13 @@ export default function App() {
     setScreen('upload');
     setAllRows([]);
     setHeaders([]);
+    setSalesRows([]);
+    setManpowerRows([]);
+    setTargetActualRows([]);
     resetChannelColors?.();
     try {
-      localStorage.removeItem('manual_upload_flag');
       localStorage.removeItem('cached_sales_data');
+      localStorage.removeItem('cached_dashboard_buckets');
     } catch (e) { /* ignore */ }
   }, []);
 
@@ -320,27 +471,8 @@ export default function App() {
     return isSales ? 'sales' : 'marketing';
   }, [headers, isTargetActual, isManpower]);
 
-  // ── Auto-switch view chỉ khi lần đầu load data (allRows từ rỗng → có data).
-  //    KHÔNG override khi user đang xem Mục 1 rồi upload file Mục 3,
-  //    vì điều đó sẽ làm Mục 1 bị đẩy sang Mục 3 (bug cũ).
-  const prevRowsLengthRef = useRef<number>(0);
-  useEffect(() => {
-    const wasEmpty = prevRowsLengthRef.current === 0;
-    const nowHasData = allRows.length > 0;
-    prevRowsLengthRef.current = allRows.length;
-
-    // Chỉ tự động chuyển view khi đây là lần đầu có data (initial load)
-    if (wasEmpty && nowHasData) {
-      if (dashboardMode === 'manpower') {
-        setActiveViewId('manpower');
-      } else if (dashboardMode === 'target_actual') {
-        setActiveViewId('target_actual');
-      } else {
-        setActiveViewId('overview');
-      }
-    }
-    // Nếu user đã chọn view thủ công (sidebar click) → giữ nguyên, không override
-  }, [allRows, dashboardMode]);
+  // ── Auto-switch: đã chuyển sang parseSheet (chỉ khi upload tay).
+  //    KHÔNG còn auto-switch khi Supabase load → trang luôn mở ở Mục 1. ──
 
   return (
     <>
@@ -399,9 +531,9 @@ export default function App() {
                 Chỉ render khi user chủ động chọn 'overview' (Mục 1).
                 KHÔNG dùng dashboardMode để quyết định — tránh bug hiện Mục 3 khi
                 allRows là Manpower nhưng user đang ở Mục 1. */}
-            {activeViewId === 'overview' && (
+            {activeViewId === 'overview' && dashboardMode !== 'marketing' && (
               <SalesDashboard
-                rows={allRows}
+                rows={salesRows}
                 mapping={mapping}
                 theme={theme}
                 onBack={() => {}}
@@ -420,7 +552,7 @@ export default function App() {
             {/* ── MENU 3: Manpower Dashboard (có Tab 2 Per Capita bên trong) ── */}
             {activeViewId === 'manpower' && (
               <ManpowerDashboard
-                rows={allRows}
+                rows={manpowerRows}
                 theme={theme}
                 lang={lang}
                 onToggleTheme={toggleTheme}
@@ -431,7 +563,7 @@ export default function App() {
 
             {(activeViewId === 'target_actual') && (
               <TargetActualDashboard
-                rows={allRows}
+                rows={targetActualRows}
                 theme={theme}
                 onToggleTheme={toggleTheme}
                 lang={lang}
@@ -455,7 +587,7 @@ export default function App() {
               </div>
             )}
 
-            {dashboardMode === 'marketing' && (
+            {activeViewId === 'overview' && dashboardMode === 'marketing' && (
               <div className="dashboard-screen">
                 <header className="topbar">
                   <div className="topbar-left">

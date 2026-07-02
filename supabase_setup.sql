@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.sales_data (
   year integer NOT NULL,
   month text NOT NULL,
   value numeric NOT NULL,
+  source_tag text, -- 'Sales', 'TargetActual', 'Manpower' to partition data
   created_at timestamp with time zone DEFAULT now()
 );
 

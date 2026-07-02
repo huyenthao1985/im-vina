@@ -26,7 +26,7 @@ function addEnv(key, value) {
 async function main() {
   try {
     console.log('Adding URL...');
-    await addEnv('VITE_SUPABASE_URL', 'https://pquxjrfyafzaybuzovqy.supabase.co');
+    await addEnv('VITE_SUPABASE_URL', 'https://pquxjrfyafsaybuzovqy.supabase.co');
     console.log('Adding KEY...');
     await addEnv('VITE_SUPABASE_ANON_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxdXhqcmZ5YWZzYXlidXpvdnF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MjYwNzUsImV4cCI6MjA5NTQwMjA3NX0.x3j55_kArTHzDeA1kbelzp73yGQC_H0TcZEwP6pqnAo');
     console.log('Done!');
