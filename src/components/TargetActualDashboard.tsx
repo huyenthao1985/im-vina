@@ -4,6 +4,7 @@ import { translations } from '../translations';
 import { supabase } from '../lib/supabase';
 import { CustomSelect } from './CustomSelect';
 import { usePagination } from '../hooks/usePagination';
+import { GlobalHeaderControls } from './GlobalHeaderControls';
 import { chartTheme, getChartLayout } from './chartTheme';
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -1872,9 +1873,26 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         }
       `}</style>
 
-      {/* Header section */}
-      <div className="hero" style={{ position: 'relative' }}>
-        <h1>
+      {/* Header ngang hàng với GlobalHeaderControls */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        padding: '12px 20px', 
+        borderBottom: '1px solid var(--border-soft)',
+        flexWrap: 'wrap',
+        gap: '12px',
+        width: '100%',
+        boxSizing: 'border-box',
+        background: 'var(--surface)'
+      }}>
+        <h1 style={{ 
+          fontSize: '20px', 
+          fontWeight: 700, 
+          margin: 0, 
+          color: 'var(--text-0)',
+          textAlign: 'left'
+        }}>
           {formatReportTitle(
             t.dash2Title,
             selectedDateStart ? parseYYYYMMDD(selectedDateStart) : dateBounds.min,
@@ -1882,7 +1900,12 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             lang
           )}
         </h1>
-        <div className="header-line"></div>
+        <GlobalHeaderControls 
+          lang={lang} 
+          setLang={setLang} 
+          isDark={theme === 'dark'} 
+          onToggleTheme={onToggleTheme} 
+        />
       </div>
 
       {/* Tabs */}
