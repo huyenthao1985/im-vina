@@ -4,6 +4,7 @@ import type { DataRow } from '../types';
 import { parseToDate } from '../utils';
 import { PerCapitaTab } from './PerCapitaTab';
 import { supabase } from '../lib/supabase';
+import { GlobalHeaderControls } from './GlobalHeaderControls';
 
 interface ManpowerDashboardProps {
   rows: DataRow[];
@@ -766,14 +767,35 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   };
 
   return (
-    <div className="sales-dashboard" style={{ padding: '24px', boxSizing: 'border-box' }}>
+    <div className="sales-dashboard" style={{ padding: '0 24px 24px', boxSizing: 'border-box' }}>
       
-      {/* ── Header ── */}
-      <div className="hero" style={{ position: 'relative', padding: '16px 20px 4px', margin: '0 0 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', justifyContent: 'center' }}>
-          <span style={{ fontSize: '22px' }}>👷</span>
-          <h1 style={{ fontSize: '26px', margin: 0, fontWeight: 700 }}>{t('title', lang)}</h1>
+      {/* Header ngang hàng với GlobalHeaderControls */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        padding: '12px 20px', 
+        borderBottom: '1px solid var(--border-soft)',
+        flexWrap: 'wrap',
+        gap: '12px',
+        margin: '0 -24px 12px',
+        width: 'calc(100% + 48px)',
+        boxSizing: 'border-box',
+        background: 'var(--surface)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '20px' }}>👷</span>
+          <h1 style={{ fontSize: '20px', margin: 0, fontWeight: 700, color: 'var(--text-0)' }}>
+            {t('title', lang)}
+          </h1>
         </div>
+        <GlobalHeaderControls 
+          lang={lang} 
+          setLang={setLang} 
+          isDark={theme === 'dark'} 
+          onToggleTheme={onToggleTheme} 
+        />
+      </div>
 
 
         {/* ── Tab Navigation ── */}
@@ -933,8 +955,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
         </div>
         )} {/* end activeTab === 'manpower' toolbar */}
-      </div>
-
+      
       {/* ── Tab 2: Per Capita — luôn render (display:none khi inactive) để tránh
           unmount/remount mất Plotly chart khi đổi ngôn ngữ / dark-light mode ── */}
       <div style={{ display: activeTab === 'percapita' ? 'block' : 'none' }}>
