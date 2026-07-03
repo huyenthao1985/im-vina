@@ -1273,33 +1273,19 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   return (
     <div className="sales-dashboard" style={{ position: 'relative', zIndex: 1 }}>
       {/* Header ngang hàng với GlobalHeaderControls */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        padding: '12px 20px', 
-        borderBottom: '1px solid var(--border-soft)',
-        flexWrap: 'wrap',
-        gap: '12px',
-        width: '100%',
-        boxSizing: 'border-box',
-        background: 'var(--surface)'
-      }}>
-        <h1 style={{ 
-          fontSize: '20px', 
-          fontWeight: 700, 
-          margin: 0, 
-          color: 'var(--text-0)',
-          textAlign: 'left'
-        }}>
+      <div className="dashboard-header-grid">
+        <div className="dashboard-header-left" />
+        <h1 className="dashboard-header-title">
           {t.mainTitleDash}
         </h1>
-        <GlobalHeaderControls 
-          lang={lang} 
-          setLang={_setLang} 
-          isDark={theme === 'dark'} 
-          onToggleTheme={_onToggleTheme} 
-        />
+        <div className="dashboard-header-right">
+          <GlobalHeaderControls 
+            lang={lang} 
+            setLang={_setLang} 
+            isDark={theme === 'dark'} 
+            onToggleTheme={_onToggleTheme} 
+          />
+        </div>
       </div>
 
       <div className="dash-container">

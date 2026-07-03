@@ -750,7 +750,7 @@ export default function App() {
             )}
 
             {activeViewId === 'placeholder' && (
-              <div style={{ padding: '40px', background: 'var(--surface)', margin: '24px', borderRadius: '12px', border: '1px solid var(--border-soft)' }}>
+              <div style={{ padding: '40px', background: 'var(--surface)', margin: '24px', borderRadius: '12px', border: '1px solid var(--border-soft)', textAlign: 'center' }}>
                 <h2 style={{ color: 'var(--text-0)' }}>
                   {lang === 'vi' ? '4. Cấu hình & Khác' : lang === 'en' ? '4. Config & Others' : '4. 설정 및 기타'}
                 </h2>

@@ -770,31 +770,22 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     <div className="sales-dashboard" style={{ padding: '0 24px 24px', boxSizing: 'border-box' }}>
       
       {/* Header ngang hàng với GlobalHeaderControls */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        padding: '12px 20px', 
-        borderBottom: '1px solid var(--border-soft)',
-        flexWrap: 'wrap',
-        gap: '12px',
-        margin: '0 -24px 12px',
-        width: 'calc(100% + 48px)',
-        boxSizing: 'border-box',
-        background: 'var(--surface)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="dashboard-header-grid stretched">
+        <div className="dashboard-header-left" />
+        <div className="dashboard-header-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '20px' }}>👷</span>
-          <h1 style={{ fontSize: '20px', margin: 0, fontWeight: 700, color: 'var(--text-0)' }}>
+          <h1 className="dashboard-header-title" style={{ border: 'none', padding: 0 }}>
             {t('title', lang)}
           </h1>
         </div>
-        <GlobalHeaderControls 
-          lang={lang} 
-          setLang={setLang} 
-          isDark={theme === 'dark'} 
-          onToggleTheme={onToggleTheme} 
-        />
+        <div className="dashboard-header-right">
+          <GlobalHeaderControls 
+            lang={lang} 
+            setLang={setLang} 
+            isDark={theme === 'dark'} 
+            onToggleTheme={onToggleTheme} 
+          />
+        </div>
       </div>
 
 

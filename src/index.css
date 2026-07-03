@@ -2813,3 +2813,58 @@ select {
   color: var(--text-0);
 }
 
+/* ── 31. Centered Header Grid for Dashboards ── */
+.dashboard-header-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-soft);
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface);
+  position: relative;
+}
+
+.dashboard-header-grid.stretched {
+  margin: 0 -24px 12px;
+  width: calc(100% + 48px);
+}
+
+.dashboard-header-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-0);
+  text-align: center;
+  justify-self: center;
+}
+
+.dashboard-header-left {
+  justify-self: start;
+}
+
+.dashboard-header-right {
+  justify-self: end;
+}
+
+@media (max-width: 768px) {
+  .dashboard-header-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    align-items: center;
+    text-align: center;
+  }
+  .dashboard-header-grid.stretched {
+    margin: 0 0 12px 0;
+    width: 100%;
+  }
+  .dashboard-header-title {
+    font-size: 18px;
+  }
+  .dashboard-header-left, .dashboard-header-right {
+    justify-self: center;
+  }
+}

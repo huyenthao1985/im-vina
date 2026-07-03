@@ -1874,25 +1874,9 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       `}</style>
 
       {/* Header ngang hàng với GlobalHeaderControls */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        padding: '12px 20px', 
-        borderBottom: '1px solid var(--border-soft)',
-        flexWrap: 'wrap',
-        gap: '12px',
-        width: '100%',
-        boxSizing: 'border-box',
-        background: 'var(--surface)'
-      }}>
-        <h1 style={{ 
-          fontSize: '20px', 
-          fontWeight: 700, 
-          margin: 0, 
-          color: 'var(--text-0)',
-          textAlign: 'left'
-        }}>
+      <div className="dashboard-header-grid">
+        <div className="dashboard-header-left" />
+        <h1 className="dashboard-header-title">
           {formatReportTitle(
             t.dash2Title,
             selectedDateStart ? parseYYYYMMDD(selectedDateStart) : dateBounds.min,
@@ -1900,12 +1884,14 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             lang
           )}
         </h1>
-        <GlobalHeaderControls 
-          lang={lang} 
-          setLang={_setLang} 
-          isDark={theme === 'dark'} 
-          onToggleTheme={_onToggleTheme} 
-        />
+        <div className="dashboard-header-right">
+          <GlobalHeaderControls 
+            lang={lang} 
+            setLang={_setLang} 
+            isDark={theme === 'dark'} 
+            onToggleTheme={_onToggleTheme} 
+          />
+        </div>
       </div>
 
       {/* Tabs */}
