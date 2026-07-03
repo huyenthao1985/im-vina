@@ -5,6 +5,7 @@ import { parseToDate } from '../utils';
 import { PerCapitaTab } from './PerCapitaTab';
 import { supabase } from '../lib/supabase';
 import { GlobalHeaderControls } from './GlobalHeaderControls';
+import { CustomSelect } from './CustomSelect';
 
 interface ManpowerDashboardProps {
   rows: DataRow[];
@@ -588,6 +589,10 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   // Clock state
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
+  // FIX(toolbar-chuan-hoa): màu label đồng bộ với toolbar chuẩn (PerCapitaTab /
+  // TargetActualDashboard) — tự đổi theo Light/Dark mode.
+  const filterLabelColor = theme === 'light' ? 'var(--text-0)' : 'var(--text-2)';
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -816,80 +821,80 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
           ))}
         </div>
 
-        {/* ── Toolbar Row — chỉ hiển thị khi ở tab Manpower ── */}
+        {/* ── Toolbar — chỉ hiển thị khi ở tab Manpower ──────────────────────
+            FIX(toolbar-chuan-hoa): đồng bộ y hệt cấu trúc/kích thước/font-size
+            với toolbar chuẩn tham chiếu ở TargetActualDashboard.tsx (ảnh 2) —
+            layout 2 dòng (dòng nhãn + dòng control), đồng hồ dạng text thường
+            (không bo viền/pill), input ngày cao 38px, CustomSelect cho Model,
+            control cao 38px đồng nhất. Áp dụng cùng chuẩn đã dùng ở PerCapitaTab. */}
         {activeTab === 'manpower' && (
-        <div className="filter-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', maxWidth: '1080px', margin: '12px auto', padding: '10px 14px', background: 'var(--surface-1)', border: '1px solid var(--border-soft)', borderRadius: '10px' }}>
-          {/* Left: Clock only — nút Tải tệp đã chuyển sang bên phải, đồng bộ vị trí với Mục 2 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span className="pill-rows" style={{ margin: 0, fontSize: '12px', padding: '6px 10px', height: '34px', display: 'inline-flex', alignItems: 'center', fontWeight: '600' }}>
-              ⏰ {formatClock(currentTime)}
-            </span>
+        <div className="topbar-dash" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', marginBottom: '16px' }}>
+          {/* Dòng 1 (labels) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            {/* Cụm trái dòng 1: Đồng hồ */}
+            <div style={{ width: '170px', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: '13px', color: filterLabelColor, fontWeight: '700', whiteSpace: 'nowrap' }}>
+              {formatClock(currentTime)}
+            </div>
+            {/* Cụm giữa dòng 1: Labels */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
+              <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                {lang === 'vi' ? 'NGÀY BẮT ĐẦU' : lang === 'ko' ? '시작일' : 'START DATE'}
+              </span>
+              <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                {lang === 'vi' ? 'NGÀY KẾT THÚC' : lang === 'ko' ? '종료일' : 'END DATE'}
+              </span>
+              <span style={{ width: '140px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                {lang === 'vi' ? 'MODEL' : lang === 'ko' ? '모델' : 'MODEL'}
+              </span>
+              <span style={{ width: '220px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                {lang === 'vi' ? 'XEM THEO' : lang === 'ko' ? '보기 방식' : 'VIEW BY'}
+              </span>
+            </div>
+            {/* Cụm phải dòng 1: Spacers matching Dòng 2 (Tải Excel + Lên mây) */}
+            <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+              <div style={{ width: '120px' }}></div>
+              {supabase && <div style={{ width: '120px' }}></div>}
+            </div>
           </div>
 
-          {/* Center: Date Filters + Model Filter + Granularity — with column labels (matching PerCapitaTab) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-
-            {/* Date range with labels above */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '130px', textAlign: 'center' }}>
-                  {lang === 'vi' ? 'Ngày bắt đầu' : lang === 'ko' ? '시작일' : 'Start Date'}
-                </span>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '130px', textAlign: 'center' }}>
-                  {lang === 'vi' ? 'Ngày kết thúc' : lang === 'ko' ? '종료일' : 'End Date'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={e => handleDateFromChange(e.target.value)}
-                  style={{ height: '34px', padding: '4px 8px', fontSize: '13px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-0)', width: '130px' }}
-                />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={e => handleDateToChange(e.target.value)}
-                  style={{ height: '34px', padding: '4px 8px', fontSize: '13px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-0)', width: '130px' }}
-                />
-                {dateError && (
-                  <span style={{ color: 'var(--rose)', fontSize: '11px', fontWeight: '500' }}>
-                    ⚠️ {dateError}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Model dropdown with label above */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>
-                {lang === 'vi' ? 'Model' : lang === 'ko' ? '모델' : 'Model'}
-              </span>
-              <select
+          {/* Dòng 2 (values/controls) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            {/* Cụm trái dòng 2: Trống để giữ căn lề */}
+            <div style={{ width: '170px', flexShrink: 0 }}></div>
+            {/* Cụm giữa dòng 2: Controls */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px', alignItems: 'center' }}>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => handleDateFromChange(e.target.value)}
+                className="filter-date-input"
+                style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
+              />
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => handleDateToChange(e.target.value)}
+                className="filter-date-input"
+                style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
+              />
+              <CustomSelect
                 value={modelFilter}
-                onChange={e => setModelFilter(e.target.value)}
-                style={{ height: '34px', padding: '4px 8px', fontSize: '13px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-0)', minWidth: '110px' }}
-              >
-                <option value="all">{t('allModels', lang)}</option>
-                {data.activeModels.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Granularity pills with label above */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>
-                {lang === 'vi' ? 'Xem theo' : lang === 'ko' ? '보기 방식' : 'View By'}
-              </span>
-              <div style={{ display: 'flex', gap: '0px', height: '34px' }}>
+                onChange={setModelFilter}
+                options={[
+                  { value: 'all', label: t('allModels', lang) },
+                  ...data.activeModels.map(m => ({ value: m, label: m })),
+                ]}
+                style={{ width: '140px', height: '38px' }}
+              />
+              <div style={{ display: 'flex', gap: '0px', height: '38px', width: '220px', flexShrink: 0 }}>
                 {(['day', 'week', 'month', 'year'] as const).map(mode => (
                   <button
                     key={mode}
                     onClick={() => setGranularity(mode)}
                     style={{
-                      padding: '0 10px',
-                      fontSize: '12px',
+                      flex: 1,
+                      padding: '6px 0',
+                      fontSize: '13px',
                       fontWeight: 600,
                       borderRadius: mode === 'day' ? '6px 0 0 6px' : mode === 'year' ? '0 6px 6px 0' : '0',
                       border: '1px solid var(--border)',
@@ -909,41 +914,44 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                   </button>
                 ))}
               </div>
+              {dateError && (
+                <span style={{ color: 'var(--rose)', fontSize: '11px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  ⚠️ {dateError}
+                </span>
+              )}
             </div>
 
+            {/* Cụm phải dòng 2: Tải Excel (upload) + Lên mây (Save to Cloud) */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+              <label className="btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-1)', background: 'transparent', border: '1px solid var(--border)', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}>
+                <input
+                  type="file"
+                  accept=".xlsx, .xls"
+                  style={{ display: 'none' }}
+                  onChange={handleFileUpload}
+                />
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
+                  <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
+                  <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                  <path d="M3 16v5h5" />
+                  <path d="M16 3h5v5" />
+                </svg>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('exportBtn', lang)}</span>
+              </label>
+
+              {supabase && (
+                <button
+                  className="btn-outline"
+                  type="button"
+                  onClick={handleSaveToCloud}
+                  disabled={isSaving}
+                  style={{ borderColor: '#14b8a6', color: '#14b8a6', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isSaving ? '⏳...' : t('saveToCloudBtn', lang)}</span>
+                </button>
+              )}
+            </div>
           </div>
-
-          {/* Right: Tải Excel (upload) + Lên mây (Save to Cloud) — đồng bộ vị trí/style với Mục 2 */}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-            <label className="btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-1)', background: 'transparent', border: '1px solid var(--border)', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}>
-              <input
-                type="file"
-                accept=".xlsx, .xls"
-                style={{ display: 'none' }}
-                onChange={handleFileUpload}
-              />
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
-                <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
-                <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                <path d="M3 16v5h5" />
-                <path d="M16 3h5v5" />
-              </svg>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('exportBtn', lang)}</span>
-            </label>
-
-            {supabase && (
-              <button
-                className="btn-outline"
-                type="button"
-                onClick={handleSaveToCloud}
-                disabled={isSaving}
-                style={{ borderColor: '#14b8a6', color: '#14b8a6', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isSaving ? '⏳...' : t('saveToCloudBtn', lang)}</span>
-              </button>
-            )}
-          </div>
-
         </div>
         )} {/* end activeTab === 'manpower' toolbar */}
       

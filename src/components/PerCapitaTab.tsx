@@ -14,11 +14,9 @@
  *  Chart 3 — 근무 인력 현황 (Manpower Trend)
  *    Bar DAY + Bar NIGHT (group) + Line TTL + dashed 기준인력 Standard
  *
- *  Chart 6 — 생산 LINE 수 현황 (Production Line Qty Trend) [bổ sung]
- *    Bar DAY LINE Q'TY + Bar NIGHT LINE Q'TY (group) + Line TTL LINE Q'TY
- *    Cùng bố cục/tông màu với Chart 3 (DAY=#3b82f6, NIGHT=#ef4444, TTL=xanh ngọc/teal),
- *    chỉ khác nguồn: lineDay/lineNight/lineTtlByModelLabel (type "*LINE Q'TY")
- *    thay vì ManPower AVG. Chỉ hiển thị khi dữ liệu Line Q'TY tồn tại.
+ * (Đã gỡ panel "요구 LINE 수 현황" trước đây từng có ở đây — dữ liệu số line
+ *  yêu cầu (DAY/NIGHT/TTL LINE Q'TY) nay chỉ hiển thị 1 nơi duy nhất: đường
+ *  overlay "TTL LINE Q'TY" trong Chart 4, tránh trùng lặp thông tin.)
  *
  * Tất cả dùng data từ rows (Test_3 TTL ManPower AVG), không hard-code.
  * DAY_RATIO = 0.507, NIGHT_RATIO = 0.493 theo bản tham chiếu.
@@ -76,11 +74,6 @@ const T = {
   nightMP:      { vi: 'NIGHT ManPower AVG', en: 'NIGHT ManPower AVG', ko: 'NIGHT ManPower AVG' },
   ttlMP:        { vi: 'TTL ManPower AVG', en: 'TTL ManPower AVG', ko: 'TTL ManPower AVG' },
   standard:     { vi: 'TTL 기준인력 Standard AVG', en: 'TTL Standard AVG', ko: 'TTL 기준인력 Standard AVG' },
-  chart6Title:  { vi: "생산 LINE 수 현황 - Tình hình số Line sản xuất", en: 'Production Line Qty Trend', ko: "생산 LINE 수 현황" },
-  dayLineQty:   { vi: "DAY LINE Q'TY", en: "DAY LINE Q'TY", ko: "DAY LINE Q'TY" },
-  nightLineQty: { vi: "NIGHT LINE Q'TY", en: "NIGHT LINE Q'TY", ko: "NIGHT LINE Q'TY" },
-  ttlLineQty:   { vi: "TTL LINE Q'TY", en: "TTL LINE Q'TY", ko: "TTL LINE Q'TY" },
-  lineQtyUnit:  { vi: 'line', en: 'lines', ko: '라인' },
   noData:       { vi: 'Không có dữ liệu nhân lực', en: 'No manpower data', ko: '인력 데이터 없음' },
   estimatedBadge: { vi: '⚠ Ước lượng', en: '⚠ Estimated', ko: '⚠ 추정값' },
   persons:      { vi: 'người', en: 'prs', ko: '명' },
@@ -133,7 +126,7 @@ interface PCTabData {
   // model → label → avg manpower (từ TTL ManPower AVG)
   byModelLabel: Record<string, Record<string, number>>;
   pcByModelLabel: Record<string, Record<string, number>>; // per capita production data
-  // Số line sản xuất theo Type: 'TTL LINE Q'TY' / 'DAY LINE Q'TY' / 'NIGHT LINE Q'TY'
+  // Số line YÊU CẦU theo Type: 'TTL LINE Q'TY' / 'DAY LINE Q'TY' / 'NIGHT LINE Q'TY'
   lineTtlByModelLabel: Record<string, Record<string, number>>;
   lineDayByModelLabel: Record<string, Record<string, number>>;
   lineNightByModelLabel: Record<string, Record<string, number>>;
@@ -149,7 +142,9 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
   return useMemo(() => {
     const mpRows = rows.filter(r => {
       const typeStr = String(r.type || r.Type || '').toLowerCase();
-      return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line');
+      // FIX: nhận diện thêm "라인" (tiếng Hàn) bên cạnh "line" (EN) để không bỏ sót
+      // dòng dữ liệu Line Q'TY nhập bằng tiếng Hàn.
+      return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line') || typeStr.includes('라인');
     });
     if (mpRows.length === 0) {
       return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
@@ -184,7 +179,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       !x.label.startsWith('JAN-') && x.label !== 'YR24'
     );
 
-    // Build byModelLabel, pcByModelLabel và 3 nhóm số line sản xuất (TTL/DAY/NIGHT LINE Q'TY)
+    // Build byModelLabel, pcByModelLabel và 3 nhóm số line YÊU CẦU (TTL/DAY/NIGHT LINE Q'TY)
     const groups: Record<string, Record<string, number[]>> = {};
     const pcGroups: Record<string, Record<string, number[]>> = {};
     const lineTtlGroups: Record<string, Record<string, number[]>> = {};
@@ -197,7 +192,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       const typeStr = String(r.type || r.Type || '').toLowerCase();
       if (!model || isNaN(val) || val == null) return;
 
-      if (typeStr.includes('line')) {
+      if (typeStr.includes('line') || typeStr.includes('라인')) {
         // Type mẫu: "TTL LINE Q'TY", "DAY LINE Q'TY", "NIGHT LINE Q'TY"
         // Kiểm tra DAY/NIGHT trước vì "TTL" có thể không xuất hiện tường minh
         // trên 1 số dòng — mặc định còn lại (không phải DAY/NIGHT) là TTL.
@@ -317,10 +312,10 @@ function buildChart1(
   const traces: any[] = [
     {
       x: labels, y: dayVals, name: t('dayPc', lang),
-      type: 'bar', marker: { color: '#3b82f6' },
+      type: 'bar', marker: { color: '#1565C0' },
       text: dayVals.map(v => v > 0 ? fmt1(v) : ''),
       textposition: 'inside',
-      textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       insidetextanchor: 'middle',
     },
     {
@@ -328,24 +323,24 @@ function buildChart1(
       type: 'bar', marker: { color: '#ef4444' },
       text: nightVals.map(v => v > 0 ? fmt1(v) : ''),
       textposition: 'inside',
-      textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       insidetextanchor: 'middle',
     },
     {
       x: labels, y: ttlVals, name: t('ttlPc', lang),
       type: 'scatter', mode: 'lines+markers+text',
-      line: { color: tealAccent, width: 2, shape: 'spline', smoothing: 1 },
-      marker: { color: tealAccent, size: 8 },
+      line: { color: tealAccent, width: 1.6, shape: 'spline', smoothing: 1 },
+      marker: { color: tealAccent, size: 6 },
       text: ttlVals.map(v => v > 0 ? fmt1(v) : ''),
       textposition: 'top center',
-      textfont: { size: 13, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 10, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
       hovertemplate: `<b>${t('ttlPc', lang)}</b>: %{y}<extra></extra>`,
     },
     {
       x: labels, y: targetVals, name: t('mgmtTarget', lang),
       type: 'scatter', mode: 'lines',
-      line: { color: roseAccent, width: 2, dash: 'dash', shape: 'spline', smoothing: 1 },
+      line: { color: roseAccent, width: 1.6, dash: 'dash', shape: 'spline', smoothing: 1 },
     },
   ];
 
@@ -356,12 +351,12 @@ function buildChart1(
     barmode: 'group',
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
-    font: { color: textColor, size: 14 },
-    margin: { t: 55, r: 15, b: 35, l: 60 },
-    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 13 } },
-    xaxis: { tickfont: { size: 14, color: textColor }, gridcolor: gridColor },
-    yaxis: { gridcolor: gridColor, tickfont: { size: 13 }, range: yRange },
-    hoverlabel: { font: { size: 13 } },
+    font: { color: textColor, size: 11 },
+    margin: { t: 44, r: 12, b: 28, l: 48 },
+    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 10 } },
+    xaxis: { tickfont: { size: 11, color: textColor }, gridcolor: gridColor },
+    yaxis: { gridcolor: gridColor, tickfont: { size: 10 }, range: yRange },
+    hoverlabel: { font: { size: 10 } },
   };
   return { traces, layout };
 }
@@ -390,10 +385,10 @@ function buildChart2(
   const traces: any[] = [
     {
       x: labels, y: dayPro, name: t('dayPro', lang),
-      type: 'bar', marker: { color: '#3b82f6' },
+      type: 'bar', marker: { color: '#1565C0' },
       text: dayPro.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
       textposition: 'inside',
-      textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       insidetextanchor: 'middle',
     },
     {
@@ -401,24 +396,24 @@ function buildChart2(
       type: 'bar', marker: { color: '#ef4444' },
       text: nightPro.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
       textposition: 'inside',
-      textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       insidetextanchor: 'middle',
     },
     {
       x: labels, y: ttlPro, name: t('ttlPro', lang),
       type: 'scatter', mode: 'lines+markers+text',
-      line: { color: tealAccent, width: 2, shape: 'spline', smoothing: 1 },
-      marker: { color: tealAccent, size: 8 },
+      line: { color: tealAccent, width: 1.6, shape: 'spline', smoothing: 1 },
+      marker: { color: tealAccent, size: 6 },
       text: ttlPro.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
       textposition: 'top center',
-      textfont: { size: 13, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 10, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
       hovertemplate: `<b>${t('ttlPro', lang)}</b>: %{y:,.0f}<extra></extra>`,
     },
     {
       x: labels, y: planLine, name: t('targetPlan', lang),
       type: 'scatter', mode: 'lines',
-      line: { color: amberAccent, width: 1.5, dash: 'dash', shape: 'spline', smoothing: 1 },
+      line: { color: amberAccent, width: 1.2, dash: 'dash', shape: 'spline', smoothing: 1 },
     },
   ];
 
@@ -429,12 +424,12 @@ function buildChart2(
     barmode: 'group',
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
-    font: { color: textColor, size: 14 },
-    margin: { t: 55, r: 15, b: 35, l: 70 },
-    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 13 } },
-    xaxis: { tickfont: { size: 14, color: textColor }, gridcolor: gridColor },
-    yaxis: { gridcolor: gridColor, tickfont: { size: 13 }, range: yRange },
-    hoverlabel: { font: { size: 13 } },
+    font: { color: textColor, size: 11 },
+    margin: { t: 44, r: 12, b: 28, l: 56 },
+    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 10 } },
+    xaxis: { tickfont: { size: 11, color: textColor }, gridcolor: gridColor },
+    yaxis: { gridcolor: gridColor, tickfont: { size: 10 }, range: yRange },
+    hoverlabel: { font: { size: 10 } },
   };
   return { traces, layout };
 }
@@ -464,7 +459,7 @@ function buildChart3(
     {
       // FIX: đổi DAY ManPower AVG từ line → bar (column), đồng bộ với Chart1/Chart2
       x: labels, y: dayMP, name: t('dayMP', lang),
-      type: 'bar', marker: { color: '#3b82f6' },
+      type: 'bar', marker: { color: '#1565C0' },
       text: dayMP.map(v => v > 0 ? fmt1(v) : ''),
       textposition: 'inside',
       textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
@@ -530,87 +525,66 @@ function buildChart3(
 }
 
 /**
- * Chart 6: 생산 LINE 수 현황 (Production Line Qty Trend)
- * Bar DAY LINE Q'TY + Bar NIGHT LINE Q'TY (group) + Line TTL LINE Q'TY
- * Layout/màu sắc đồng bộ với Chart 3 (근무 인력 현황): DAY=#3b82f6, NIGHT=#ef4444,
- * TTL=tealAccent — chỉ khác nguồn dữ liệu (lineDay/lineNight/lineTtl thay vì
- * ttlByLabel × DAY_RATIO/NIGHT_RATIO).
+ * resolveChart4Info — NGUỒN SỰ THẬT DUY NHẤT cho Chart 4.
+ * Trước đây badge "● Kèm số line yêu cầu" (JSX) và phần vẽ line thật trong
+ * buildChart4 dùng 2 điều kiện khác nhau (badge check toàn cục theo mọi model/
+ * giai đoạn, còn line trace chỉ check theo modelsWithData ở 1 giai đoạn cụ thể)
+ * → có thể lệch pha: badge nói "có" nhưng chart không vẽ, hoặc ngược lại.
+ * Hàm này gộp lại 1 chỗ, dùng chung cho cả buildChart4 lẫn phần badge/hint trong JSX.
  */
-function buildChart6(
-  data: PCTabData,
-  labels: string[],
-  textColor: string,
-  gridColor: string,
-  lang: 'vi'|'en'|'ko',
-  isDark: boolean
-) {
-  const tealAccent = isDark ? '#14b8a6' : '#0f766e';
+function resolveChart4Info(data: PCTabData, displayLabels: string[]) {
+  const models = data.activeModels;
 
-  // Một số dữ liệu Line Q'TY được nhập trực tiếp ở model 'TTL' (tổng sẵn);
-  // nếu không có, cộng dồn qua toàn bộ model đang active để ra tổng nhà máy.
-  const getVal = (map: Record<string, Record<string, number>>, l: string): number => {
-    const direct = map['TTL']?.[l];
-    if (direct != null && direct > 0) return direct;
-    return data.activeModels.reduce((sum, m) => sum + (map[m]?.[l] ?? 0), 0);
-  };
+  // Tìm label mới nhất có ít nhất 1 model có dữ liệu nhân lực
+  let latestLabel = '';
+  for (let i = displayLabels.length - 1; i >= 0; i--) {
+    const lbl = displayLabels[i];
+    const hasAny = models.some(m => (data.byModelLabel[m]?.[lbl] ?? 0) > 0);
+    if (hasAny) { latestLabel = lbl; break; }
+  }
+  if (!latestLabel && displayLabels.length > 0) latestLabel = displayLabels[displayLabels.length - 1];
 
-  const dayVals   = labels.map(l => r1(getVal(data.lineDayByModelLabel, l)));
-  const nightVals = labels.map(l => r1(getVal(data.lineNightByModelLabel, l)));
-  const ttlVals   = labels.map(l => r1(getVal(data.lineTtlByModelLabel, l)));
+  // Model có nhân lực > 0 tại latestLabel (nền tảng của trục X / cột)
+  const headcountModels = models.filter(m => (data.byModelLabel[m]?.[latestLabel] ?? 0) > 0);
 
-  const hasData = dayVals.some(v => v > 0) || nightVals.some(v => v > 0) || ttlVals.some(v => v > 0);
+  // Số line YÊU CẦU — quét TẤT CẢ label (mọi tầng: ngày/tuần/tháng/năm, giảm dần
+  // theo thời gian) để tìm giai đoạn gần nhất có dữ liệu Line TTL, độc lập với
+  // granularity nhân lực đang chọn (Line Q'TY thường chỉ nhập theo Tháng).
+  // FIX: quét theo TẤT CẢ activeModels (không giới hạn trong headcountModels) để
+  // không bỏ sót model có Line Q'TY nhưng lại thiếu/0 nhân lực ở latestLabel.
+  const allLabelsDesc = [...data.allLabels].sort((a, b) => b.dateMs - a.dateMs);
+  let lineLabel = '';
+  for (const { label } of allLabelsDesc) {
+    const hasAny = models.some(m => (data.lineTtlByModelLabel[m]?.[label] ?? 0) > 0);
+    if (hasAny) { lineLabel = label; break; }
+  }
 
-  const traces: any[] = [
-    {
-      x: labels, y: dayVals, name: t('dayLineQty', lang),
-      type: 'bar', marker: { color: '#3b82f6' },
-      text: dayVals.map(v => v > 0 ? fmt1(v) : ''),
-      textposition: 'inside',
-      textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
-      insidetextanchor: 'middle',
-    },
-    {
-      x: labels, y: nightVals, name: t('nightLineQty', lang),
-      type: 'bar', marker: { color: '#ef4444' },
-      text: nightVals.map(v => v > 0 ? fmt1(v) : ''),
-      textposition: 'inside',
-      textfont: { size: 13, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
-      insidetextanchor: 'middle',
-    },
-    {
-      x: labels, y: ttlVals, name: t('ttlLineQty', lang),
-      type: 'scatter', mode: 'lines+markers+text',
-      line: { color: tealAccent, width: 2.5, shape: 'spline', smoothing: 1 },
-      marker: { color: tealAccent, size: 8, symbol: 'circle' },
-      text: ttlVals.map(v => v > 0 ? fmt1(v) : ''),
-      textposition: 'top center',
-      textfont: { size: 13, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
-      cliponaxis: false,
-      hovertemplate: `<b>${t('ttlLineQty', lang)}</b>: %{y}<extra></extra>`,
-    },
-  ];
+  // Model nào có Line Q'TY ở lineLabel
+  const lineModels = lineLabel
+    ? models.filter(m => (data.lineTtlByModelLabel[m]?.[lineLabel] ?? 0) > 0)
+    : [];
 
-  const maxVal = Math.max(...ttlVals, ...dayVals, ...nightVals, 0);
-  const yRange = [0, maxVal > 0 ? maxVal * 1.15 : 10];
+  // FIX: union — model có Line nhưng thiếu nhân lực vẫn phải xuất hiện trên trục X
+  // (cột nhân lực = 0) để đường Line không bị "mất điểm" một cách vô lý.
+  // Giữ nguyên thứ tự headcountModels trước, model chỉ-có-Line (không có nhân lực)
+  // xếp sau cùng theo alphabet. indexOf trả -1 cho model không có nhân lực nên
+  // phải map về Infinity, tránh bị "-1" đẩy nhầm lên đầu danh sách.
+  const modelsWithData = Array.from(new Set([...headcountModels, ...lineModels]))
+    .sort((a, b) => {
+      const ia = headcountModels.indexOf(a); const ib = headcountModels.indexOf(b);
+      const ra = ia === -1 ? Infinity : ia; const rb = ib === -1 ? Infinity : ib;
+      return ra - rb || a.localeCompare(b);
+    });
 
-  const layout = {
-    barmode: 'group',
-    paper_bgcolor: 'transparent',
-    plot_bgcolor: 'transparent',
-    font: { color: textColor, size: 14 },
-    margin: { t: 55, r: 15, b: 35, l: 60 },
-    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 13 } },
-    xaxis: { tickfont: { size: 14, color: textColor }, gridcolor: gridColor },
-    yaxis: { gridcolor: gridColor, tickfont: { size: 13 }, range: yRange },
-    hoverlabel: { font: { size: 13 } },
-  };
-  return { traces, layout, hasData };
+  const hasLineData = lineLabel !== '' && modelsWithData.some(m => (data.lineTtlByModelLabel[m]?.[lineLabel] ?? 0) > 0);
+
+  return { latestLabel, modelsWithData, lineLabel, hasLineData };
 }
 
 /**
  * Chart 4: Phân bố nhân lực theo Model — Giai đoạn gần nhất
  * Bar chart: X = activeModels, Y = headcount tại label mới nhất có dữ liệu
- * + Line chart (trục y phụ): số line sản xuất theo Model tại cùng giai đoạn (Type = 'Line')
+ * + Line chart (trục y phụ): số line YÊU CẦU theo Model tại cùng giai đoạn (Type = 'TTL LINE Q'TY')
  */
 function buildChart4(
   data: PCTabData,
@@ -619,42 +593,14 @@ function buildChart4(
   gridColor: string,
   lang: 'vi'|'en'|'ko'
 ) {
-  const models = data.activeModels;
+  const { latestLabel, modelsWithData, lineLabel, hasLineData } = resolveChart4Info(data, displayLabels);
 
-  // Tìm label mới nhất có ít nhất 1 model có dữ liệu
-  let latestLabel = '';
-  for (let i = displayLabels.length - 1; i >= 0; i--) {
-    const lbl = displayLabels[i];
-    const hasAny = models.some(m => (data.byModelLabel[m]?.[lbl] ?? 0) > 0);
-    if (hasAny) { latestLabel = lbl; break; }
-  }
-  // Fallback: dùng tất cả labels, lấy label cuối
-  if (!latestLabel && displayLabels.length > 0) latestLabel = displayLabels[displayLabels.length - 1];
-
-  // Chỉ giữ models có dữ liệu > 0 tại latestLabel
-  const modelsWithData = models.filter(m => (data.byModelLabel[m]?.[latestLabel] ?? 0) > 0);
   const yVals = modelsWithData.map(m => r1(data.byModelLabel[m]?.[latestLabel] ?? 0));
   const colors = modelsWithData.map((m, i) => getModelColor(m, i));
-
-  // Số line sản xuất theo Model — lấy từ Type = "TTL LINE Q'TY".
-  // LƯU Ý QUAN TRỌNG: Line Q'TY thường ít biến động nên có thể chỉ được nhập
-  // theo 1 tầng dữ liệu (VD: theo Tháng "JUN") trong khi bar chart nhân lực
-  // đang hiển thị theo tầng khác (VD: theo Ngày "06/25"). Nếu tra thẳng theo
-  // latestLabel của nhân lực thì sẽ luôn null ở tầng không khớp → line bị ẩn
-  // dù dữ liệu tồn tại. Fix: quét riêng qua TẤT CẢ label (mọi tầng: ngày/tuần/
-  // tháng/năm, sắp theo thời gian giảm dần) để tìm giai đoạn gần nhất có dữ
-  // liệu Line TTL cho các model đang hiển thị, độc lập với granularity đang chọn.
-  const allLabelsDesc = [...data.allLabels].sort((a, b) => b.dateMs - a.dateMs);
-  let lineLabel = '';
-  for (const { label } of allLabelsDesc) {
-    const hasAny = modelsWithData.some(m => (data.lineTtlByModelLabel[m]?.[label] ?? 0) > 0);
-    if (hasAny) { lineLabel = label; break; }
-  }
 
   const lineTtlVals   = modelsWithData.map(m => data.lineTtlByModelLabel[m]?.[lineLabel] ?? null);
   const lineDayVals   = modelsWithData.map(m => data.lineDayByModelLabel[m]?.[lineLabel] ?? null);
   const lineNightVals = modelsWithData.map(m => data.lineNightByModelLabel[m]?.[lineLabel] ?? null);
-  const hasLineData = lineLabel !== '' && lineTtlVals.some(v => v != null && v > 0);
 
   const traces: any[] = [{
     x: modelsWithData,
@@ -685,7 +631,7 @@ function buildChart4(
       y: lineTtlVals.map(v => v != null ? r1(v) : null),
       type: 'scatter',
       mode: 'lines+markers+text',
-      name: (lang === 'vi' ? "Số line sản xuất (TTL LINE Q'TY)" : lang === 'ko' ? "생산 라인 수 (TTL LINE Q'TY)" : "Production Lines (TTL LINE Q'TY)") + linePeriodSuffix,
+      name: (lang === 'vi' ? "Số line yêu cầu (TTL LINE Q'TY)" : lang === 'ko' ? "요구 라인 수 (TTL LINE Q'TY)" : "Required Lines (TTL LINE Q'TY)") + linePeriodSuffix,
       yaxis: 'y2',
       line: { color: '#facc15', width: 2, shape: 'spline', smoothing: 1 },
       marker: { color: '#facc15', size: 9, symbol: 'diamond' },
@@ -695,7 +641,7 @@ function buildChart4(
       cliponaxis: false,
       customdata,
       hovertemplate:
-        `${lang === 'vi' ? 'Số line (TTL)' : lang === 'ko' ? '라인 수 (TTL)' : 'Lines (TTL)'}: %{y}` +
+        `${lang === 'vi' ? 'Số line yêu cầu (TTL)' : lang === 'ko' ? '요구 라인 수 (TTL)' : 'Required Lines (TTL)'}: %{y}` +
         `<br>${dayLbl}: %{customdata[0]}` +
         `<br>${nightLbl}: %{customdata[1]}<extra></extra>`,
     });
@@ -727,12 +673,12 @@ function buildChart4(
       side: 'right',
       showgrid: false,
       tickfont: { size: 12, color: '#facc15' },
-      title: { text: lang === 'vi' ? 'Số line' : lang === 'ko' ? '라인 수' : 'Lines', font: { size: 13, color: '#facc15' } },
+      title: { text: lang === 'vi' ? 'Số line yêu cầu' : lang === 'ko' ? '요구 라인 수' : 'Required Lines', font: { size: 13, color: '#facc15' } },
       range: [0, lineMax > 0 ? lineMax * 1.4 : 10],
     };
   }
 
-  return { traces, layout };
+  return { traces, layout, hasLineData, lineLabel, latestLabel };
 }
 
 /**
@@ -821,6 +767,197 @@ function buildChart5(
     legend: { orientation: 'v', x: 1.05, y: 0.5, xanchor: 'left', yanchor: 'middle', font: { size: 13, color: textColor } },
     showlegend: true,
   };
+  return { traces, layout };
+}
+
+// ─── Production (SUB1 / SUB2 / MAIN) data & charts ─────────────────────────
+
+interface ProdLineData {
+  planByLabel:   Record<string, number>;
+  actualByLabel: Record<string, number>;
+  hasData: boolean;
+}
+
+interface AllProdData {
+  sub1:      ProdLineData;
+  sub2:      ProdLineData;
+  main:      ProdLineData;
+  allLabels: { label: string; dateMs: number }[];
+}
+
+/**
+ * Trích xuất dữ liệu sản xuất Plan / Actual cho từng dây chuyền SUB1 / SUB2 / MAIN.
+ * Tìm rows có Type chứa tên dây chuyền (sub1/sub2/main) VÀ chứa plan/actual/final.
+ * KHÔNG ước tính — nếu không tìm được dữ liệu thật thì hasData = false.
+ */
+function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProdData {
+  return useMemo(() => {
+    const empty: ProdLineData = { planByLabel: {}, actualByLabel: {}, hasData: false };
+
+    const prodRows = rows.filter(r => {
+      const ts = String(r.type || (r as any).Type || '').toLowerCase();
+      const hasDivision = ts.includes('sub1') || ts.includes('sub2') || ts.includes('main');
+      const hasKind     = ts.includes('plan') || ts.includes('actual') || ts.includes('final');
+      return hasDivision && hasKind;
+    });
+
+    if (prodRows.length === 0) {
+      return { sub1: empty, sub2: empty, main: empty, allLabels: [] };
+    }
+
+    const parsed = prodRows.map(r => {
+      const raw = String(r.date || (r as any).Date || (r as any).month || (r as any).Month || '').trim().toUpperCase();
+      const d = parseManpowerDate(raw);
+      return { ...r, _label: raw, _date: d };
+    }).filter(r => r._date && r._label !== 'YR24' && r._label !== 'JAN-JUN');
+
+    let filtered = parsed as (typeof parsed[0] & { _date: Date })[];
+    const from = dateFrom ? new Date(dateFrom) : null;
+    const to   = dateTo   ? new Date(dateTo)   : null;
+    if (to) to.setHours(23, 59, 59, 999);
+    if (from) filtered = filtered.filter(r => r._date! >= from);
+    if (to)   filtered = filtered.filter(r => r._date! <= to);
+
+    const allLabels = buildLabelOrder(filtered as any).filter(x =>
+      !x.label.startsWith('JAN-') && x.label !== 'YR24'
+    );
+
+    const acc: Record<string, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
+      sub1: { plan: {}, actual: {} },
+      sub2: { plan: {}, actual: {} },
+      main: { plan: {}, actual: {} },
+    };
+
+    (filtered as any[]).forEach(r => {
+      const ts  = String(r.type || (r as any).Type || '').toLowerCase();
+      const lbl = (r as any)._label as string;
+      const val = Number((r as any).value ?? (r as any).Value);
+      if (isNaN(val)) return;
+
+      let div: 'sub1' | 'sub2' | 'main' | null = null;
+      if (ts.includes('sub1'))      div = 'sub1';
+      else if (ts.includes('sub2')) div = 'sub2';
+      else if (ts.includes('main')) div = 'main';
+      if (!div) return;
+
+      let kind: 'plan' | 'actual' | null = null;
+      if (ts.includes('plan'))                                 kind = 'plan';
+      else if (ts.includes('actual') || ts.includes('final')) kind = 'actual';
+      if (!kind) return;
+
+      const target = acc[div][kind];
+      if (!target[lbl]) target[lbl] = [];
+      target[lbl].push(val);
+    });
+
+    const toLine = (d: { plan: Record<string, number[]>; actual: Record<string, number[]> }): ProdLineData => {
+      const planByLabel:   Record<string, number> = {};
+      const actualByLabel: Record<string, number> = {};
+      Object.entries(d.plan).forEach(([lbl, vals]) => {
+        planByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+      Object.entries(d.actual).forEach(([lbl, vals]) => {
+        actualByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+      const hasData = Object.keys(planByLabel).length > 0 || Object.keys(actualByLabel).length > 0;
+      return { planByLabel, actualByLabel, hasData };
+    };
+
+    return {
+      sub1: toLine(acc.sub1),
+      sub2: toLine(acc.sub2),
+      main: toLine(acc.main),
+      allLabels,
+    };
+  }, [rows, dateFrom, dateTo]);
+}
+
+/**
+ * Chart sản xuất cho 1 dây chuyền (SUB1 / SUB2 / MAIN)
+ * Bar Plan (orange) + Bar Actual (teal) + Line Yield% (navy dashed, trục Y phụ)
+ * KHÔNG ước tính — nếu không có dữ liệu thật, component hiện thông báo.
+ */
+function buildProductionChart(
+  lineData: ProdLineData,
+  labels: string[],
+  textColor: string,
+  gridColor: string,
+  isDark: boolean
+) {
+  const planColor   = isDark ? '#f97316' : '#ea580c';
+  const actualColor = '#14b8a6';
+  const yieldColor  = '#1565C0';
+
+  const planVals   = labels.map(l => r1(lineData.planByLabel[l]   ?? 0));
+  const actualVals = labels.map(l => r1(lineData.actualByLabel[l] ?? 0));
+  const yieldVals: (number | null)[] = labels.map((_, i) => {
+    const p = planVals[i];
+    const a = actualVals[i];
+    if (!p || p === 0) return null;
+    return Math.round((a / p) * 100);
+  });
+
+  const fmtQty = (v: number) =>
+    v.toLocaleString('vi-VN', { maximumFractionDigits: 0 });
+
+  const traces: any[] = [
+    {
+      x: labels, y: planVals, name: 'Plan',
+      type: 'bar', marker: { color: planColor },
+      text: planVals.map(v => v > 0 ? fmtQty(v) : ''),
+      textposition: 'inside',
+      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      insidetextanchor: 'middle',
+    },
+    {
+      x: labels, y: actualVals, name: 'Actual',
+      type: 'bar', marker: { color: actualColor },
+      text: actualVals.map(v => v > 0 ? fmtQty(v) : ''),
+      textposition: 'inside',
+      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      insidetextanchor: 'middle',
+    },
+    {
+      x: labels, y: yieldVals, name: 'Yield %',
+      type: 'scatter', mode: 'lines+markers+text',
+      yaxis: 'y2',
+      line: { color: yieldColor, width: 2, dash: 'dot' },
+      marker: { color: yieldColor, size: 6, symbol: 'circle' },
+      text: yieldVals.map(v => v !== null && v > 0 ? `${v}%` : ''),
+      textposition: 'top center',
+      textfont: { size: 10, color: yieldColor, family: 'Arial Black, Arial, sans-serif' },
+      cliponaxis: false,
+      connectgaps: false,
+    },
+  ];
+
+  const maxQty      = Math.max(...planVals, ...actualVals, 0);
+  const validYields = yieldVals.filter((v): v is number => v !== null);
+  const maxYield    = validYields.length > 0 ? Math.max(...validYields) : 0;
+
+  const layout: any = {
+    barmode: 'group',
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { color: textColor, size: 10 },
+    margin: { t: 36, r: 48, b: 28, l: 48 },
+    legend: { orientation: 'h', x: 0, y: 1.06, xanchor: 'left', yanchor: 'bottom', font: { size: 10 } },
+    xaxis: { tickfont: { size: 10, color: textColor }, gridcolor: gridColor },
+    yaxis: {
+      gridcolor: gridColor,
+      tickfont: { size: 9 },
+      range: [0, maxQty > 0 ? maxQty * 1.25 : 100],
+    },
+    yaxis2: {
+      overlaying: 'y', side: 'right',
+      showgrid: false,
+      tickfont: { size: 9, color: yieldColor },
+      ticksuffix: '%',
+      range: [-20, Math.max(maxYield > 0 ? maxYield * 1.3 : 0, 120)],
+    },
+    hoverlabel: { font: { size: 10 } },
+  };
+
   return { traces, layout };
 }
 
@@ -968,6 +1105,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const data = usePCTabData(rows, dateFrom, dateTo);
+  const prodData = useProdData(rows, dateFrom, dateTo);
 
   const hasData = data.allLabels.length > 0 && Object.keys(data.ttlByLabel).length > 0;
 
@@ -1005,13 +1143,20 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   const avgNight = r1(avgTtl * NIGHT_RATIO);
 
   // Chart refs
-  const ids = useRef({ c1: 'pctab-chart1', c2: 'pctab-chart2', c3: 'pctab-chart3', c4: 'pctab-chart4', c5: 'pctab-chart5', c6: 'pctab-chart6' });
+  const ids = useRef({
+    c1: 'pctab-chart1', c2: 'pctab-chart2', c3: 'pctab-chart3',
+    cSub1: 'pctab-prod-sub1', cSub2: 'pctab-prod-sub2', cMain: 'pctab-prod-main',
+    c4: 'pctab-chart4', c5: 'pctab-chart5',
+  });
 
-  // Chart 6 (LINE Q'TY) chỉ có ý nghĩa khi dữ liệu nguồn thực sự chứa type Line;
-  // dùng để ẩn/hiện panel tương ứng trong JSX bên dưới.
-  const hasLineQtyData = Object.keys(data.lineTtlByModelLabel).length > 0
-    || Object.keys(data.lineDayByModelLabel).length > 0
-    || Object.keys(data.lineNightByModelLabel).length > 0;
+  // FIX: badge "● Kèm số line yêu cầu" của Chart 4 giờ dùng CHUNG 1 hàm
+  // (resolveChart4Info) với phần vẽ line thật trong buildChart4, thay vì check
+  // rời rạc theo toàn bộ data — tránh tình trạng badge nói "có" nhưng chart
+  // không vẽ được đường (hoặc ngược lại).
+  const chart4Info = useMemo(
+    () => resolveChart4Info(data, displayLabels),
+    [data, displayLabels]
+  );
 
   useEffect(() => {
     if (!hasData || !plotlyReady) return;
@@ -1031,16 +1176,26 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
         const ch3 = buildChart3(data, labels, textColor, gridColor, lang, isDark);
         window.Plotly.react(ids.current.c3, ch3.traces, ch3.layout, { displayModeBar: false, responsive: true });
 
+        // Production Charts 4-5-6: SUB1 / SUB2 / MAIN (chỉ vẽ khi có dữ liệu thật)
+        if (prodData.sub1.hasData) {
+          const cSub1 = buildProductionChart(prodData.sub1, labels, textColor, gridColor, isDark);
+          window.Plotly.react(ids.current.cSub1, cSub1.traces, cSub1.layout, { displayModeBar: false, responsive: true });
+        }
+        if (prodData.sub2.hasData) {
+          const cSub2 = buildProductionChart(prodData.sub2, labels, textColor, gridColor, isDark);
+          window.Plotly.react(ids.current.cSub2, cSub2.traces, cSub2.layout, { displayModeBar: false, responsive: true });
+        }
+        if (prodData.main.hasData) {
+          const cMain = buildProductionChart(prodData.main, labels, textColor, gridColor, isDark);
+          window.Plotly.react(ids.current.cMain, cMain.traces, cMain.layout, { displayModeBar: false, responsive: true });
+        }
+
+        // Chart 7 + Chart 8 (cũ: Chart 4 + Chart 5)
         const ch4 = buildChart4(data, labels, textColor, gridColor, lang);
         window.Plotly.react(ids.current.c4, ch4.traces, ch4.layout, { displayModeBar: false, responsive: true });
 
         const ch5 = buildChart5(data, labels, textColor, gridColor, lang);
         window.Plotly.react(ids.current.c5, ch5.traces, ch5.layout, { displayModeBar: false, responsive: true });
-
-        if (hasLineQtyData) {
-          const ch6 = buildChart6(data, labels, textColor, gridColor, lang, isDark);
-          window.Plotly.react(ids.current.c6, ch6.traces, ch6.layout, { displayModeBar: false, responsive: true });
-        }
       } catch (err) {
         console.warn('[PerCapitaTab] Plotly render error (ignored):', err);
       }
@@ -1051,7 +1206,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     // This prevents "Script error / no stack" on lang/theme change while hidden.
     const timerId = setTimeout(draw, 50);
     return () => clearTimeout(timerId);
-  }, [data, textColor, gridColor, lang, hasData, targetPC, displayLabels, isVisible, isDark, hasLineQtyData, plotlyReady]);
+  }, [data, prodData, textColor, gridColor, lang, hasData, targetPC, displayLabels, isVisible, isDark, plotlyReady]);
 
   // ── CSS vars cho dark/light ────────────────────────────────────────────────
   // Tất cả màu dùng var(--...) để tự thích nghi theo theme; chỉ explicit color
@@ -1232,7 +1387,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
               label: lang === 'vi' ? 'Sản lượng đầu người ca ngày TB' : lang === 'ko' ? 'DAY 인당생산수 평균' : 'AVG DAY Per Capita',
               value: fmt1(avgDay),
               unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
-              bg: 'var(--blue-soft)', color: '#3b82f6',
+              bg: 'var(--blue-soft)', color: '#1565C0',
             },
             {
               icon: '🌙',
@@ -1289,7 +1444,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 {lang === 'vi' ? 'TTL nhân lực x tỉ lệ ca (DAY/NIGHT)' : lang === 'ko' ? '근무인원 x 근무비율 (추정)' : 'Headcount x shift ratio (estimated)'}
               </span>
             </div>
-            <div id={ids.current.c1} style={{ minHeight: '300px' }} />
+            <div id={ids.current.c1} style={{ height: '270px' }} />
           </div>
 
           {/* Chart 2: 생산 현황 */}
@@ -1300,7 +1455,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 {lang === 'vi' ? `Nhân lực x tỉ lệ ca x ${targetPC} sp/người` : lang === 'ko' ? `근무인원 x 근무비율 x ${targetPC}개/인 (추정)` : `Headcount x ratio x ${targetPC} pcs/cap`}
               </span>
             </div>
-            <div id={ids.current.c2} style={{ minHeight: '300px' }} />
+            <div id={ids.current.c2} style={{ height: '270px' }} />
           </div>
 
           {/* Chart 3: 근무 인력 현황 */}
@@ -1318,23 +1473,106 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 </span>
               )}
             </div>
-            <div id={ids.current.c3} style={{ minHeight: '300px' }} />
+            <div id={ids.current.c3} style={{ height: '270px' }} />
           </div>
 
-          {/* Chart 6: 생산 LINE 수 현황 — DAY/NIGHT LINE Q'TY (cột) + TTL LINE Q'TY (đường), tham chiếu style Chart 3 */}
-          {hasLineQtyData && (
-            <div className="panel">
-              <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h3 style={{ margin: 0 }}>{t('chart6Title', lang)}</h3>
-                <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
-                  {lang === 'vi' ? "Số line sản xuất theo ca (DAY/NIGHT) & tổng (TTL)" : lang === 'ko' ? "근무조별 생산 라인 수 (DAY/NIGHT) & 합계 (TTL)" : "Production lines by shift (DAY/NIGHT) & total (TTL)"}
+          {/* ════ Chart 4-5-6: Sản xuất SUB1 / SUB2 / MAIN ════════════════════════ */}
+          <div className="panel">
+            <div className="panel-head" style={{ marginBottom: '12px' }}>
+              <h3 style={{ margin: 0 }}>
+                {lang === 'vi'
+                  ? '📊 Tình hình sản xuất — Plan / Actual / Yield (%)'
+                  : lang === 'ko'
+                  ? '📊 생산 현황 — 계획 / 실적 / 달성률 (%)'
+                  : '📊 Production Status — Plan / Actual / Yield (%)'}
+              </h3>
+              {!prodData.sub1.hasData && !prodData.sub2.hasData && !prodData.main.hasData && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic',
+                  padding: '5px 12px', borderRadius: '6px', marginTop: '8px',
+                  background: 'var(--surface-2)', border: '1px dashed var(--border)',
+                }}>
+                  ⚠️ {lang === 'vi'
+                    ? 'Chưa có dữ liệu sản xuất SUB1/SUB2/MAIN trong file. Thêm dòng có Type chứa "SUB1 Plan", "SUB1 Actual", "SUB2 Plan", "MAIN Plan"... vào Excel rồi tải lại.'
+                    : lang === 'ko'
+                    ? 'SUB1/SUB2/MAIN 생산 데이터 없음. Type에 "SUB1 Plan", "SUB1 Actual", "MAIN Plan" 등 포함된 행을 Excel에 추가 후 다시 업로드하세요.'
+                    : 'No SUB1/SUB2/MAIN production data found. Add rows with Type containing "SUB1 Plan", "SUB1 Actual", "MAIN Plan", etc. to Excel, then re-upload.'}
                 </span>
-              </div>
-              <div id={ids.current.c6} style={{ minHeight: '300px' }} />
+              )}
             </div>
-          )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
 
-          {/* Chart 4 + Chart 5 — 2 cột */}
+              {/* Chart 4: SUB1 */}
+              <div>
+                <div style={{
+                  fontSize: '12px', fontWeight: 700, color: textColor,
+                  textAlign: 'center', marginBottom: '4px',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                }}>
+                  SUB1 — Plan / Actual / Yield
+                </div>
+                {prodData.sub1.hasData ? (
+                  <div id={ids.current.cSub1} style={{ height: '220px' }} />
+                ) : (
+                  <div style={{
+                    height: '220px', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', color: 'var(--text-3)', fontSize: '12px',
+                    border: '1px dashed var(--border)', borderRadius: '8px',
+                  }}>
+                    {lang === 'vi' ? 'Chưa có dữ liệu' : lang === 'ko' ? '데이터 없음' : 'No data'}
+                  </div>
+                )}
+              </div>
+
+              {/* Chart 5: SUB2 */}
+              <div>
+                <div style={{
+                  fontSize: '12px', fontWeight: 700, color: textColor,
+                  textAlign: 'center', marginBottom: '4px',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                }}>
+                  SUB2 — Plan / Actual / Yield
+                </div>
+                {prodData.sub2.hasData ? (
+                  <div id={ids.current.cSub2} style={{ height: '220px' }} />
+                ) : (
+                  <div style={{
+                    height: '220px', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', color: 'var(--text-3)', fontSize: '12px',
+                    border: '1px dashed var(--border)', borderRadius: '8px',
+                  }}>
+                    {lang === 'vi' ? 'Chưa có dữ liệu' : lang === 'ko' ? '데이터 없음' : 'No data'}
+                  </div>
+                )}
+              </div>
+
+              {/* Chart 6: MAIN */}
+              <div>
+                <div style={{
+                  fontSize: '12px', fontWeight: 700, color: textColor,
+                  textAlign: 'center', marginBottom: '4px',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                }}>
+                  MAIN — Plan / Actual / Yield
+                </div>
+                {prodData.main.hasData ? (
+                  <div id={ids.current.cMain} style={{ height: '220px' }} />
+                ) : (
+                  <div style={{
+                    height: '220px', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', color: 'var(--text-3)', fontSize: '12px',
+                    border: '1px dashed var(--border)', borderRadius: '8px',
+                  }}>
+                    {lang === 'vi' ? 'Chưa có dữ liệu' : lang === 'ko' ? '데이터 없음' : 'No data'}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
+
+          {/* Chart 7 + Chart 8 — 2 cột (cũ: Chart 4 + Chart 5) */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
 
             {/* Chart 4: Phân bố nhân lực theo Model — Giai đoạn gần nhất */}
@@ -1347,9 +1585,20 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                     ? '모델별 인원 분포 — 최근 기간'
                     : 'Headcount by Model — Latest Period'}
                 </h3>
-                {Object.keys(data.lineTtlByModelLabel).length > 0 && (
+                {chart4Info.hasLineData ? (
                   <span style={{ fontSize: '12px', color: '#facc15', display: 'inline-flex', alignItems: 'center' }}>
-                    {lang === 'vi' ? "● Kèm số line sản xuất (TTL LINE Q'TY)" : lang === 'ko' ? "● 생산 라인 수 포함 (TTL LINE Q'TY)" : "● Incl. production lines (TTL LINE Q'TY)"}
+                    {lang === 'vi' ? "● Kèm số line yêu cầu (TTL LINE Q'TY)" : lang === 'ko' ? "● 요구 라인 수 포함 (TTL LINE Q'TY)" : "● Incl. required lines (TTL LINE Q'TY)"}
+                    {chart4Info.lineLabel && chart4Info.lineLabel !== chart4Info.latestLabel
+                      ? ` [${chart4Info.lineLabel}]`
+                      : ''}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '12px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center', fontStyle: 'italic' }}>
+                    {lang === 'vi'
+                      ? "○ Chưa có dữ liệu Line Q'TY — thêm dòng Type \"…LINE Q'TY\" trong Excel để hiển thị đường"
+                      : lang === 'ko'
+                      ? "○ Line Q'TY 데이터 없음 — Excel에 Type \"…LINE Q'TY\" 행을 추가하면 라인이 표시됩니다"
+                      : "○ No Line Q'TY data yet — add a Type \"…LINE Q'TY\" row in Excel to show the line"}
                   </span>
                 )}
               </div>
