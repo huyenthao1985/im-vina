@@ -794,11 +794,14 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
   return useMemo(() => {
     const empty: ProdLineData = { planByLabel: {}, actualByLabel: {}, hasData: false };
 
+    // Model (SUB1/SUB2/MAIN) x Type ("PRON'D PLAN" / "Pro Actual") trong Test_3
+    const DIVS = ['SUB1', 'SUB2', 'MAIN'] as const;
+    type Div = typeof DIVS[number];
     const prodRows = rows.filter(r => {
-      const ts = String(r.type || (r as any).Type || '').toLowerCase();
-      const hasDivision = ts.includes('sub1') || ts.includes('sub2') || ts.includes('main');
-      const hasKind     = ts.includes('plan') || ts.includes('actual') || ts.includes('final');
-      return hasDivision && hasKind;
+      const model = String(r.model || (r as any).Model || '').trim().toUpperCase();
+      const ts    = String(r.type  || (r as any).Type  || '').toLowerCase();
+      return (DIVS as readonly string[]).includes(model) &&
+             (ts.includes('plan') || ts.includes('actual'));
     });
 
     if (prodRows.length === 0) {
@@ -822,32 +825,46 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
       !x.label.startsWith('JAN-') && x.label !== 'YR24'
     );
 
-    const acc: Record<string, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
-      sub1: { plan: {}, actual: {} },
-      sub2: { plan: {}, actual: {} },
-      main: { plan: {}, actual: {} },
+    // Nhóm dữ liệu: div × kind × label × values[]
+    // Ưu tiên dòng TTL (type chứa 'ttl'); nếu không có TTL → dùng tất cả plan/actual
+    const acc: Record<Div, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
+      SUB1: { plan: {}, actual: {} },
+      SUB2: { plan: {}, actual: {} },
+      MAIN: { plan: {}, actual: {} },
+    };
+    const accAll: typeof acc = {
+      SUB1: { plan: {}, actual: {} },
+      SUB2: { plan: {}, actual: {} },
+      MAIN: { plan: {}, actual: {} },
     };
 
     (filtered as any[]).forEach(r => {
-      const ts  = String(r.type || (r as any).Type || '').toLowerCase();
-      const lbl = (r as any)._label as string;
-      const val = Number((r as any).value ?? (r as any).Value);
-      if (isNaN(val)) return;
-
-      let div: 'sub1' | 'sub2' | 'main' | null = null;
-      if (ts.includes('sub1'))      div = 'sub1';
-      else if (ts.includes('sub2')) div = 'sub2';
-      else if (ts.includes('main')) div = 'main';
-      if (!div) return;
+      const model = String(r.model || (r as any).Model || '').trim().toUpperCase() as Div;
+      const ts    = String(r.type  || (r as any).Type  || '').toLowerCase();
+      const lbl   = (r as any)._label as string;
+      const val   = Number((r as any).value ?? (r as any).Value);
+      if (!(DIVS as readonly string[]).includes(model) || isNaN(val)) return;
 
       let kind: 'plan' | 'actual' | null = null;
-      if (ts.includes('plan'))                                 kind = 'plan';
-      else if (ts.includes('actual') || ts.includes('final')) kind = 'actual';
+      if (ts.includes('plan'))        kind = 'plan';
+      else if (ts.includes('actual')) kind = 'actual';
       if (!kind) return;
 
-      const target = acc[div][kind];
-      if (!target[lbl]) target[lbl] = [];
-      target[lbl].push(val);
+      // Gom vào accAll (mọi loại)
+      if (!accAll[model][kind][lbl]) accAll[model][kind][lbl] = [];
+      accAll[model][kind][lbl].push(val);
+
+      // Gom vào acc chỉ khi là dòng TTL (type chứa 'ttl')
+      if (ts.includes('ttl')) {
+        if (!acc[model][kind][lbl]) acc[model][kind][lbl] = [];
+        acc[model][kind][lbl].push(val);
+      }
+    });
+
+    // Nếu div nào chưa có TTL data → fallback dùng accAll
+    (DIVS as readonly Div[]).forEach(div => {
+      if (Object.keys(acc[div].plan).length   === 0) acc[div].plan   = accAll[div].plan;
+      if (Object.keys(acc[div].actual).length === 0) acc[div].actual = accAll[div].actual;
     });
 
     const toLine = (d: { plan: Record<string, number[]>; actual: Record<string, number[]> }): ProdLineData => {
@@ -859,14 +876,17 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
       Object.entries(d.actual).forEach(([lbl, vals]) => {
         actualByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
       });
-      const hasData = Object.keys(planByLabel).length > 0 || Object.keys(actualByLabel).length > 0;
-      return { planByLabel, actualByLabel, hasData };
+      return {
+        planByLabel,
+        actualByLabel,
+        hasData: Object.keys(planByLabel).length > 0 || Object.keys(actualByLabel).length > 0,
+      };
     };
 
     return {
-      sub1: toLine(acc.sub1),
-      sub2: toLine(acc.sub2),
-      main: toLine(acc.main),
+      sub1: toLine(acc.SUB1),
+      sub2: toLine(acc.SUB2),
+      main: toLine(acc.MAIN),
       allLabels,
     };
   }, [rows, dateFrom, dateTo]);
