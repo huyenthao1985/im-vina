@@ -1090,8 +1090,11 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     setIsSaving(true);
     try {
       const mpRows = rows.filter(r => {
-        const typeStr = String((r as any).type || (r as any).Type || '').toLowerCase();
-        return typeStr.includes('manpower') || typeStr.includes('인당생산수');
+        const ts = String((r as any).type || (r as any).Type || '').toLowerCase();
+        const model = String((r as any).model || (r as any).Model || '').trim().toUpperCase();
+        const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수');
+        const isProdRow = ['SUB1', 'SUB2', 'MAIN'].includes(model) && (ts.includes('plan') || ts.includes('actual'));
+        return isManpowerType || isProdRow;
       });
 
       await supabase.from('sales_data').delete().eq('source_tag', 'Manpower');
