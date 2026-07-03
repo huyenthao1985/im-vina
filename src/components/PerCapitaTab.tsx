@@ -1248,6 +1248,15 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   return (
     <div style={{ padding: '0 0 24px' }}>
 
+      {/* DEBUG DỮ LIỆU TẠM THỜI — SẼ XOÁ SAU */}
+      <div style={{ margin: '12px 24px', padding: '12px', background: 'rgba(59, 130, 246, 0.1)', border: '1px dashed #3b82f6', borderRadius: '8px', color: 'var(--text-0)', fontSize: '12px', lineHeight: '1.6' }}>
+        <strong>🔍 HỆ THỐNG DEBUG DỮ LIỆU NHẬN ĐƯỢC:</strong><br />
+        - Tổng số dòng: <strong>{rows.length}</strong><br />
+        - Danh sách Model duy nhất: <code>{JSON.stringify([...new Set(rows.map(r => r.model || (r as any).Model).filter(Boolean))])}</code><br />
+        - Danh sách Type duy nhất: <code>{JSON.stringify([...new Set(rows.map(r => r.type || (r as any).Type).filter(Boolean))])}</code><br />
+        - Số dòng SUB1/SUB2/MAIN: <strong>{rows.filter(r => ['SUB1','SUB2','MAIN'].includes(String(r.model || (r as any).Model || '').trim().toUpperCase())).length}</strong> dòng
+      </div>
+
       {/* ══════════════════════════════════════════════════════════════════════
           TOOLBAR — FIX(toolbar-chuan-hoa): đồng bộ y hệt cấu trúc/kích thước/
           font-size với toolbar chuẩn tham chiếu ở TargetActualDashboard.tsx
