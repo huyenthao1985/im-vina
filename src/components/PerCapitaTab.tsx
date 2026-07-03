@@ -794,13 +794,13 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
   return useMemo(() => {
     const empty: ProdLineData = { planByLabel: {}, actualByLabel: {}, hasData: false };
 
-    // Model (SUB1/SUB2/MAIN) x Type ("PRON'D PLAN" / "Pro Actual") trong Test_3
+    // Division (SUB1/SUB2/MAIN) x Type ("PRON'D PLAN" / "Pro Actual") trong Test_3
     const DIVS = ['SUB1', 'SUB2', 'MAIN'] as const;
     type Div = typeof DIVS[number];
     const prodRows = rows.filter(r => {
-      const model = String(r.model || (r as any).Model || '').trim().toUpperCase();
-      const ts    = String(r.type  || (r as any).Type  || '').toLowerCase();
-      return (DIVS as readonly string[]).includes(model) &&
+      const div = String(r.division || (r as any).Division || '').trim().toUpperCase();
+      const ts  = String(r.type  || (r as any).Type  || '').toLowerCase();
+      return (DIVS as readonly string[]).includes(div) &&
              (ts.includes('plan') || ts.includes('actual'));
     });
 
@@ -839,11 +839,11 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
     };
 
     (filtered as any[]).forEach(r => {
-      const model = String(r.model || (r as any).Model || '').trim().toUpperCase() as Div;
+      const div   = String(r.division || (r as any).Division || '').trim().toUpperCase() as Div;
       const ts    = String(r.type  || (r as any).Type  || '').toLowerCase();
       const lbl   = (r as any)._label as string;
       const val   = Number((r as any).value ?? (r as any).Value);
-      if (!(DIVS as readonly string[]).includes(model) || isNaN(val)) return;
+      if (!(DIVS as readonly string[]).includes(div) || isNaN(val)) return;
 
       let kind: 'plan' | 'actual' | null = null;
       if (ts.includes('plan'))        kind = 'plan';
@@ -851,13 +851,13 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
       if (!kind) return;
 
       // Gom vào accAll (mọi loại DAY, NIGHT, TTL)
-      if (!accAll[model][kind][lbl]) accAll[model][kind][lbl] = [];
-      accAll[model][kind][lbl].push(val);
+      if (!accAll[div][kind][lbl]) accAll[div][kind][lbl] = [];
+      accAll[div][kind][lbl].push(val);
 
       // Gom vào accTtl chỉ khi là dòng TTL (type chứa 'ttl')
       if (ts.includes('ttl')) {
-        if (!accTtl[model][kind][lbl]) accTtl[model][kind][lbl] = [];
-        accTtl[model][kind][lbl].push(val);
+        if (!accTtl[div][kind][lbl]) accTtl[div][kind][lbl] = [];
+        accTtl[div][kind][lbl].push(val);
       }
     });
 
@@ -1091,9 +1091,9 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     try {
       const mpRows = rows.filter(r => {
         const ts = String((r as any).type || (r as any).Type || '').toLowerCase();
-        const model = String((r as any).model || (r as any).Model || '').trim().toUpperCase();
+        const div = String((r as any).division || (r as any).Division || '').trim().toUpperCase();
         const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수');
-        const isProdRow = ['SUB1', 'SUB2', 'MAIN'].includes(model) && (ts.includes('plan') || ts.includes('actual'));
+        const isProdRow = ['SUB1', 'SUB2', 'MAIN'].includes(div) && (ts.includes('plan') || ts.includes('actual'));
         return isManpowerType || isProdRow;
       });
 
@@ -1103,12 +1103,13 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
         const rawDate = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
         const parsedDate = parseManpowerDate(rawDate);
         const year = parsedDate ? parsedDate.getFullYear() : 2026;
+        const divVal = String((r as any).division || (r as any).Division || 'production').trim();
         return {
           model: String((r as any).model || (r as any).Model || '').trim(),
           origin: 'Manpower',
           customer: String((r as any).customer || (r as any).Customer || '').trim(),
           type: String((r as any).type || (r as any).Type || '').trim(),
-          division: 'production',
+          division: divVal,
           year: year,
           month: String(rawDate).trim(),
           value: Number((r as any).value ?? (r as any).Value) || 0,
@@ -1256,8 +1257,9 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
         <strong>🔍 HỆ THỐNG DEBUG DỮ LIỆU NHẬN ĐƯỢC:</strong><br />
         - Tổng số dòng: <strong>{rows.length}</strong><br />
         - Danh sách Model duy nhất: <code>{JSON.stringify([...new Set(rows.map(r => r.model || (r as any).Model).filter(Boolean))])}</code><br />
+        - Danh sách Division duy nhất: <code>{JSON.stringify([...new Set(rows.map(r => r.division || (r as any).Division).filter(Boolean))])}</code><br />
         - Danh sách Type duy nhất: <code>{JSON.stringify([...new Set(rows.map(r => r.type || (r as any).Type).filter(Boolean))])}</code><br />
-        - Số dòng SUB1/SUB2/MAIN: <strong>{rows.filter(r => ['SUB1','SUB2','MAIN'].includes(String(r.model || (r as any).Model || '').trim().toUpperCase())).length}</strong> dòng
+        - Số dòng SUB1/SUB2/MAIN (trong cột Division): <strong>{rows.filter(r => ['SUB1','SUB2','MAIN'].includes(String(r.division || (r as any).Division || '').trim().toUpperCase())).length}</strong> dòng
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════

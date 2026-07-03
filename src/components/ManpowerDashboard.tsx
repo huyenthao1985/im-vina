@@ -727,9 +727,9 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     try {
       const mpRows = effectiveRows.filter(r => {
         const ts = String((r as any).type || (r as any).Type || '').toLowerCase();
-        const model = String((r as any).model || (r as any).Model || '').trim().toUpperCase();
+        const div = String((r as any).division || (r as any).Division || '').trim().toUpperCase();
         const isManpowerType = ts.includes('manpower');
-        const isProdRow = ['SUB1', 'SUB2', 'MAIN'].includes(model) && (ts.includes('plan') || ts.includes('actual'));
+        const isProdRow = ['SUB1', 'SUB2', 'MAIN'].includes(div) && (ts.includes('plan') || ts.includes('actual'));
         return isManpowerType || isProdRow;
       });
 
@@ -739,12 +739,13 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
         const rawDate = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
         const parsedDate = parseManpowerDate(rawDate);
         const year = parsedDate ? parsedDate.getFullYear() : 2026;
+        const divVal = String((r as any).division || (r as any).Division || 'production').trim();
         return {
           model: String((r as any).model || (r as any).Model || '').trim(),
           origin: 'Manpower',
           customer: String((r as any).customer || (r as any).Customer || '').trim(),
           type: String((r as any).type || (r as any).Type || '').trim(),
-          division: 'production',
+          division: divVal,
           year: year,
           month: String(rawDate).trim(),
           value: Number((r as any).value ?? (r as any).Value) || 0,
