@@ -826,13 +826,13 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
     );
 
     // Nhóm dữ liệu: div × kind × label × values[]
-    // Ưu tiên dòng TTL (type chứa 'ttl'); nếu không có TTL → dùng tất cả plan/actual
-    const acc: Record<Div, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
+    // Ưu tiên dòng TTL (type chứa 'ttl'); nếu không có TTL → dùng tất cả plan/actual (DAY + NIGHT) cộng dồn
+    const accTtl: Record<Div, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
       SUB1: { plan: {}, actual: {} },
       SUB2: { plan: {}, actual: {} },
       MAIN: { plan: {}, actual: {} },
     };
-    const accAll: typeof acc = {
+    const accAll: Record<Div, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
       SUB1: { plan: {}, actual: {} },
       SUB2: { plan: {}, actual: {} },
       MAIN: { plan: {}, actual: {} },
@@ -850,32 +850,45 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
       else if (ts.includes('actual')) kind = 'actual';
       if (!kind) return;
 
-      // Gom vào accAll (mọi loại)
+      // Gom vào accAll (mọi loại DAY, NIGHT, TTL)
       if (!accAll[model][kind][lbl]) accAll[model][kind][lbl] = [];
       accAll[model][kind][lbl].push(val);
 
-      // Gom vào acc chỉ khi là dòng TTL (type chứa 'ttl')
+      // Gom vào accTtl chỉ khi là dòng TTL (type chứa 'ttl')
       if (ts.includes('ttl')) {
-        if (!acc[model][kind][lbl]) acc[model][kind][lbl] = [];
-        acc[model][kind][lbl].push(val);
+        if (!accTtl[model][kind][lbl]) accTtl[model][kind][lbl] = [];
+        accTtl[model][kind][lbl].push(val);
       }
     });
 
-    // Nếu div nào chưa có TTL data → fallback dùng accAll
-    (DIVS as readonly Div[]).forEach(div => {
-      if (Object.keys(acc[div].plan).length   === 0) acc[div].plan   = accAll[div].plan;
-      if (Object.keys(acc[div].actual).length === 0) acc[div].actual = accAll[div].actual;
-    });
-
-    const toLine = (d: { plan: Record<string, number[]>; actual: Record<string, number[]> }): ProdLineData => {
-      const planByLabel:   Record<string, number> = {};
+    const processLine = (div: Div): ProdLineData => {
+      const planByLabel: Record<string, number> = {};
       const actualByLabel: Record<string, number> = {};
-      Object.entries(d.plan).forEach(([lbl, vals]) => {
-        planByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+
+      // Xử lý Plan
+      const hasTtlPlan = Object.keys(accTtl[div].plan).length > 0;
+      const planSource = hasTtlPlan ? accTtl[div].plan : accAll[div].plan;
+      Object.entries(planSource).forEach(([lbl, vals]) => {
+        if (hasTtlPlan) {
+          // Nếu có dòng TTL thì lấy trung bình (thường chỉ có 1 dòng TTL cho mỗi label)
+          planByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+        } else {
+          // Nếu không có dòng TTL thì cộng dồn DAY + NIGHT
+          planByLabel[lbl] = vals.reduce((a, b) => a + b, 0);
+        }
       });
-      Object.entries(d.actual).forEach(([lbl, vals]) => {
-        actualByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+
+      // Xử lý Actual
+      const hasTtlActual = Object.keys(accTtl[div].actual).length > 0;
+      const actualSource = hasTtlActual ? accTtl[div].actual : accAll[div].actual;
+      Object.entries(actualSource).forEach(([lbl, vals]) => {
+        if (hasTtlActual) {
+          actualByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+        } else {
+          actualByLabel[lbl] = vals.reduce((a, b) => a + b, 0);
+        }
       });
+
       return {
         planByLabel,
         actualByLabel,
@@ -884,9 +897,9 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
     };
 
     return {
-      sub1: toLine(acc.SUB1),
-      sub2: toLine(acc.SUB2),
-      main: toLine(acc.MAIN),
+      sub1: processLine('SUB1'),
+      sub2: processLine('SUB2'),
+      main: processLine('MAIN'),
       allLabels,
     };
   }, [rows, dateFrom, dateTo]);
