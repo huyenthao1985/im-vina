@@ -305,7 +305,16 @@ export default function App() {
                     TIMEOUT_MS,
                     Promise.resolve(
                       applyBucketFilter(kind, db.from('sales_data').select('*'))
-                        .order('id', { ascending: false })
+                        // ── FIX ROOT CAUSE "347% Target/Actual lệch bất thường" ──
+                        // Bản cũ order by 'id' — nhưng `id` là UUID (ngẫu nhiên,
+                        // KHÔNG tuần tự theo thời gian ghi). order('id', desc)
+                        // không hề lấy "5000 dòng mới nhất" như comment cũ mô tả,
+                        // mà lấy ra 1 tập con NGẪU NHIÊN theo thứ tự chuỗi UUID —
+                        // khiến tỉ lệ dòng Plan/Target vs Actual trong 5000 dòng
+                        // được chọn hoàn toàn tình cờ, không phản ánh dữ liệu thật.
+                        // Fix: sắp xếp theo `created_at` (thời điểm ghi thật) để
+                        // "5000 dòng mới nhất" đúng nghĩa như tên gọi.
+                        .order('created_at', { ascending: false })
                         .range(from, from + PAGE_SIZE - 1)
                     )
                   );
