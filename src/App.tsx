@@ -34,6 +34,74 @@ const SALES_DATA_KEY = [
   'source_tag', 'model', 'origin', 'customer', 'type', 'division', 'year', 'month',
 ] as const;
 
+// ── Cache 3 bucket dữ liệu bằng IndexedDB (KHÔNG dùng localStorage) ─────────
+// FIX ROOT CAUSE "Mục 2/Mục 3 ra sai dữ liệu ngay sau F5": cache stale-while-
+// revalidate (BƯỚC 0 bên dưới) trước đây dùng localStorage.setItem() để lưu
+// RAW toàn bộ 3 bucket. localStorage mỗi origin chỉ có quota ~5-10MB — với
+// ~100.000+ dòng dữ liệu hiện tại, JSON.stringify(...) vượt xa quota này nên
+// setItem() luôn ném QuotaExceededError (log "Cache limit exceeded" trong
+// console) và KHÔNG BAO GIỜ ghi cache mới được nữa — cache bị "đứng hình"
+// vĩnh viễn ở snapshot CŨ NHẤT còn lọt quota (từ thời dữ liệu còn nhỏ, TRƯỚC
+// các bản fix gv()/created_at/dedupe gần đây). Mỗi lần F5, BƯỚC 0 lại hiện
+// NGAY snapshot cũ SAI đó trong vài giây (thời gian Supabase tải lại ~100k
+// dòng ở nền) — đúng hiện tượng người dùng gặp ở Mục 2 (%Rate bất thường)
+// và Mục 3 (dữ liệu tụt bất thường ở label cuối).
+// Fix: chuyển cache sang IndexedDB — quota thực tế hàng trăm MB, KHÔNG còn
+// bị giới hạn bởi quy mô dữ liệu hiện tại (và cả khi tăng thêm nhiều lần nữa).
+const IDB_DB_NAME = 'imvina_dashboard_cache';
+const IDB_STORE = 'kv';
+
+function idbOpenCacheDb(): Promise<IDBDatabase | null> {
+  return new Promise(resolve => {
+    if (typeof indexedDB === 'undefined') { resolve(null); return; }
+    try {
+      const req = indexedDB.open(IDB_DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(IDB_STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+async function idbGetCache(key: string): Promise<string | null> {
+  const db = await idbOpenCacheDb();
+  if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve((req.result as string) ?? null);
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+async function idbSetCache(key: string, value: string): Promise<boolean> {
+  const db = await idbOpenCacheDb();
+  if (!db) return false;
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(value, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
+}
+
+async function idbDelCache(key: string): Promise<void> {
+  const db = await idbOpenCacheDb();
+  if (!db) return;
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch (e) { resolve(); }
+  });
+}
+
 // ── Bucket routing helpers ───────────────────────────────────────────────
 // Root cause of "mất data khi chuyển tab" (Image 1): trước đây cả 3 dashboard
 // (Sales / Target-Actual / Manpower) dùng chung 1 mảng `allRows` duy nhất.
@@ -171,16 +239,17 @@ export default function App() {
   // lóe lên trước khi dashboard thật hiện ra. true = đang tải lần đầu.
   const [isInitialDataLoading, setIsInitialDataLoading] = useState(true);
 
-  // Persist 3 bucket ra localStorage mỗi khi có thay đổi (sau khi đã hydrate
-  // lần đầu) — cho phép reload trang mà KHÔNG mất bucket nào, kể cả khi bucket
-  // đó chỉ tồn tại ở local (chưa "Lên mây").
+  // Persist 3 bucket ra cache (sau khi đã hydrate lần đầu) — cho phép reload
+  // trang mà KHÔNG mất bucket nào, kể cả khi bucket đó chỉ tồn tại ở local
+  // (chưa "Lên mây"). Dùng idbSetCache (IndexedDB) thay cho localStorage —
+  // xem giải thích chi tiết ở khối comment cạnh idbOpenCacheDb() phía trên:
+  // localStorage quota ~5-10MB không đủ chứa 100k+ dòng, khiến cache cũ
+  // "đứng hình" vĩnh viễn và hiện sai dữ liệu ở mọi lần F5.
   useEffect(() => {
     if (!hasHydratedRef.current) return;
-    try {
-      localStorage.setItem('cached_dashboard_buckets', JSON.stringify({
-        sales: salesRows, manpower: manpowerRows, targetActual: targetActualRows,
-      }));
-    } catch (e) { console.error('Cache limit exceeded'); }
+    idbSetCache('cached_dashboard_buckets', JSON.stringify({
+      sales: salesRows, manpower: manpowerRows, targetActual: targetActualRows,
+    })).catch(() => { /* IndexedDB không khả dụng (private mode...) — bỏ qua, không ảnh hưởng dashboard đang hiển thị */ });
   }, [salesRows, manpowerRows, targetActualRows]);
 
   // Load from Supabase on mount — Supabase luôn được ưu tiên.
@@ -193,9 +262,17 @@ export default function App() {
     // ra gần như tức thì, Supabase âm thầm cập nhật lại phía sau khi xong —
     // người dùng thấy dữ liệu (có thể hơi cũ vài giây) ngay lập tức thay vì
     // nhìn spinner 12-15s mỗi lần.
-    try {
-      const cachedBuckets = localStorage.getItem('cached_dashboard_buckets');
-      if (cachedBuckets) {
+    // Dọn cache localStorage kiểu CŨ (nếu còn sót lại từ trước bản fix này) —
+    // key này không còn được dùng để đọc/viết nữa, xoá cho sạch, tránh gây
+    // nhầm lẫn khi debug về sau.
+    try { localStorage.removeItem('cached_dashboard_buckets'); } catch (e) { /* ignore */ }
+
+    let cancelled = false;
+
+    async function readLocalCacheAndShow() {
+      try {
+        const cachedBuckets = await idbGetCache('cached_dashboard_buckets');
+        if (cancelled || !cachedBuckets) return;
         const parsed = JSON.parse(cachedBuckets);
         const sales = parsed.sales || [];
         const manpower = parsed.manpower || [];
@@ -211,10 +288,10 @@ export default function App() {
           setScreen('dashboard');
           hasHydratedRef.current = true;
           setIsInitialDataLoading(false);
-          console.log('Hiện ngay từ cache local, đang đồng bộ Supabase ở nền...');
+          console.log('Hiện ngay từ cache local (IndexedDB), đang đồng bộ Supabase ở nền...');
         }
-      }
-    } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
+    }
 
     async function loadSupabaseData() {
 
@@ -377,9 +454,8 @@ export default function App() {
             setHeaders(Object.keys(allData[0]).map(k => k.trim()));
             setFilename('Supabase Cloud Database');
             setScreen('dashboard');
-            try {
-              localStorage.setItem('cached_dashboard_buckets', JSON.stringify({ sales, manpower, targetActual }));
-            } catch (e) { /* ignore */ }
+            idbSetCache('cached_dashboard_buckets', JSON.stringify({ sales, manpower, targetActual }))
+              .catch(() => { /* IndexedDB không khả dụng — bỏ qua, dashboard vẫn dùng state React hiện tại */ });
             hasHydratedRef.current = true;
             setIsInitialDataLoading(false);
             console.log(
@@ -404,7 +480,8 @@ export default function App() {
       hasHydratedRef.current = true;
       setIsInitialDataLoading(false);
     }
-    loadSupabaseData();
+    readLocalCacheAndShow().finally(() => { if (!cancelled) loadSupabaseData(); });
+    return () => { cancelled = true; };
   }, []);
 
 
@@ -719,6 +796,7 @@ export default function App() {
       localStorage.removeItem('cached_sales_data');
       localStorage.removeItem('cached_dashboard_buckets');
     } catch (e) { /* ignore */ }
+    idbDelCache('cached_dashboard_buckets').catch(() => { /* ignore */ });
   }, []);
 
   const dateBounds = useMemo(() => getDateBounds(allRows, mapping.dateCol), [allRows, mapping.dateCol]);

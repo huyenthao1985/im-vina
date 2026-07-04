@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import type { DataRow, ColumnMapping, FilterState } from '../types';
 import { translations } from '../translations';
-import { supabase } from '../lib/supabase';
 import { CustomSelect } from './CustomSelect';
 import { GlobalHeaderControls } from './GlobalHeaderControls';
 
@@ -153,47 +152,12 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   const [growthTimeframe, setGrowthTimeframe] = useState<'year' | 'quarter'>('year');
 
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
-  const [isSaving, setIsSaving] = useState(false);
-
-  // Save to Cloud: CHỈ xóa/ghi các dòng có source_tag = 'Sales' trong bảng dùng chung
-  // 'sales_data' — KHÔNG xóa toàn bộ bảng (bug cũ), để tránh ghi đè dữ liệu
-  // Manpower / Target-Actual đã lưu trước đó.
-  // Lưu ý: KHÔNG dùng cột 'origin' để đánh dấu nguồn dữ liệu vì 'origin' ở đây
-  // là dữ liệu nghiệp vụ thật (xuất xứ/출하지 theo từng dòng Sales) — nếu gán
-  // origin: 'Sales' sẽ ghi đè mất giá trị xuất xứ thật của từng dòng.
-  // Dùng cột riêng 'source_tag' để phân vùng dữ liệu giữa các dashboard.
-  const handleSaveToCloud = async () => {
-    if (!supabase) return;
-    setIsSaving(true);
-    try {
-      await supabase.from('sales_data').delete().eq('source_tag', 'Sales');
-
-      const taggedRows = normalizedRows.map(r => ({ ...r, source_tag: 'Sales' }));
-
-      const BATCH_SIZE = 500;
-      for (let i = 0; i < taggedRows.length; i += BATCH_SIZE) {
-        const batch = taggedRows.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase.from('sales_data').insert(batch);
-        if (error) {
-          console.error("Save error:", error);
-          alert('Lỗi lưu: ' + error.message);
-          setIsSaving(false);
-          return;
-        }
-      }
-      // Xóa cờ và cache local để lần reload tiếp theo tải dữ liệu từ Supabase
-      try {
-        localStorage.removeItem('manual_upload_flag');
-        localStorage.removeItem('cached_sales_data');
-        localStorage.removeItem('cached_dashboard_buckets');
-      } catch (e) { /* ignore */ }
-      alert('Đã đồng bộ thành công dữ liệu lên Supabase Cloud!\n(Khi mở lại trang, dữ liệu sẽ được tải tự động từ Supabase)');
-    } catch (err: any) {
-      alert('Lỗi: ' + err.message);
-    }
-    setIsSaving(false);
-  };
-
+  // FIX: đã xóa handleSaveToCloud/isSaving/nút "Lên mây" — file này bị sót
+  // lại khi dọn dẹp double-write path ở 3 dashboard khác (Manpower/PerCapita/
+  // TargetActual). App.tsx đã tự động đồng bộ bucket Sales lên Supabase qua
+  // syncBucketToSupabase() (dùng upsert onConflict đúng SALES_DATA_KEY) —
+  // giữ thêm 1 đường ghi thủ công delete()+insert() thô ở đây sẽ tái lập
+  // đúng bug gốc "ghi trùng dữ liệu qua 2 đường" đã fix ở phần đầu.
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -1311,7 +1275,6 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
             {/* Cụm phải dòng 1: Spacers matching Dòng 2 (Tải tệp lên + Save to Cloud) */}
             <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
               <div style={{ width: '130px' }}></div>
-              {supabase && <div style={{ width: '120px' }}></div>}
             </div>
           </div>
 
@@ -1448,18 +1411,6 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                   {lang === 'vi' ? 'Tải tệp lên' : lang === 'ko' ? '파일 업로드' : 'Upload File'}
                 </span>
               </label>
-
-              {supabase && (
-                <button 
-                  className="btn-outline" 
-                  type="button" 
-                  onClick={handleSaveToCloud} 
-                  disabled={isSaving}
-                  style={{ borderColor: 'var(--green)', color: 'var(--green)', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
-                >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isSaving ? '⏳...' : t.saveToCloudBtn}</span>
-                </button>
-              )}
             </div>
           </div>
         </div>
