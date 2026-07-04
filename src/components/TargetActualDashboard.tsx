@@ -1460,6 +1460,24 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     setGaugeData(gaugeModels);
     setGaugeOverallRate(totTG > 0 ? Math.round((totAG / totTG) * 100) : 0);
 
+    // ── DEBUG: đối chiếu amtTarget/amtActual THẬT (không clamp 100%) từng
+    // model trong khoảng filter hiện tại — dùng để xác minh 145.8%/146% là
+    // số liệu thật (Actual > Target thật) hay do DB thiếu dòng Target (Plan/
+    // Plan S1/Plan S2 của AMT). So với file Excel gốc cùng khoảng thời gian
+    // để kết luận. Chỉ log ra console, không ảnh hưởng UI/hiệu năng.
+    if (typeof console !== 'undefined' && console.table) {
+      const debugRows = Object.entries(modelMapGauge)
+        .map(([name, val]) => ({
+          model: name,
+          amtTarget: Math.round(val.target),
+          amtActual: Math.round(val.actual),
+          rate_thuc_khong_clamp: val.target > 0 ? Math.round((val.actual / val.target) * 1000) / 10 + '%' : 'N/A (target=0)',
+        }))
+        .sort((a, b) => b.amtActual - a.amtActual);
+      console.log('[DEBUG %Rate AMT] So sánh Target vs Actual THẬT theo model (khoảng filter hiện tại):');
+      console.table(debugRows);
+    }
+
     // ----------------------------------------------------
     // CHART 5: Custom (Qty) Donut
     // ----------------------------------------------------
