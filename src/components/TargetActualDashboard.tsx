@@ -359,6 +359,38 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       }).filter((r): r is NonNullable<typeof r> => r !== null && r.model !== '');
     }
 
+    // Pre-scan: Identify which months have daily detail rows (e.g., date strings containing a slash '/')
+    const monthsWithDailyData = new Set<string>();
+    const monthsShort = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    
+    rows.forEach(r => {
+      const dateVal = r.date ?? (r as any).Date ?? r.month ?? (r as any).Month;
+      if (!dateVal) return;
+      const dateStr = String(dateVal).trim();
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length >= 2) {
+          const mNum = parseInt(parts[0], 10);
+          if (mNum >= 1 && mNum <= 12) {
+            const monthAbbr = monthsShort[mNum - 1];
+            let year = 2026;
+            const yearKey = Object.keys(r).find(k => k.toLowerCase().includes('year') || k.toLowerCase().includes('nam'));
+            if (yearKey && (r as any)[yearKey]) {
+              year = parseInt(String((r as any)[yearKey]), 10) || 2026;
+            } else if (parts.length === 3) {
+              const p2 = parseInt(parts[2], 10);
+              if (p2 > 1000) year = p2;
+              else {
+                const p0 = parseInt(parts[0], 10);
+                if (p0 > 1000) year = p0;
+              }
+            }
+            monthsWithDailyData.add(`${monthAbbr}|${year}`);
+          }
+        }
+      }
+    });
+
     // 1.2 Detect if it's the Test 1.xlsx format (having MODEL, DIVISION, Type1/Type, Type2/Custom, DATE/Date, Value)
     const keysLower2 = keys.map(k => k.toLowerCase().trim());
     const hasModelKey = keysLower2.includes('model');
@@ -377,13 +409,23 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       const valueCol = keys.find(k => k.toLowerCase().trim() === 'value')!;
 
       const REAL_CUSTOMERS = new Set(['GAOXIN', 'SEMV', 'SUNNY', 'LGIT', 'Q-TECH']);
-      const monthsShort = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
       return rows.map(r => {
+        const dateRawStr = String(r[dateCol] || '').trim().toUpperCase();
+        if (dateRawStr === 'TTL') return null;
+
         const model = String(r[modelCol] || '').trim();
         const parsedDate = parseToDateObject(r, dateCol);
         if (!parsedDate) return null;
+        
         const month = monthsShort[parsedDate.getMonth()];
+        const year = parsedDate.getFullYear();
+
+        // Skip this monthly summary row if daily rows are already present for the same month/year
+        const MONTHS_SET = new Set(monthsShort);
+        if (MONTHS_SET.has(dateRawStr) && monthsWithDailyData.has(`${dateRawStr}|${year}`)) {
+          return null;
+        }
 
         const div = String(r[divisionCol] || '').trim();
         const divUpper = div.toUpperCase();
@@ -396,30 +438,11 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         // Skip accumulated rows
         if (type1Lower.includes('acc') || type2.toLowerCase().includes('acc') || type1Lower === 'acc.') return null;
 
-        // Exclude completely if Date = "TTL"
-        const dateRawStr = String(r[dateCol] || '').trim().toUpperCase();
-        if (dateRawStr === 'TTL') return null;
-
         let customer = 'Unknown';
         let qtyTarget = 0;
         let qtyActual = 0;
         let amtTarget = 0;
         let amtActual = 0;
-
-        // ════════════════════════════════════════════════════════════════════════
-        // Data sources for each metric (Test 1.xlsx structure):
-        //
-        //  QTY Target → DIVISION = "Shipment" (also "SUB1","SUB2")
-        //               normalizeOisType(Type) === 'plan'
-        //               Handles: "Plan", "Plan 1", "Plan 2", "Plan S1", "Plan S2"
-        //
-        //  QTY Actual → DIVISION = "OIS"
-        //               normalizeOisType(Type) === 'final_sales'
-        //               Only OIS rows have "Final Sales" data for all models
-        //
-        //  AMT Target → DIVISION = "AMT K$"  (Type = "Plan" exact)
-        //  AMT Actual → DIVISION = "AMT K$"  (Type = "Actual" exact)
-        // ════════════════════════════════════════════════════════════════════════
 
         if (divUpper === 'SHIPMENT' || divUpper === 'SUB1' || divUpper === 'SUB2') {
           // QTY TARGET from Shipment (covers all models)
@@ -467,10 +490,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           return null;
         }
 
-
-
-
-        const year = parsedDate.getFullYear();
         const monthNum = parsedDate.getMonth() + 1;
         const dayOfMonth = parsedDate.getDate();
         const week = getWeekOfMonth(year, monthNum, dayOfMonth);
@@ -484,7 +503,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           qtyActual,
           amtTarget,
           amtActual,
-          monthNum,
+          monthNum: parsedDate.getMonth() + 1,
           year,
           week
         };
@@ -496,31 +515,42 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
 
     if (isSupabaseTargetActual) {
       const grouped: Record<string, any> = {};
-      const monthsArr = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+      const MONTHS_SET = new Set(monthsShort);
       
       rows.forEach(r => {
         const model = String(r.model || r.Model || '').trim();
         if (!model) return;
         const customer = String(r.customer || r.Customer || 'Unknown').trim();
-        const month = String(r.month || r.Month || 'JAN').toUpperCase();
+        const monthRaw = String(r.month || r.Month || 'JAN').trim();
+        const monthUpper = monthRaw.toUpperCase();
         const year = Number(r.year || r.Year) || 2026;
         
-        const key = `${model}|${customer}|${month}|${year}`;
+        // Skip monthly summary row if we already have daily breakdown for that month/year
+        if (MONTHS_SET.has(monthUpper) && monthsWithDailyData.has(`${monthUpper}|${year}`)) {
+          return;
+        }
+        
+        const parsedDate = parseToDateObject(r, 'month');
+        if (!parsedDate) return;
+        
+        const monthNum = parsedDate.getMonth() + 1;
+        const dayOfMonth = parsedDate.getDate();
+        const week = getWeekOfMonth(year, monthNum, dayOfMonth);
+        
+        const key = `${model}|${customer}|${monthRaw}|${year}`;
         if (!grouped[key]) {
-          const mIdx = monthsArr.indexOf(month);
-          const monthNum = mIdx !== -1 ? mIdx + 1 : 1;
           grouped[key] = {
             model,
             customer,
-            date: new Date(year, mIdx !== -1 ? mIdx : 0, 1),
-            month,
+            date: parsedDate,
+            month: monthsShort[parsedDate.getMonth()],
             qtyTarget: 0,
             qtyActual: 0,
             amtTarget: 0,
             amtActual: 0,
             monthNum,
             year,
-            week: 'W1' as const
+            week
           };
         }
         
