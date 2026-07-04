@@ -1121,7 +1121,14 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         modelMap[r.model].amtActual += r.amtActual;
       });
 
-      const activeModelsQty = Object.keys(modelMap).sort((a, b) => {
+      // FIX "model giá trị 0 vẫn hiện trên biểu đồ": model không có dữ liệu
+      // thật (cả Target VÀ Actual đều bằng 0) chỉ làm rối biểu đồ, không
+      // mang thông tin gì — lọc bỏ trước khi build trục X. Model chỉ thiếu
+      // 1 trong 2 (có Target chưa đạt, hoặc có Actual dù không đặt Target)
+      // vẫn giữ lại vì vẫn là thông tin có ý nghĩa.
+      const activeModelsQty = Object.keys(modelMap)
+        .filter(m => modelMap[m].qtyTarget !== 0 || modelMap[m].qtyActual !== 0)
+        .sort((a, b) => {
         if (modelMap[b].qtyActual !== modelMap[a].qtyActual) {
           return modelMap[b].qtyActual - modelMap[a].qtyActual;
         }
@@ -1135,7 +1142,9 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       qtyActuals = activeModelsQty.map(m => modelMap[m].qtyActual);
       qtyRates = activeModelsQty.map(m => modelMap[m].qtyTarget > 0 ? (modelMap[m].qtyActual / modelMap[m].qtyTarget) * 100 : 0);
 
-      const activeModelsAmt = Object.keys(modelMap).sort((a, b) => {
+      const activeModelsAmt = Object.keys(modelMap)
+        .filter(m => modelMap[m].amtTarget !== 0 || modelMap[m].amtActual !== 0)
+        .sort((a, b) => {
         if (modelMap[b].amtActual !== modelMap[a].amtActual) {
           return modelMap[b].amtActual - modelMap[a].amtActual;
         }
@@ -1448,6 +1457,10 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     });
 
     const gaugeModels = Object.entries(modelMapGauge)
+      // FIX "model giá trị 0 vẫn hiện trên biểu đồ": bỏ model hoàn toàn
+      // không có dữ liệu (target=0 VÀ actual=0) trước khi tính rate/xếp hạng,
+      // tránh chúng chiếm chỗ trong top 5 hoặc hiện rate=0 gây hiểu nhầm.
+      .filter(([, val]) => val.target !== 0 || val.actual !== 0)
       .map(([name, val]) => {
         const rate = val.target > 0 ? Math.min((val.actual / val.target) * 100, 100) : 0;
         return { name, rate };
