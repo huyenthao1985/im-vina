@@ -445,11 +445,12 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         let amtActual = 0;
 
         if (divUpper === 'SHIPMENT' || divUpper === 'SUB1' || divUpper === 'SUB2') {
-          // QTY TARGET from Shipment (covers all models)
+          // QTY TARGET from Shipment (covers all models except SO2701)
           if (!REAL_CUSTOMERS.has(type2Upper)) return null;
           customer = type2;
           const shipNorm = normalizeOisType(type1);
           if (shipNorm === 'plan') {
+            if (model === 'SO2701') return null; // SO2701 uses OIS Plan 1 & Plan 2 instead
             qtyTarget = val;
           } else {
             // Non-plan Shipment rows (e.g. Actual, Acc*) → skip
@@ -457,14 +458,15 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           }
 
         } else if (divUpper === 'OIS') {
-          // QTY ACTUAL from OIS (Final Sales rows only; Plan rows in OIS are ignored)
+          // QTY ACTUAL from OIS (Final Sales rows only; Plan rows in OIS are ignored except for SO2701)
           if (!REAL_CUSTOMERS.has(type2Upper)) return null;
           customer = type2;
           const oisNorm = normalizeOisType(type1);
           if (oisNorm === 'final_sales') {
             qtyActual = val;
+          } else if (oisNorm === 'plan' && model === 'SO2701') {
+            qtyTarget = val;
           } else {
-            // Plan rows in OIS exist only for SO2701 and are superseded by Shipment source
             return null;
           }
 
@@ -562,11 +564,14 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         
         if (div === 'SHIPMENT' || div === 'SUB1' || div === 'SUB2') {
           if (normType === 'plan') {
+            if (model === 'SO2701') return; // SO2701 uses OIS Plan 1 & Plan 2 instead
             grouped[key].qtyTarget += val;
           }
         } else if (div === 'OIS') {
           if (normType === 'final_sales') {
             grouped[key].qtyActual += val;
+          } else if (normType === 'plan' && model === 'SO2701') {
+            grouped[key].qtyTarget += val;
           }
         } else if (div.startsWith('AMT')) {
           if (normType === 'plan') {
