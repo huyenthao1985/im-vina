@@ -359,8 +359,9 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       }).filter((r): r is NonNullable<typeof r> => r !== null && r.model !== '');
     }
 
-    // Pre-scan: Identify which months have daily detail rows (e.g., date strings containing a slash '/')
-    const monthsWithDailyData = new Set<string>();
+    // Pre-scan: Identify which months/years/models have daily detail rows (e.g., date strings containing a slash '/')
+    const targetMonthsWithDaily = new Set<string>();
+    const actualMonthsWithDaily = new Set<string>();
     const monthsShort = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     
     rows.forEach(r => {
@@ -385,7 +386,24 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                 if (p0 > 1000) year = p0;
               }
             }
-            monthsWithDailyData.add(`${monthAbbr}|${year}`);
+            
+            const model = String(r.model ?? (r as any).Model ?? '').trim();
+            const division = String(r.division ?? (r as any).Division ?? '').trim().toUpperCase();
+            const typeStr = String(r.type ?? (r as any).Type ?? r.type1 ?? (r as any).Type1 ?? '').trim().toLowerCase();
+            const normType = normalizeOisType(typeStr);
+            
+            // Check if it's a target row or actual row
+            const isTarget = (division === 'SHIPMENT' || division === 'SUB1' || division === 'SUB2' || division === 'OIS') && normType === 'plan';
+            const isActual = (division === 'OIS' && normType === 'final_sales') || 
+                             ((division === 'SHIPMENT' || division === 'SUB1' || division === 'SUB2') && normType === 'actual');
+            
+            const key = `${monthAbbr}|${year}|${model}`;
+            if (isTarget) {
+              targetMonthsWithDaily.add(key);
+            }
+            if (isActual) {
+              actualMonthsWithDaily.add(key);
+            }
           }
         }
       }
@@ -421,12 +439,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         const month = monthsShort[parsedDate.getMonth()];
         const year = parsedDate.getFullYear();
 
-        // Skip this monthly summary row if daily rows are already present for the same month/year
-        const MONTHS_SET = new Set(monthsShort);
-        if (MONTHS_SET.has(dateRawStr) && monthsWithDailyData.has(`${dateRawStr}|${year}`)) {
-          return null;
-        }
-
         const div = String(r[divisionCol] || '').trim();
         const divUpper = div.toUpperCase();
         const type1 = String(r[typeCol] || '').trim();
@@ -438,33 +450,56 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         // Skip accumulated rows
         if (type1Lower.includes('acc') || type2.toLowerCase().includes('acc') || type1Lower === 'acc.') return null;
 
+        const shipNorm = normalizeOisType(type1);
+
+        // Skip this monthly summary row if daily rows are already present for the same month/year/model
+        const MONTHS_SET = new Set(monthsShort);
+        if (MONTHS_SET.has(dateRawStr)) {
+          const targetKey = `${dateRawStr}|${year}|${model}`;
+          const actualKey = `${dateRawStr}|${year}|${model}`;
+          
+          const isTargetRow = (divUpper === 'SHIPMENT' || divUpper === 'SUB1' || divUpper === 'SUB2' || divUpper === 'OIS') && shipNorm === 'plan';
+          const isActualRow = (divUpper === 'OIS' && shipNorm === 'final_sales') ||
+                              ((divUpper === 'SHIPMENT' || divUpper === 'SUB1' || divUpper === 'SUB2') && shipNorm === 'actual');
+          
+          if (isTargetRow && targetMonthsWithDaily.has(targetKey)) {
+            return null;
+          }
+          if (isActualRow && actualMonthsWithDaily.has(actualKey)) {
+            return null;
+          }
+        }
+
         let customer = 'Unknown';
         let qtyTarget = 0;
         let qtyActual = 0;
         let amtTarget = 0;
         let amtActual = 0;
 
+        const isShift = /\s+S\d+/i.test(model);
+
         if (divUpper === 'SHIPMENT' || divUpper === 'SUB1' || divUpper === 'SUB2') {
           // QTY TARGET from Shipment (covers all models except SO2701)
           if (!REAL_CUSTOMERS.has(type2Upper)) return null;
           customer = type2;
-          const shipNorm = normalizeOisType(type1);
           if (shipNorm === 'plan') {
             if (model === 'SO2701') return null; // SO2701 uses OIS Plan 1 & Plan 2 instead
             qtyTarget = val;
+          } else if (shipNorm === 'actual' && isShift) {
+            qtyActual = val;
           } else {
-            // Non-plan Shipment rows (e.g. Actual, Acc*) → skip
+            // Non-plan/non-shift actual Shipment rows → skip
             return null;
           }
 
         } else if (divUpper === 'OIS') {
-          // QTY ACTUAL from OIS (Final Sales rows only; Plan rows in OIS are ignored except for SO2701)
+          // QTY ACTUAL from OIS
           if (!REAL_CUSTOMERS.has(type2Upper)) return null;
           customer = type2;
-          const oisNorm = normalizeOisType(type1);
-          if (oisNorm === 'final_sales') {
+          if (shipNorm === 'final_sales') {
+            if (isShift) return null; // Shift models get Actual from Shipment division
             qtyActual = val;
-          } else if (oisNorm === 'plan' && model === 'SO2701') {
+          } else if (shipNorm === 'plan' && model === 'SO2701') {
             qtyTarget = val;
           } else {
             return null;
@@ -475,10 +510,9 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           // AMT TARGET and AMT ACTUAL
           if (!REAL_CUSTOMERS.has(type2Upper)) return null;
           customer = type2;
-          const normAmtType = normalizeOisType(type1);
-          if (normAmtType === 'plan') {
+          if (shipNorm === 'plan') {
             amtTarget = val;
-          } else if (normAmtType === 'actual') {
+          } else if (shipNorm === 'actual') {
             amtActual = val;
           } else {
             return null;
@@ -505,7 +539,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           qtyActual,
           amtTarget,
           amtActual,
-          monthNum: parsedDate.getMonth() + 1,
+          monthNum,
           year,
           week
         };
@@ -518,18 +552,39 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     if (isSupabaseTargetActual) {
       const grouped: Record<string, any> = {};
       const MONTHS_SET = new Set(monthsShort);
+      const REAL_CUSTOMERS = new Set(['GAOXIN', 'SEMV', 'SUNNY', 'LGIT', 'Q-TECH']);
       
       rows.forEach(r => {
         const model = String(r.model || r.Model || '').trim();
         if (!model) return;
+        
         const customer = String(r.customer || r.Customer || 'Unknown').trim();
+        const customerUpper = customer.toUpperCase();
+        if (!REAL_CUSTOMERS.has(customerUpper)) return; // ignore non-real customers
+        
         const monthRaw = String(r.month || r.Month || 'JAN').trim();
         const monthUpper = monthRaw.toUpperCase();
         const year = Number(r.year || r.Year) || 2026;
         
-        // Skip monthly summary row if we already have daily breakdown for that month/year
-        if (MONTHS_SET.has(monthUpper) && monthsWithDailyData.has(`${monthUpper}|${year}`)) {
-          return;
+        const div = String(r.division || r.Division || '').toUpperCase();
+        const typeStr = String(r.type || r.Type || '').toLowerCase();
+        const normType = normalizeOisType(typeStr);
+
+        // Skip monthly summary row if we already have daily breakdown for that month/year/model
+        if (MONTHS_SET.has(monthUpper)) {
+          const targetKey = `${monthUpper}|${year}|${model}`;
+          const actualKey = `${monthUpper}|${year}|${model}`;
+          
+          const isTargetRow = (div === 'SHIPMENT' || div === 'SUB1' || div === 'SUB2' || div === 'OIS') && normType === 'plan';
+          const isActualRow = (div === 'OIS' && normType === 'final_sales') ||
+                              ((div === 'SHIPMENT' || div === 'SUB1' || div === 'SUB2') && normType === 'actual');
+          
+          if (isTargetRow && targetMonthsWithDaily.has(targetKey)) {
+            return;
+          }
+          if (isActualRow && actualMonthsWithDaily.has(actualKey)) {
+            return;
+          }
         }
         
         const parsedDate = parseToDateObject(r, 'month');
@@ -557,18 +612,19 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         }
         
         const val = Number(r.value || r.Value) || 0;
-        const div = String(r.division || r.Division || '').toUpperCase();
-        const typeStr = String(r.type || r.Type || '').toLowerCase();
         
-        const normType = normalizeOisType(typeStr);
+        const isShift = /\s+S\d+/i.test(model);
         
         if (div === 'SHIPMENT' || div === 'SUB1' || div === 'SUB2') {
           if (normType === 'plan') {
             if (model === 'SO2701') return; // SO2701 uses OIS Plan 1 & Plan 2 instead
             grouped[key].qtyTarget += val;
+          } else if (normType === 'actual' && isShift) {
+            grouped[key].qtyActual += val;
           }
         } else if (div === 'OIS') {
           if (normType === 'final_sales') {
+            if (isShift) return; // Shift models get Actual from Shipment division
             grouped[key].qtyActual += val;
           } else if (normType === 'plan' && model === 'SO2701') {
             grouped[key].qtyTarget += val;
