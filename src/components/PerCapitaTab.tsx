@@ -255,6 +255,27 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       });
     });
 
+    // Nếu không có model TTL trong dữ liệu, tính tổng động từ các model khác
+    if (!byModelLabel['TTL']) {
+      byModelLabel['TTL'] = {};
+      allLabelsRaw.forEach(x => {
+        let sum = 0;
+        let hasValue = false;
+        Object.keys(byModelLabel).forEach(m => {
+          if (m !== 'TTL') {
+            const v = byModelLabel[m][x.label];
+            if (v != null && v > 0) {
+              sum += v;
+              hasValue = true;
+            }
+          }
+        });
+        if (hasValue) {
+          byModelLabel['TTL'][x.label] = sum;
+        }
+      });
+    }
+
     const ttlByLabel: Record<string, number> = byModelLabel['TTL'] ?? {};
 
     // ─── Trim các label "kế tiếp" chưa có dữ liệu thật ─────────────────────

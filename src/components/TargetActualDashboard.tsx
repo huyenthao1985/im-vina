@@ -43,7 +43,7 @@ const buildWeekKey = (year: number, monthNum: number, week: string): string =>
  *  4. Match the cleaned base against "final sales" variants → returns 'final_sales'.
  *  5. Anything else → returns null (caller should skip the row).
  */
-const normalizeOisType = (typeStr: string): 'plan' | 'final_sales' | null => {
+const normalizeOisType = (typeStr: string): 'plan' | 'final_sales' | 'actual' | null => {
   const s = typeStr.trim().toLowerCase();
 
   // Guard: exclude cumulative rows (e.g. "Acc Plan", "ACC.Actual", "Acc Actual S1")
@@ -55,6 +55,7 @@ const normalizeOisType = (typeStr: string): 'plan' | 'final_sales' | null => {
 
   if (base === 'plan') return 'plan';
   if (base === 'final sales' || base === 'final_sales' || base === 'finalsales') return 'final_sales';
+  if (base === 'actual') return 'actual';
 
   return null; // unrecognised → caller skips the row
 };
@@ -449,11 +450,10 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           // AMT TARGET and AMT ACTUAL
           if (!REAL_CUSTOMERS.has(type2Upper)) return null;
           customer = type2;
-          const amtLower = type1.trim().toLowerCase();
-          if (amtLower.startsWith('acc')) return null; // exclude accumulative
-          if (amtLower === 'plan') {
+          const normAmtType = normalizeOisType(type1);
+          if (normAmtType === 'plan') {
             amtTarget = val;
-          } else if (amtLower === 'actual') {
+          } else if (normAmtType === 'actual') {
             amtActual = val;
           } else {
             return null;
@@ -528,18 +528,20 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         const div = String(r.division || r.Division || '').toUpperCase();
         const typeStr = String(r.type || r.Type || '').toLowerCase();
         
+        const normType = normalizeOisType(typeStr);
+        
         if (div === 'SHIPMENT' || div === 'SUB1' || div === 'SUB2') {
-          if (typeStr === 'plan') {
+          if (normType === 'plan') {
             grouped[key].qtyTarget += val;
           }
         } else if (div === 'OIS') {
-          if (typeStr === 'final sales' || typeStr === 'final_sales' || typeStr === 'finalsales') {
+          if (normType === 'final_sales') {
             grouped[key].qtyActual += val;
           }
         } else if (div.startsWith('AMT')) {
-          if (typeStr === 'plan') {
+          if (normType === 'plan') {
             grouped[key].amtTarget += val;
-          } else if (typeStr === 'actual') {
+          } else if (normType === 'actual') {
             grouped[key].amtActual += val;
           }
         }

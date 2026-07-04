@@ -271,6 +271,25 @@ function useManpowerData(
       });
     });
 
+    // Nếu không có model TTL trong dữ liệu, tính tổng động từ các model khác
+    if (!byModelPeriod[TTL_MODEL]) {
+      byModelPeriod[TTL_MODEL] = {};
+      labels.forEach(l => {
+        let sum = 0;
+        let hasValue = false;
+        Object.keys(byModelPeriod).forEach(m => {
+          if (m !== TTL_MODEL) {
+            const v = byModelPeriod[m][l];
+            if (v != null && v > 0) {
+              sum += v;
+              hasValue = true;
+            }
+          }
+        });
+        byModelPeriod[TTL_MODEL][l] = hasValue ? sum : null;
+      });
+    }
+
     const activeLabels = labels.filter(l => {
       const ttlVal = byModelPeriod[TTL_MODEL]?.[l];
       return ttlVal != null && ttlVal > 0;
