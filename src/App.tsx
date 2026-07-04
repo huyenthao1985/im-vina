@@ -240,7 +240,7 @@ export default function App() {
           // Fix: fetch RIÊNG theo từng bucket (source_tag), mỗi bucket có
           // ngân sách MAX_PAGES*PAGE_SIZE dòng riêng, không bị bucket lớn
           // "ăn hết" quota của bucket nhỏ.
-          const MAX_PAGES = 5; // tối đa 5000 dòng / bucket
+          const MAX_PAGES = 100; // tối đa 100,000 dòng / bucket (đủ cho mọi trường hợp thực tế)
 
           // ─── TIMEOUT 10 giây cho mỗi request ────────────────────────────
           const TIMEOUT_MS = 10_000;
@@ -289,8 +289,8 @@ export default function App() {
             if (!count || count === 0) return [];
 
             const totalPages = Math.min(Math.ceil(count / PAGE_SIZE), MAX_PAGES);
-            if (count > MAX_PAGES * PAGE_SIZE) {
-              console.warn(`Bucket [${kind}] có ${count} dòng (vượt giới hạn ${MAX_PAGES * PAGE_SIZE}). Chỉ tải ${MAX_PAGES * PAGE_SIZE} dòng mới nhất của bucket này. Hãy dọn dẹp database để cải thiện tốc độ.`);
+            if (count > 10_000) {
+              console.warn(`Bucket [${kind}] có ${count} dòng. Đang tải toàn bộ (tối đa ${MAX_PAGES * PAGE_SIZE} dòng) — cân nhắc dọn dẹp database nếu tốc độ tải chậm.`);
             }
 
             let bucketData: any[] = [];
