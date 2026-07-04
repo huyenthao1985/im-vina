@@ -76,23 +76,10 @@ function detectBucket(headers: string[], rows: DataRow[]): 'sales' | 'manpower' 
   return 'sales';
 }
 
-// Phân vùng dữ liệu tải về từ Supabase theo cột 'source_tag' (mới) với fallback
-// đọc cột 'origin' cho các dòng cũ (Manpower/TargetActual) đã lưu trước khi có
-// source_tag. Dòng Sales KHÔNG có source_tag/origin trùng 'Manpower' hay
-// 'TargetActual' nên rơi vào nhánh else một cách an toàn — 'origin' của dòng
-// Sales là dữ liệu xuất xứ thật (vd "Vietnam"/"Korea"), không bao giờ trùng 2 tag trên.
-function bucketByTag(rows: DataRow[]): { sales: DataRow[]; manpower: DataRow[]; targetActual: DataRow[] } {
-  const sales: DataRow[] = [];
-  const manpower: DataRow[] = [];
-  const targetActual: DataRow[] = [];
-  rows.forEach(r => {
-    const tag = (r as any).source_tag || (r as any).origin;
-    if (tag === 'Manpower') manpower.push(r);
-    else if (tag === 'TargetActual') targetActual.push(r);
-    else sales.push(r);
-  });
-  return { sales, manpower, targetActual };
-}
+// (Đã bỏ hàm bucketByTag() phân loại-sau-khi-tải: bản fix "Manpower biến mất
+// sau F5" giờ lọc RIÊNG theo bucket ngay tại query Supabase — xem
+// applyBucketFilter()/fetchBucketRows() trong loadSupabaseData() bên dưới —
+// nên không cần bước phân loại lại toàn bộ allData sau khi tải nữa.)
 // ─────────────────────────────────────────────────────────────────────────
 
 function computeKPI(rows: DataRow[], mapping: ColumnMapping): KPIData {
