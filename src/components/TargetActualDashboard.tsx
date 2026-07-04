@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { DataRow } from '../types';
 import { translations } from '../translations';
-import { supabase } from '../lib/supabase';
 import { CustomSelect } from './CustomSelect';
 import { usePagination } from '../hooks/usePagination';
 import { GlobalHeaderControls } from './GlobalHeaderControls';
@@ -630,7 +629,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   const [sortField, setSortField] = useState<string>('');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
-  const [isSaving, setIsSaving] = useState(false);
   const [gaugeData, setGaugeData] = useState<Array<{ name: string; rate: number }>>([]);
   const [gaugeOverallRate, setGaugeOverallRate] = useState(0);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
@@ -1009,99 +1007,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       amtRatio: amtTarget > 0 ? (amtActual / amtTarget) * 100 : 0,
     };
   }, [bottomTableRows]);
-
-  // Handle Save to Cloud
-  // CHỈ xóa/ghi các dòng có source_tag = 'TargetActual' trong bảng dùng chung
-  // 'sales_data' — KHÔNG xóa toàn bộ bảng (bug cũ), để tránh ghi đè dữ liệu
-  // Sales / Manpower đã lưu trước đó. Vẫn giữ origin: 'TargetActual' để tương
-  // thích ngược với dữ liệu cloud cũ, nhưng source_tag mới là cột dùng để lọc.
-  const handleSaveToCloud = async () => {
-    if (!supabase) return;
-    setIsSaving(true);
-    try {
-      // Clear only this dashboard's rows
-      await supabase.from('sales_data').delete().eq('source_tag', 'TargetActual');
-      
-      // Map to db schema format - split each normalized row into up to 4 rows
-      const dbRows: any[] = [];
-      normalizedRows.forEach(r => {
-        const year = r.year || 2026;
-        if (r.qtyTarget > 0) {
-          dbRows.push({
-            model: r.model,
-            customer: r.customer,
-            month: r.month,
-            division: 'Shipment',
-            type: 'Plan',
-            year,
-            value: r.qtyTarget,
-            origin: 'TargetActual',
-            source_tag: 'TargetActual'
-          });
-        }
-        if (r.qtyActual > 0) {
-          dbRows.push({
-            model: r.model,
-            customer: r.customer,
-            month: r.month,
-            division: 'OIS',
-            type: 'Final Sales',
-            year,
-            value: r.qtyActual,
-            origin: 'TargetActual',
-            source_tag: 'TargetActual'
-          });
-        }
-        if (r.amtTarget > 0) {
-          dbRows.push({
-            model: r.model,
-            customer: r.customer,
-            month: r.month,
-            division: 'AMT K$',
-            type: 'Plan',
-            year,
-            value: r.amtTarget,
-            origin: 'TargetActual',
-            source_tag: 'TargetActual'
-          });
-        }
-        if (r.amtActual > 0) {
-          dbRows.push({
-            model: r.model,
-            customer: r.customer,
-            month: r.month,
-            division: 'AMT K$',
-            type: 'Actual',
-            year,
-            value: r.amtActual,
-            origin: 'TargetActual',
-            source_tag: 'TargetActual'
-          });
-        }
-      });
-
-      const BATCH_SIZE = 500;
-      for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
-        const batch = dbRows.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase.from('sales_data').insert(batch);
-        if (error) {
-          alert('Lỗi lưu: ' + error.message);
-          setIsSaving(false);
-          return;
-        }
-      }
-      alert(lang === 'vi' ? 'Đã đồng bộ dữ liệu Target-Actual lên Supabase Cloud!\n(Khi mở lại trang, dữ liệu sẽ được tải tự động từ Supabase)' : 'Synced Target-Actual data to Supabase!\n(Data will auto-load from Supabase on next open)');
-      // Xóa cờ và cache local để lần reload tiếp theo tải dữ liệu từ Supabase
-      try {
-        localStorage.removeItem('manual_upload_flag');
-        localStorage.removeItem('cached_sales_data');
-        localStorage.removeItem('cached_dashboard_buckets');
-      } catch (e) { /* ignore */ }
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    }
-    setIsSaving(false);
-  };
 
   // Re-draw Plotly charts on filter change
   useEffect(() => {
@@ -1927,7 +1832,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             <div style={{ width: '120px' }}></div>
             <div style={{ width: '120px' }}></div>
             <div style={{ width: '38px' }}></div>
-            {supabase && <div style={{ width: '120px' }}></div>}
           </div>
         </div>
 
@@ -2074,18 +1978,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
 
             {/* Lang select + Theme toggle đã di chuyển lên GlobalHeaderControls
                 ở góc trên-phải toàn trang trong App.tsx */}
-
-            {supabase && (
-              <button 
-                className="btn-outline" 
-                type="button" 
-                onClick={handleSaveToCloud} 
-                disabled={isSaving}
-                style={{ borderColor: 'var(--green)', color: 'var(--green)', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isSaving ? '⏳...' : t.saveToCloudBtn}</span>
-              </button>
-            )}
           </div>
         </div>
       </div>

@@ -27,7 +27,6 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { DataRow } from '../types';
 import { parseManpowerDate } from './ManpowerDashboard';
 import { CustomSelect } from './CustomSelect';
-import { supabase } from '../lib/supabase';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DAY_RATIO   = 0.507;   // ca ngày / tổng
@@ -106,7 +105,7 @@ function buildLabelOrder(
   const seen: Record<string, number> = {};
   rows.forEach(r => {
     // FIX: Khi load từ Supabase, Excel "Date" được lưu vào cột schema `month`
-    // (ManpowerDashboard.handleSaveToCloud: month = String(rawDate)).
+    // (đồng bộ tự động qua App.tsx: month = String(rawDate)).
     // Nên phải check cả r.month / r.Month làm fallback.
     const raw = String(r.date || (r as any).Date || (r as any).month || (r as any).Month || '').trim().toUpperCase();
     if (!raw || raw === 'YR24' || raw === 'JAN-JUN') return;
@@ -1042,9 +1041,6 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   const [modelFilter, setModelFilter] = useState<string>('all');
   const [dateError, setDateError] = useState<string | null>(null);
 
-  // Save to Cloud state (đồng nhất với ManpowerDashboard)
-  const [isSaving, setIsSaving] = useState(false);
-
   // Clock (giống ManpowerDashboard)
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   useEffect(() => {
@@ -1077,64 +1073,6 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   // FIX(upload-1-lan): đã bỏ handleFileUpload riêng của tab này — upload chỉ
   // còn 1 điểm duy nhất ở tab Nhân lực (ManpowerDashboard), dữ liệu tự share
   // sang đây qua prop `rows`.
-
-  // ── Save to Cloud (đồng nhất với ManpowerDashboard — cùng bảng/origin 'Manpower'
-  // vì PerCapitaTab dùng chung nguồn dữ liệu Manpower, chỉ khác cách hiển thị) ──
-  const handleSaveToCloud = async () => {
-    if (!supabase) return;
-    setIsSaving(true);
-    try {
-      const mpRows = rows.filter(r => {
-        const ts = String((r as any).type || (r as any).Type || '').trim().toLowerCase();
-        const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수');
-        const hasKind  = ts.includes('plan') || ts.includes('actual');
-        const hasShift = ts.startsWith('day') || ts.startsWith('night') || ts.startsWith('ttl');
-        const isProdRow = hasKind && hasShift;
-        return isManpowerType || isProdRow;
-      });
-
-      await supabase.from('sales_data').delete().eq('source_tag', 'Manpower');
-
-      const dbRows = mpRows.map(r => {
-        const rawDate = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
-        const parsedDate = parseManpowerDate(rawDate);
-        const year = parsedDate ? parsedDate.getFullYear() : 2026;
-        const divVal = String((r as any).division || (r as any).Division || 'production').trim();
-        return {
-          model: String((r as any).model || (r as any).Model || '').trim(),
-          origin: 'Manpower',
-          customer: String((r as any).customer || (r as any).Customer || '').trim(),
-          type: String((r as any).type || (r as any).Type || '').trim(),
-          division: divVal,
-          year: year,
-          month: String(rawDate).trim(),
-          value: Number((r as any).value ?? (r as any).Value) || 0,
-          source_tag: 'Manpower',
-        };
-      });
-
-      const BATCH_SIZE = 500;
-      for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
-        const batch = dbRows.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase.from('sales_data').insert(batch);
-        if (error) {
-          alert((lang === 'vi' ? 'Lỗi lưu: ' : 'Error: ') + error.message);
-          setIsSaving(false);
-          return;
-        }
-      }
-      alert(lang === 'vi' ? 'Đã đồng bộ dữ liệu Manpower lên Supabase Cloud!\n(Khi mở lại trang, dữ liệu sẽ được tải tự động từ Supabase)' : lang === 'ko' ? 'Manpower 데이터가 Supabase에 동기화되었습니다!' : 'Synced Manpower data to Supabase!\n(Data will auto-load from Supabase on next open)');
-      // Xóa cờ và cache local để lần reload tiếp theo tải dữ liệu từ Supabase
-      try {
-        localStorage.removeItem('manual_upload_flag');
-        localStorage.removeItem('cached_sales_data');
-        localStorage.removeItem('cached_dashboard_buckets');
-      } catch (e) { /* ignore */ }
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    }
-    setIsSaving(false);
-  };
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const data = usePCTabData(rows, dateFrom, dateTo);
@@ -1281,10 +1219,9 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
               {lang === 'vi' ? 'XEM THEO' : lang === 'ko' ? '보기 방식' : 'VIEW BY'}
             </span>
           </div>
-          {/* Cụm phải dòng 1: Spacers matching Dòng 2 (badge dùng chung + Lên mây) */}
+          {/* Cụm phải dòng 1: Spacer matching Dòng 2 (badge dùng chung) */}
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
             <div style={{ width: '220px' }}></div>
-            {supabase && <div style={{ width: '120px' }}></div>}
           </div>
         </div>
 
@@ -1355,7 +1292,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
             )}
           </div>
 
-          {/* Cụm phải dòng 2: badge "dữ liệu dùng chung" (FIX upload-1-lan) + Lên mây */}
+          {/* Cụm phải dòng 2: badge "dữ liệu dùng chung" (FIX upload-1-lan) */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
             <span
               title={lang === 'vi' ? 'Dữ liệu được nạp chung từ tab Nhân lực — chỉ cần tải Excel 1 lần' : lang === 'ko' ? '근무 인력 탭과 데이터를 공유합니다 — 엑셀은 한 번만 업로드하면 됩니다' : 'Data is shared from the Manpower tab — upload Excel only once'}
@@ -1369,20 +1306,6 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
             >
               🔗 {lang === 'vi' ? 'Dữ liệu chung với tab Nhân lực' : lang === 'ko' ? '근무 인력 탭과 데이터 공유' : 'Shared with Manpower tab'}
             </span>
-
-            {supabase && (
-              <button
-                className="btn-outline"
-                type="button"
-                onClick={handleSaveToCloud}
-                disabled={isSaving}
-                style={{ borderColor: '#14b8a6', color: '#14b8a6', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {isSaving ? '⏳...' : (lang === 'vi' ? 'Lên mây' : lang === 'ko' ? '클라우드 저장' : 'Save to Cloud')}
-                </span>
-              </button>
-            )}
           </div>
         </div>
       </div>

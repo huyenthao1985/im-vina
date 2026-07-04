@@ -3,7 +3,6 @@ import * as XLSX from 'xlsx';
 import type { DataRow } from '../types';
 import { parseToDate } from '../utils';
 import { PerCapitaTab } from './PerCapitaTab';
-import { supabase } from '../lib/supabase';
 import { GlobalHeaderControls } from './GlobalHeaderControls';
 import { CustomSelect } from './CustomSelect';
 
@@ -51,8 +50,6 @@ const T = {
   allModels: { vi: 'Tất cả Model', en: 'All Models', ko: '전체 모델' },
   uploadBtn: { vi: 'Tải tệp', en: 'Upload File', ko: '파일 업로드' },
   exportBtn: { vi: 'Tải Excel', en: 'Export Excel', ko: '엑셀 다운로드' },
-  saveToCloudBtn: { vi: 'Lên mây', en: 'Save to Cloud', ko: '클라우드 저장' },
-  saveToCloudSuccess: { vi: 'Đã đồng bộ dữ liệu Manpower lên Supabase Cloud!', en: 'Synced Manpower data to Supabase!', ko: 'Manpower 데이터가 Supabase에 동기화되었습니다!' },
   dateError: { vi: 'Từ ngày phải nhỏ hơn hoặc bằng Đến ngày', en: 'From Date must be <= To Date', ko: '시작일은 종료일보다 이전이어야 합니다' },
   viewBy: { vi: 'XEM THEO', en: 'VIEW BY', ko: '보기 방식' },
   day: { vi: 'Ngày', en: 'Day', ko: '일별' },
@@ -584,7 +581,6 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   const [dateError, setDateError] = useState<string | null>(null);
 
   // Save to Cloud state
-  const [isSaving, setIsSaving] = useState(false);
 
   // Clock state
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -718,68 +714,6 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     e.target.value = '';
   };
 
-  // Save to Cloud: CHỈ xóa/ghi các dòng có origin = 'Manpower' trong bảng dùng chung
-  // 'sales_data' — KHÔNG xóa toàn bộ bảng như Mục 1/Mục 2 đang làm, để tránh
-  // ghi đè dữ liệu Sales / Target-Actual đã lưu trước đó.
-  const handleSaveToCloud = async () => {
-    if (!supabase) return;
-    setIsSaving(true);
-    try {
-      const mpRows = effectiveRows.filter(r => {
-        const ts = String((r as any).type || (r as any).Type || '').trim().toLowerCase();
-        const isManpowerType = ts.includes('manpower');
-        // FIX(prod-shift-not-division): dữ liệu sản xuất thật dùng Type bắt đầu
-        // bằng DAY/NIGHT/TTL + chứa plan/actual (vd "DAY PRON'D PLAN",
-        // "TTL Pro Actual"), KHÔNG dùng cột Division = SUB1/SUB2/MAIN như trước.
-        const hasKind  = ts.includes('plan') || ts.includes('actual');
-        const hasShift = ts.startsWith('day') || ts.startsWith('night') || ts.startsWith('ttl');
-        const isProdRow = hasKind && hasShift;
-        return isManpowerType || isProdRow;
-      });
-
-      await supabase.from('sales_data').delete().eq('source_tag', 'Manpower');
-
-      const dbRows = mpRows.map(r => {
-        const rawDate = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
-        const parsedDate = parseManpowerDate(rawDate);
-        const year = parsedDate ? parsedDate.getFullYear() : 2026;
-        const divVal = String((r as any).division || (r as any).Division || 'production').trim();
-        return {
-          model: String((r as any).model || (r as any).Model || '').trim(),
-          origin: 'Manpower',
-          customer: String((r as any).customer || (r as any).Customer || '').trim(),
-          type: String((r as any).type || (r as any).Type || '').trim(),
-          division: divVal,
-          year: year,
-          month: String(rawDate).trim(),
-          value: Number((r as any).value ?? (r as any).Value) || 0,
-          source_tag: 'Manpower',
-        };
-      });
-
-      const BATCH_SIZE = 500;
-      for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
-        const batch = dbRows.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase.from('sales_data').insert(batch);
-        if (error) {
-          alert((lang === 'vi' ? 'Lỗi lưu: ' : 'Error: ') + error.message);
-          setIsSaving(false);
-          return;
-        }
-      }
-      alert(t('saveToCloudSuccess', lang));
-      // Xóa cờ và cache local để lần reload tiếp theo tải dữ liệu từ Supabase
-      try {
-        localStorage.removeItem('manual_upload_flag');
-        localStorage.removeItem('cached_sales_data');
-        localStorage.removeItem('cached_dashboard_buckets');
-      } catch (e) { /* ignore */ }
-    } catch (err: any) {
-      alert('Error: ' + err.message);
-    }
-    setIsSaving(false);
-  };
-
   return (
     <div className="sales-dashboard" style={{ padding: '0 24px 24px', boxSizing: 'border-box' }}>
       
@@ -859,10 +793,9 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                 {lang === 'vi' ? 'XEM THEO' : lang === 'ko' ? '보기 방식' : 'VIEW BY'}
               </span>
             </div>
-            {/* Cụm phải dòng 1: Spacers matching Dòng 2 (Tải Excel + Lên mây) */}
+            {/* Cụm phải dòng 1: Spacer matching Dòng 2 (Tải Excel) */}
             <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
               <div style={{ width: '120px' }}></div>
-              {supabase && <div style={{ width: '120px' }}></div>}
             </div>
           </div>
 
@@ -947,18 +880,6 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                 </svg>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('exportBtn', lang)}</span>
               </label>
-
-              {supabase && (
-                <button
-                  className="btn-outline"
-                  type="button"
-                  onClick={handleSaveToCloud}
-                  disabled={isSaving}
-                  style={{ borderColor: '#14b8a6', color: '#14b8a6', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: 0 }}
-                >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isSaving ? '⏳...' : t('saveToCloudBtn', lang)}</span>
-                </button>
-              )}
             </div>
           </div>
         </div>
