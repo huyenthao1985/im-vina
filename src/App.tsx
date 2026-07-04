@@ -631,6 +631,21 @@ export default function App() {
         });
       } else {
         // Sales bucket
+        //
+        // ── FIX ROOT CAUSE "Doanh số/Xuất hàng/Sản xuất về 0 sau F5" ────────
+        // Cột giá trị thật trong file Excel Sales tên là "Q'TY/AMT" (có
+        // "/AMT"). SalesDashboard.tsx (đọc file để PREVIEW ngay sau upload)
+        // đã tìm đúng biến thể này từ trước — nên xem ngay sau upload vẫn
+        // ra số đúng. Nhưng gv() ở đây (dùng để GHI lên Supabase) lại thiếu
+        // biến thể "q'ty/amt" trong danh sách candidate, chỉ khớp
+        // 'value'/'Value'/"q'ty"/"Q'TY" — không cột nào trong Excel khớp,
+        // gv() trả về undefined → Number(undefined ?? 0) = 0 → MỌI dòng
+        // Sales ghi lên Supabase đều có value = 0 (dù hiển thị lúc mới
+        // upload vẫn đúng vì lúc đó đọc thẳng từ file, chưa qua gv()).
+        // Sau F5, dashboard đọc lại từ Supabase (đã bị ghi đè = 0 vĩnh viễn)
+        // → toàn bộ KPI/chart về 0. Fix: bổ sung đúng các biến thể tên cột
+        // "Q'TY/AMT" (và các cách viết hoa/thường/dấu nháy khác nhau) —
+        // đồng bộ với danh sách candidate đã đúng ở SalesDashboard.tsx.
         taggedRows = rows.map(r => ({
           source_tag: 'Sales',
           model:    String(gv(r, 'model', 'Model') ?? '').trim() || 'N/A',
@@ -640,7 +655,12 @@ export default function App() {
           division: String(gv(r, 'division', 'Division') ?? '').trim() || 'sales',
           year:     Number(gv(r, 'year', 'Year') ?? new Date().getFullYear()),
           month:    String(gv(r, 'month', 'Month') ?? '').trim() || 'N/A',
-          value:    Number(gv(r, 'value', 'Value', "q'ty", "Q'TY") ?? 0),
+          value:    Number(gv(
+            r,
+            "q'ty/amt", "Q'TY/AMT", "q`ty/amt", "Q`TY/AMT",
+            'qty/amt', 'QTY/AMT', 'qtyamt', 'QTYAMT',
+            'value', 'Value', "q'ty", "Q'TY"
+          ) ?? 0),
         }));
       }
 
