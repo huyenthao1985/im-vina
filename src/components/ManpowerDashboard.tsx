@@ -726,10 +726,14 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     setIsSaving(true);
     try {
       const mpRows = effectiveRows.filter(r => {
-        const ts = String((r as any).type || (r as any).Type || '').toLowerCase();
-        const div = String((r as any).division || (r as any).Division || '').trim().toUpperCase();
+        const ts = String((r as any).type || (r as any).Type || '').trim().toLowerCase();
         const isManpowerType = ts.includes('manpower');
-        const isProdRow = ['SUB1', 'SUB2', 'MAIN'].includes(div) && (ts.includes('plan') || ts.includes('actual'));
+        // FIX(prod-shift-not-division): dữ liệu sản xuất thật dùng Type bắt đầu
+        // bằng DAY/NIGHT/TTL + chứa plan/actual (vd "DAY PRON'D PLAN",
+        // "TTL Pro Actual"), KHÔNG dùng cột Division = SUB1/SUB2/MAIN như trước.
+        const hasKind  = ts.includes('plan') || ts.includes('actual');
+        const hasShift = ts.startsWith('day') || ts.startsWith('night') || ts.startsWith('ttl');
+        const isProdRow = hasKind && hasShift;
         return isManpowerType || isProdRow;
       });
 

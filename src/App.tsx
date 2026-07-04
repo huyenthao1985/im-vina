@@ -234,58 +234,84 @@ export default function App() {
           let allData: any[] = [];
           const PAGE_SIZE = 1000;
 
-          // Lấy tổng số dòng trước (head request, không tải data) để biết
-          // cần bao nhiêu trang, rồi bắn request theo từng đợt song song
-          // thay vì chờ tuần tự từng lô.
-          const { count, error: countError } = await db
-            .from('sales_data')
-            .select('*', { count: 'exact', head: true });
+          // TIMEOUT 10 giây: nếu Supabase mất hơn 10s, bỏ qua và dùng cache.
+          // Đây là nguyên nhân chính khiến F5 màn hình chờ >1 phút khi có
+          // hàng chục nghìn dòng hoặc kết nối chậm.
+          const SUPABASE_TIMEOUT_MS = 10_000;
+          // Dùng `any` thay vì generic <T> để tránh lỗi TSX parse "<T>" → JSX
+          const withTimeout = (promise: Promise<any>): Promise<any> =>
+            Promise.race([
+              promise,
+              new Promise<null>((_resolve, reject) =>
+                setTimeout(() => reject(new Error('Supabase timeout')), SUPABASE_TIMEOUT_MS)
+              ),
+            ]).catch((err: Error) => {
+              console.warn('Supabase bị timeout hoặc lỗi:', err.message);
+              return null;
+            });
 
+          // Lấy tổng số dòng trước (head request).
+          const countResult = await withTimeout(
+            Promise.resolve(db.from('sales_data').select('*', { count: 'exact', head: true }))
+          );
+
+          if (!countResult) {
+            // Timeout → dùng cache đang hiển thị, không block nữa.
+            console.warn('Supabase count timeout — giữ cache local.');
+            hasHydratedRef.current = true;
+            setIsInitialDataLoading(false);
+            return;
+          }
+
+          const { count, error: countError } = countResult;
           if (countError) {
             console.error('Supabase count error:', countError);
           } else if (count && count > 0) {
             const totalPages = Math.ceil(count / PAGE_SIZE);
 
-            // order theo 'id' (khoá chính, đã có index sẵn) để Postgres dùng
-            // index scan thay vì sort toàn bảng cho mỗi trang.
             const fetchPage = (i: number) => {
               const from = i * PAGE_SIZE;
-              return db
-                .from('sales_data')
-                .select('*')
-                .order('id', { ascending: true })
-                .range(from, from + PAGE_SIZE - 1);
+              return withTimeout(
+                Promise.resolve(
+                  db
+                    .from('sales_data')
+                    .select('*')
+                    .order('id', { ascending: true })
+                    .range(from, from + PAGE_SIZE - 1)
+                )
+              );
             };
 
-            // Giới hạn số request chạy đồng thời thay vì bắn hết cùng lúc,
-            // tránh áp đảo connection pool phía Supabase (gói Free có giới
-            // hạn kết nối thấp) — chạy theo từng đợt CONCURRENCY request.
-            const CONCURRENCY = 6;
+            const CONCURRENCY = 4;
             const pageIndexes = Array.from({ length: totalPages }, (_, i) => i);
+            let timedOut = false;
             for (let i = 0; i < pageIndexes.length; i += CONCURRENCY) {
+              if (timedOut) break;
               const batch = pageIndexes.slice(i, i + CONCURRENCY);
               const results = await Promise.all(batch.map(fetchPage));
-              for (const { data, error } of results) {
+              for (const result of results) {
+                if (!result) { timedOut = true; break; }
+                const { data, error } = result as any;
                 if (error) {
                   console.error('Supabase fetch error (1 trang):', error);
                   continue;
                 }
-                // Đọc dòng từ Supabase: spread toàn bộ trường DB ra như row thường.
-                // source_tag được ghi đè rõ ràng để bucketByTag hoạt động đúng.
-                // Tương thích ngược: nếu có cột `payload` (từ schema cũ) thì
-                // ưu tiên dùng payload, nếu không thì dùng thẳng cột DB.
                 if (data) {
                   allData = allData.concat(
                     data.map((d: any) => ({
                       ...(d.payload && typeof d.payload === 'object' ? d.payload : d),
                       source_tag: d.source_tag,
-                      // Ensure month field is also accessible as 'date' for
-                      // components that read r.date (e.g. PerCapitaTab.buildLabelOrder)
                       date: d.date ?? (d.payload?.date) ?? d.month ?? (d.payload?.month),
                     }))
                   );
                 }
               }
+            }
+            if (timedOut) {
+              console.warn(`Supabase page fetch timeout tại trang ${Math.floor(allData.length / PAGE_SIZE)} — dùng cache.`);
+              hasHydratedRef.current = true;
+              setIsInitialDataLoading(false);
+              return;
             }
           }
 
@@ -392,15 +418,27 @@ export default function App() {
       let taggedRows: Record<string, any>[];
 
       if (bucketTag === 'Manpower') {
-        taggedRows = rows.map(r => {
+        // Chỉ lưu dòng nhân lực (type chứa 'manpower') và dòng sản xuất
+        // (division = SUB1/SUB2/MAIN và type chứa 'plan'/'actual').
+        // Lọc bỏ toàn bộ dòng rác không thuộc 2 loại này để tránh database bị phình.
+        const filteredRows = rows.filter(r => {
+          const ts  = String(gv(r, 'type', 'Type') ?? '').toLowerCase();
+          const div = String(gv(r, 'division', 'Division') ?? '').trim().toUpperCase();
+          const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수');
+          const isProdRow = ['SUB1','SUB2','MAIN'].includes(div) &&
+                            (ts.includes('plan') || ts.includes('actual'));
+          return isManpowerType || isProdRow;
+        });
+        taggedRows = filteredRows.map(r => {
           const rawDate = gv(r, 'date', 'Date', 'month', 'Month') ?? '';
+          const divVal  = String(gv(r, 'division', 'Division') ?? 'production').trim();
           return {
             source_tag: 'Manpower',
             model:    String(gv(r, 'model', 'Model') ?? '').trim() || 'N/A',
             origin:   'Manpower',
             customer: String(gv(r, 'customer', 'Customer') ?? '').trim(),
             type:     String(gv(r, 'type', 'Type') ?? '').trim(),
-            division: 'production',
+            division: divVal || 'production',
             year:     guessYear(rawDate),
             month:    String(rawDate).trim() || 'N/A',
             value:    Number(gv(r, 'value', 'Value') ?? 0),

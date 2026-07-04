@@ -770,7 +770,18 @@ function buildChart5(
   return { traces, layout };
 }
 
-// ─── Production (SUB1 / SUB2 / MAIN) data & charts ─────────────────────────
+// ─── Production (DAY / NIGHT / TTL) data & charts ──────────────────────────
+// FIX(prod-shift-not-division): Dữ liệu thật trong Excel KHÔNG có cột Division
+// = SUB1/SUB2/MAIN cho sản xuất. Thay vào đó, cột Type chứa trực tiếp các giá
+// trị theo CA (shift) + Model, ví dụ:
+//   "DAY PRON'D PLAN" / "DAY Pro Actual"
+//   "NIGHT PRON'D PLAN" / "NIGHT Pro Actual"
+//   "TTL PRON'D PLAN" / "TTL Pro Actual"
+// cho từng ngày (Date) và từng Model (cột Model). Điều kiện lọc theo Division
+// SUB1/SUB2/MAIN trước đây là SAI (không khớp cấu trúc file thật) khiến 3 chart
+// luôn trống. Sửa: lọc theo Type bắt đầu bằng day/night/ttl + chứa plan/actual,
+// nhóm theo shift (DAY/NIGHT/TTL) × label (ngày), có áp dụng modelFilter để
+// xem theo từng Model hoặc cộng dồn tất cả Model khi chọn "Tất cả".
 
 interface ProdLineData {
   planByLabel:   Record<string, number>;
@@ -779,33 +790,44 @@ interface ProdLineData {
 }
 
 interface AllProdData {
-  sub1:      ProdLineData;
-  sub2:      ProdLineData;
-  main:      ProdLineData;
+  day:       ProdLineData;
+  night:     ProdLineData;
+  ttl:       ProdLineData;
   allLabels: { label: string; dateMs: number }[];
 }
 
+type Shift = 'day' | 'night' | 'ttl';
+
 /**
- * Trích xuất dữ liệu sản xuất Plan / Actual cho từng dây chuyền SUB1 / SUB2 / MAIN.
- * Tìm rows có Type chứa tên dây chuyền (sub1/sub2/main) VÀ chứa plan/actual/final.
+ * Trích xuất dữ liệu sản xuất Plan / Actual theo ca DAY / NIGHT / TTL.
+ * Tìm rows có Type bắt đầu bằng "day"/"night"/"ttl" VÀ chứa "plan"/"actual"
+ * (vd "DAY PRON'D PLAN", "TTL Pro Actual"...), lọc thêm theo Model nếu có chọn.
  * KHÔNG ước tính — nếu không tìm được dữ liệu thật thì hasData = false.
  */
-function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProdData {
+function useProdData(
+  rows: DataRow[],
+  dateFrom: string,
+  dateTo: string,
+  modelFilter: string = 'all'
+): AllProdData {
   return useMemo(() => {
     const empty: ProdLineData = { planByLabel: {}, actualByLabel: {}, hasData: false };
 
-    // Division (SUB1/SUB2/MAIN) x Type ("PRON'D PLAN" / "Pro Actual") trong Test_3
-    const DIVS = ['SUB1', 'SUB2', 'MAIN'] as const;
-    type Div = typeof DIVS[number];
     const prodRows = rows.filter(r => {
-      const div = String(r.division || (r as any).Division || '').trim().toUpperCase();
-      const ts  = String(r.type  || (r as any).Type  || '').toLowerCase();
-      return (DIVS as readonly string[]).includes(div) &&
-             (ts.includes('plan') || ts.includes('actual'));
+      const ts = String(r.type || (r as any).Type || '').trim().toLowerCase();
+      const hasKind  = ts.includes('plan') || ts.includes('actual');
+      const hasShift = ts.startsWith('day') || ts.startsWith('night') || ts.startsWith('ttl');
+      if (!hasKind || !hasShift) return false;
+
+      if (modelFilter !== 'all') {
+        const m = String(r.model || (r as any).Model || '').trim().toUpperCase();
+        if (m !== modelFilter.trim().toUpperCase()) return false;
+      }
+      return true;
     });
 
     if (prodRows.length === 0) {
-      return { sub1: empty, sub2: empty, main: empty, allLabels: [] };
+      return { day: empty, night: empty, ttl: empty, allLabels: [] };
     }
 
     const parsed = prodRows.map(r => {
@@ -825,68 +847,41 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
       !x.label.startsWith('JAN-') && x.label !== 'YR24'
     );
 
-    // Nhóm dữ liệu: div × kind × label × values[]
-    // Ưu tiên dòng TTL (type chứa 'ttl'); nếu không có TTL → dùng tất cả plan/actual (DAY + NIGHT) cộng dồn
-    const accTtl: Record<Div, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
-      SUB1: { plan: {}, actual: {} },
-      SUB2: { plan: {}, actual: {} },
-      MAIN: { plan: {}, actual: {} },
-    };
-    const accAll: Record<Div, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
-      SUB1: { plan: {}, actual: {} },
-      SUB2: { plan: {}, actual: {} },
-      MAIN: { plan: {}, actual: {} },
+    // Nhóm dữ liệu: shift × kind × label × values[] (cộng dồn nếu >1 Model khớp)
+    const acc: Record<Shift, { plan: Record<string, number[]>; actual: Record<string, number[]> }> = {
+      day:   { plan: {}, actual: {} },
+      night: { plan: {}, actual: {} },
+      ttl:   { plan: {}, actual: {} },
     };
 
     (filtered as any[]).forEach(r => {
-      const div   = String(r.division || (r as any).Division || '').trim().toUpperCase() as Div;
-      const ts    = String(r.type  || (r as any).Type  || '').toLowerCase();
-      const lbl   = (r as any)._label as string;
-      const val   = Number((r as any).value ?? (r as any).Value);
-      if (!(DIVS as readonly string[]).includes(div) || isNaN(val)) return;
+      const ts  = String(r.type || (r as any).Type || '').trim().toLowerCase();
+      const lbl = (r as any)._label as string;
+      const val = Number((r as any).value ?? (r as any).Value);
+      if (isNaN(val)) return;
+
+      const shift: Shift | null = ts.startsWith('day') ? 'day' : ts.startsWith('night') ? 'night' : ts.startsWith('ttl') ? 'ttl' : null;
+      if (!shift) return;
 
       let kind: 'plan' | 'actual' | null = null;
       if (ts.includes('plan'))        kind = 'plan';
       else if (ts.includes('actual')) kind = 'actual';
       if (!kind) return;
 
-      // Gom vào accAll (mọi loại DAY, NIGHT, TTL)
-      if (!accAll[div][kind][lbl]) accAll[div][kind][lbl] = [];
-      accAll[div][kind][lbl].push(val);
-
-      // Gom vào accTtl chỉ khi là dòng TTL (type chứa 'ttl')
-      if (ts.includes('ttl')) {
-        if (!accTtl[div][kind][lbl]) accTtl[div][kind][lbl] = [];
-        accTtl[div][kind][lbl].push(val);
-      }
+      if (!acc[shift][kind][lbl]) acc[shift][kind][lbl] = [];
+      acc[shift][kind][lbl].push(val);
     });
 
-    const processLine = (div: Div): ProdLineData => {
+    const processShift = (shift: Shift): ProdLineData => {
       const planByLabel: Record<string, number> = {};
       const actualByLabel: Record<string, number> = {};
 
-      // Xử lý Plan
-      const hasTtlPlan = Object.keys(accTtl[div].plan).length > 0;
-      const planSource = hasTtlPlan ? accTtl[div].plan : accAll[div].plan;
-      Object.entries(planSource).forEach(([lbl, vals]) => {
-        if (hasTtlPlan) {
-          // Nếu có dòng TTL thì lấy trung bình (thường chỉ có 1 dòng TTL cho mỗi label)
-          planByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
-        } else {
-          // Nếu không có dòng TTL thì cộng dồn DAY + NIGHT
-          planByLabel[lbl] = vals.reduce((a, b) => a + b, 0);
-        }
+      // Nhiều Model cùng khớp (vd modelFilter='all') → cộng dồn theo label
+      Object.entries(acc[shift].plan).forEach(([lbl, vals]) => {
+        planByLabel[lbl] = vals.reduce((a, b) => a + b, 0);
       });
-
-      // Xử lý Actual
-      const hasTtlActual = Object.keys(accTtl[div].actual).length > 0;
-      const actualSource = hasTtlActual ? accTtl[div].actual : accAll[div].actual;
-      Object.entries(actualSource).forEach(([lbl, vals]) => {
-        if (hasTtlActual) {
-          actualByLabel[lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
-        } else {
-          actualByLabel[lbl] = vals.reduce((a, b) => a + b, 0);
-        }
+      Object.entries(acc[shift].actual).forEach(([lbl, vals]) => {
+        actualByLabel[lbl] = vals.reduce((a, b) => a + b, 0);
       });
 
       return {
@@ -897,16 +892,16 @@ function useProdData(rows: DataRow[], dateFrom: string, dateTo: string): AllProd
     };
 
     return {
-      sub1: processLine('SUB1'),
-      sub2: processLine('SUB2'),
-      main: processLine('MAIN'),
+      day:   processShift('day'),
+      night: processShift('night'),
+      ttl:   processShift('ttl'),
       allLabels,
     };
-  }, [rows, dateFrom, dateTo]);
+  }, [rows, dateFrom, dateTo, modelFilter]);
 }
 
 /**
- * Chart sản xuất cho 1 dây chuyền (SUB1 / SUB2 / MAIN)
+ * Chart sản xuất cho 1 ca (DAY / NIGHT / TTL)
  * Bar Plan (orange) + Bar Actual (teal) + Line Yield% (navy dashed, trục Y phụ)
  * KHÔNG ước tính — nếu không có dữ liệu thật, component hiện thông báo.
  */
@@ -1090,10 +1085,11 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
     setIsSaving(true);
     try {
       const mpRows = rows.filter(r => {
-        const ts = String((r as any).type || (r as any).Type || '').toLowerCase();
-        const div = String((r as any).division || (r as any).Division || '').trim().toUpperCase();
+        const ts = String((r as any).type || (r as any).Type || '').trim().toLowerCase();
         const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수');
-        const isProdRow = ['SUB1', 'SUB2', 'MAIN'].includes(div) && (ts.includes('plan') || ts.includes('actual'));
+        const hasKind  = ts.includes('plan') || ts.includes('actual');
+        const hasShift = ts.startsWith('day') || ts.startsWith('night') || ts.startsWith('ttl');
+        const isProdRow = hasKind && hasShift;
         return isManpowerType || isProdRow;
       });
 
@@ -1142,7 +1138,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const data = usePCTabData(rows, dateFrom, dateTo);
-  const prodData = useProdData(rows, dateFrom, dateTo);
+  const prodData = useProdData(rows, dateFrom, dateTo, modelFilter);
 
   const hasData = data.allLabels.length > 0 && Object.keys(data.ttlByLabel).length > 0;
 
@@ -1182,7 +1178,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   // Chart refs
   const ids = useRef({
     c1: 'pctab-chart1', c2: 'pctab-chart2', c3: 'pctab-chart3',
-    cSub1: 'pctab-prod-sub1', cSub2: 'pctab-prod-sub2', cMain: 'pctab-prod-main',
+    cDay: 'pctab-prod-day', cNight: 'pctab-prod-night', cTtl: 'pctab-prod-ttl',
     c4: 'pctab-chart4', c5: 'pctab-chart5',
   });
 
@@ -1203,6 +1199,11 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
     const draw = () => {
       const labels = displayLabels;
+      // FIX(prod-last-7): 3 chart sản xuất DAY/NIGHT/TTL chỉ nên hiện tối đa
+      // 7 giai đoạn GẦN NHẤT để tránh chart bị dồn quá nhiều cột khi khoảng
+      // ngày lọc rộng — tách riêng khỏi `labels` dùng cho Chart 1-3 (Chart 1-3
+      // vẫn hiển thị đầy đủ toàn bộ khoảng đã lọc).
+      const prodLabels = labels.slice(-7);
       try {
         const ch1 = buildChart1(data, labels, textColor, gridColor, lang, targetPC, isDark);
         window.Plotly.react(ids.current.c1, ch1.traces, ch1.layout, { displayModeBar: false, responsive: true });
@@ -1213,18 +1214,18 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
         const ch3 = buildChart3(data, labels, textColor, gridColor, lang, isDark);
         window.Plotly.react(ids.current.c3, ch3.traces, ch3.layout, { displayModeBar: false, responsive: true });
 
-        // Production Charts 4-5-6: SUB1 / SUB2 / MAIN (chỉ vẽ khi có dữ liệu thật)
-        if (prodData.sub1.hasData) {
-          const cSub1 = buildProductionChart(prodData.sub1, labels, textColor, gridColor, isDark);
-          window.Plotly.react(ids.current.cSub1, cSub1.traces, cSub1.layout, { displayModeBar: false, responsive: true });
+        // Production Charts: DAY / NIGHT / TTL (chỉ vẽ khi có dữ liệu thật, tối đa 7 giai đoạn gần nhất)
+        if (prodData.day.hasData) {
+          const cDay = buildProductionChart(prodData.day, prodLabels, textColor, gridColor, isDark);
+          window.Plotly.react(ids.current.cDay, cDay.traces, cDay.layout, { displayModeBar: false, responsive: true });
         }
-        if (prodData.sub2.hasData) {
-          const cSub2 = buildProductionChart(prodData.sub2, labels, textColor, gridColor, isDark);
-          window.Plotly.react(ids.current.cSub2, cSub2.traces, cSub2.layout, { displayModeBar: false, responsive: true });
+        if (prodData.night.hasData) {
+          const cNight = buildProductionChart(prodData.night, prodLabels, textColor, gridColor, isDark);
+          window.Plotly.react(ids.current.cNight, cNight.traces, cNight.layout, { displayModeBar: false, responsive: true });
         }
-        if (prodData.main.hasData) {
-          const cMain = buildProductionChart(prodData.main, labels, textColor, gridColor, isDark);
-          window.Plotly.react(ids.current.cMain, cMain.traces, cMain.layout, { displayModeBar: false, responsive: true });
+        if (prodData.ttl.hasData) {
+          const cTtl = buildProductionChart(prodData.ttl, prodLabels, textColor, gridColor, isDark);
+          window.Plotly.react(ids.current.cTtl, cTtl.traces, cTtl.layout, { displayModeBar: false, responsive: true });
         }
 
         // Chart 7 + Chart 8 (cũ: Chart 4 + Chart 5)
@@ -1251,16 +1252,6 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
   return (
     <div style={{ padding: '0 0 24px' }}>
-
-      {/* DEBUG DỮ LIỆU TẠM THỜI — SẼ XOÁ SAU */}
-      <div style={{ margin: '12px 24px', padding: '12px', background: 'rgba(59, 130, 246, 0.1)', border: '1px dashed #3b82f6', borderRadius: '8px', color: 'var(--text-0)', fontSize: '12px', lineHeight: '1.6' }}>
-        <strong>🔍 HỆ THỐNG DEBUG DỮ LIỆU NHẬN ĐƯỢC:</strong><br />
-        - Tổng số dòng: <strong>{rows.length}</strong><br />
-        - Danh sách Model duy nhất: <code>{JSON.stringify([...new Set(rows.map(r => r.model || (r as any).Model).filter(Boolean))])}</code><br />
-        - Danh sách Division duy nhất: <code>{JSON.stringify([...new Set(rows.map(r => r.division || (r as any).Division).filter(Boolean))])}</code><br />
-        - Danh sách Type duy nhất: <code>{JSON.stringify([...new Set(rows.map(r => r.type || (r as any).Type).filter(Boolean))])}</code><br />
-        - Số dòng SUB1/SUB2/MAIN (trong cột Division): <strong>{rows.filter(r => ['SUB1','SUB2','MAIN'].includes(String(r.division || (r as any).Division || '').trim().toUpperCase())).length}</strong> dòng
-      </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
           TOOLBAR — FIX(toolbar-chuan-hoa): đồng bộ y hệt cấu trúc/kích thước/
@@ -1523,17 +1514,20 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
             <div id={ids.current.c3} style={{ height: '270px' }} />
           </div>
 
-          {/* ════ Chart 4-5-6: Sản xuất SUB1 / SUB2 / MAIN ════════════════════════ */}
+          {/* ════ Chart: Sản xuất theo ca DAY / NIGHT / TTL ════════════════════════ */}
           <div className="panel">
             <div className="panel-head" style={{ marginBottom: '12px' }}>
               <h3 style={{ margin: 0 }}>
                 {lang === 'vi'
-                  ? '📊 Tình hình sản xuất — Plan / Actual / Yield (%)'
+                  ? `📊 Tình hình sản xuất — Plan / Actual / Yield (%)${modelFilter !== 'all' ? ` — Model: ${modelFilter}` : ' — Tất cả Model'}`
                   : lang === 'ko'
-                  ? '📊 생산 현황 — 계획 / 실적 / 달성률 (%)'
-                  : '📊 Production Status — Plan / Actual / Yield (%)'}
+                  ? `📊 생산 현황 — 계획 / 실적 / 달성률 (%)${modelFilter !== 'all' ? ` — 모델: ${modelFilter}` : ' — 전체 모델'}`
+                  : `📊 Production Status — Plan / Actual / Yield (%)${modelFilter !== 'all' ? ` — Model: ${modelFilter}` : ' — All Models'}`}
               </h3>
-              {!prodData.sub1.hasData && !prodData.sub2.hasData && !prodData.main.hasData && (
+              <span style={{ fontSize: '11px', color: 'var(--text-3)', display: 'block', marginTop: '2px' }}>
+                {lang === 'vi' ? 'Tối đa 7 giai đoạn gần nhất' : lang === 'ko' ? '최근 7기간' : 'Up to last 7 periods'}
+              </span>
+              {!prodData.day.hasData && !prodData.night.hasData && !prodData.ttl.hasData && (
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: '6px',
                   fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic',
@@ -1541,26 +1535,26 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                   background: 'var(--surface-2)', border: '1px dashed var(--border)',
                 }}>
                   ⚠️ {lang === 'vi'
-                    ? 'Chưa có dữ liệu sản xuất SUB1/SUB2/MAIN trong file. Thêm dòng có Type chứa "SUB1 Plan", "SUB1 Actual", "SUB2 Plan", "MAIN Plan"... vào Excel rồi tải lại.'
+                    ? 'Chưa có dữ liệu sản xuất DAY/NIGHT/TTL trong file. Thêm dòng có Type chứa "DAY PRON\'D PLAN", "DAY Pro Actual", "NIGHT PRON\'D PLAN", "TTL Pro Actual"... vào Excel rồi tải lại.'
                     : lang === 'ko'
-                    ? 'SUB1/SUB2/MAIN 생산 데이터 없음. Type에 "SUB1 Plan", "SUB1 Actual", "MAIN Plan" 등 포함된 행을 Excel에 추가 후 다시 업로드하세요.'
-                    : 'No SUB1/SUB2/MAIN production data found. Add rows with Type containing "SUB1 Plan", "SUB1 Actual", "MAIN Plan", etc. to Excel, then re-upload.'}
+                    ? 'DAY/NIGHT/TTL 생산 데이터 없음. Type에 "DAY PRON\'D PLAN", "DAY Pro Actual", "TTL Pro Actual" 등 포함된 행을 Excel에 추가 후 다시 업로드하세요.'
+                    : 'No DAY/NIGHT/TTL production data found. Add rows with Type containing "DAY PRON\'D PLAN", "DAY Pro Actual", "TTL Pro Actual", etc. to Excel, then re-upload.'}
                 </span>
               )}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
 
-              {/* Chart 4: SUB1 */}
+              {/* Chart: DAY */}
               <div>
                 <div style={{
                   fontSize: '12px', fontWeight: 700, color: textColor,
                   textAlign: 'center', marginBottom: '4px',
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                 }}>
-                  SUB1 — Plan / Actual / Yield
+                  DAY — Plan / Actual / Yield
                 </div>
-                {prodData.sub1.hasData ? (
-                  <div id={ids.current.cSub1} style={{ height: '220px' }} />
+                {prodData.day.hasData ? (
+                  <div id={ids.current.cDay} style={{ height: '220px' }} />
                 ) : (
                   <div style={{
                     height: '220px', display: 'flex', alignItems: 'center',
@@ -1572,17 +1566,17 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 )}
               </div>
 
-              {/* Chart 5: SUB2 */}
+              {/* Chart: NIGHT */}
               <div>
                 <div style={{
                   fontSize: '12px', fontWeight: 700, color: textColor,
                   textAlign: 'center', marginBottom: '4px',
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                 }}>
-                  SUB2 — Plan / Actual / Yield
+                  NIGHT — Plan / Actual / Yield
                 </div>
-                {prodData.sub2.hasData ? (
-                  <div id={ids.current.cSub2} style={{ height: '220px' }} />
+                {prodData.night.hasData ? (
+                  <div id={ids.current.cNight} style={{ height: '220px' }} />
                 ) : (
                   <div style={{
                     height: '220px', display: 'flex', alignItems: 'center',
@@ -1594,17 +1588,17 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 )}
               </div>
 
-              {/* Chart 6: MAIN */}
+              {/* Chart: TTL */}
               <div>
                 <div style={{
                   fontSize: '12px', fontWeight: 700, color: textColor,
                   textAlign: 'center', marginBottom: '4px',
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                 }}>
-                  MAIN — Plan / Actual / Yield
+                  TTL — Plan / Actual / Yield
                 </div>
-                {prodData.main.hasData ? (
-                  <div id={ids.current.cMain} style={{ height: '220px' }} />
+                {prodData.ttl.hasData ? (
+                  <div id={ids.current.cTtl} style={{ height: '220px' }} />
                 ) : (
                   <div style={{
                     height: '220px', display: 'flex', alignItems: 'center',
