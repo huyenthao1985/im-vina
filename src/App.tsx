@@ -242,14 +242,20 @@ export default function App() {
         // `db` là const nên narrowing được giữ nguyên trong mọi closure.
         const db = supabase;
         try {
-          let allData: any[] = [];
           const PAGE_SIZE = 1000;
-          // Giới hạn tối đa 5 trang (5000 dòng) để tránh query offset lớn
-          // bị Supabase Free tier kill (error code 57014 - statement timeout).
-          // Nếu database bị phình (>5000 dòng), dùng cache và thông báo cần dọn.
-          const MAX_PAGES = 5;
+          // ── FIX ROOT CAUSE "Manpower biến mất sau F5" ───────────────────
+          // Bản cũ: 1 query DUY NHẤT order by id desc, cắt cứng 5000 dòng
+          // cho TOÀN BẢNG (3 bucket gộp chung). Khi Sales/TargetActual có
+          // id lớn hơn (ghi gần đây/nhiều hơn), 5000 dòng "mới nhất theo id"
+          // bị Sales/TargetActual chiếm hết → Manpower bị loại sạch dù data
+          // vẫn còn trong DB (đây là nguyên nhân thật của bug, KHÔNG phải do
+          // ghi thất bại hay do sự cố hạ tầng Supabase).
+          // Fix: fetch RIÊNG theo từng bucket (source_tag), mỗi bucket có
+          // ngân sách MAX_PAGES*PAGE_SIZE dòng riêng, không bị bucket lớn
+          // "ăn hết" quota của bucket nhỏ.
+          const MAX_PAGES = 5; // tối đa 5000 dòng / bucket
 
-          // ─── TIMEOUT 10 giây cho HEAD request ───────────────────────────
+          // ─── TIMEOUT 10 giây cho mỗi request ────────────────────────────
           const TIMEOUT_MS = 10_000;
           const withTimeoutMs = (ms: number, promise: Promise<any>): Promise<any> =>
             Promise.race([
@@ -262,33 +268,48 @@ export default function App() {
               return null;
             });
 
-          // Lấy tổng số dòng trước (head request).
-          const countResult = await withTimeoutMs(
-            TIMEOUT_MS,
-            Promise.resolve(db.from('sales_data').select('*', { count: 'exact', head: true }))
-          );
+          type BucketKind = 'sales' | 'manpower' | 'target_actual';
 
-          if (!countResult) {
-            // Timeout → dùng cache đang hiển thị, không block nữa.
-            console.warn('Supabase count timeout — giữ cache local.');
-            hasHydratedRef.current = true;
-            setIsInitialDataLoading(false);
-            return;
-          }
+          // Áp filter đúng bucket lên 1 query builder Supabase (dùng lại
+          // cho cả head-count request và các trang range() bên dưới).
+          const applyBucketFilter = (kind: BucketKind, q: any) => {
+            if (kind === 'manpower') return q.eq('source_tag', 'Manpower');
+            if (kind === 'target_actual') return q.eq('source_tag', 'TargetActual');
+            // Sales: KHÔNG mang source_tag Manpower/TargetActual (comment
+            // gốc ở bucketByTag() vẫn đúng — origin của Sales là dữ liệu
+            // xuất xứ thật, không bao giờ trùng 2 tag trên).
+            return q.not('source_tag', 'in', '("Manpower","TargetActual")');
+          };
 
-          const { count, error: countError } = countResult;
-          if (countError) {
-            console.error('Supabase count error:', countError);
-          } else if (count && count > 0) {
+          // Tải toàn bộ (tối đa MAX_PAGES trang) của 1 bucket.
+          // Trả về null nếu gặp lỗi/timeout → phía gọi sẽ giữ cache cũ.
+          async function fetchBucketRows(kind: BucketKind): Promise<any[] | null> {
+            const countResult = await withTimeoutMs(
+              TIMEOUT_MS,
+              Promise.resolve(
+                applyBucketFilter(kind, db.from('sales_data').select('*', { count: 'exact', head: true }))
+              )
+            );
+            if (!countResult) {
+              console.warn(`Supabase count timeout [${kind}] — giữ cache local.`);
+              return null;
+            }
+            const { count, error: countError } = countResult;
+            if (countError) {
+              console.error(`Supabase count error [${kind}]:`, countError);
+              return null;
+            }
+            if (!count || count === 0) return [];
+
             const totalPages = Math.min(Math.ceil(count / PAGE_SIZE), MAX_PAGES);
             if (count > MAX_PAGES * PAGE_SIZE) {
-              console.warn(`Database có ${count} dòng (vượt giới hạn ${MAX_PAGES * PAGE_SIZE}). Chỉ tải ${MAX_PAGES * PAGE_SIZE} dòng mới nhất. Hãy dọn dẹp database để cải thiện tốc độ.`);
+              console.warn(`Bucket [${kind}] có ${count} dòng (vượt giới hạn ${MAX_PAGES * PAGE_SIZE}). Chỉ tải ${MAX_PAGES * PAGE_SIZE} dòng mới nhất của bucket này. Hãy dọn dẹp database để cải thiện tốc độ.`);
             }
 
+            let bucketData: any[] = [];
             const CONCURRENCY = 3;
             const pageIndexes = Array.from({ length: totalPages }, (_, i) => i);
-            let fetchFailed = false;
-            for (let i = 0; i < pageIndexes.length && !fetchFailed; i += CONCURRENCY) {
+            for (let i = 0; i < pageIndexes.length; i += CONCURRENCY) {
               const batch = pageIndexes.slice(i, i + CONCURRENCY);
               const results = await Promise.all(
                 batch.map(pi => {
@@ -296,9 +317,7 @@ export default function App() {
                   return withTimeoutMs(
                     TIMEOUT_MS,
                     Promise.resolve(
-                      db
-                        .from('sales_data')
-                        .select('*')
+                      applyBucketFilter(kind, db.from('sales_data').select('*'))
                         .order('id', { ascending: false })
                         .range(from, from + PAGE_SIZE - 1)
                     )
@@ -307,20 +326,16 @@ export default function App() {
               );
               for (const result of results) {
                 if (!result) {
-                  // withTimeoutMs trả null → client timeout
-                  console.warn('Supabase page fetch timeout — dùng cache local.');
-                  fetchFailed = true;
-                  break;
+                  console.warn(`Bucket [${kind}] page fetch timeout — dùng cache local.`);
+                  return null;
                 }
                 const { data, error } = result as any;
                 if (error) {
-                  // Lỗi từ Supabase (bao gồm 57014 - statement timeout)
-                  console.warn('Supabase fetch error, dừng và dùng cache:', error.code, error.message);
-                  fetchFailed = true;
-                  break;
+                  console.warn(`Bucket [${kind}] fetch error, dừng và dùng cache:`, error.code, error.message);
+                  return null;
                 }
                 if (data) {
-                  allData = allData.concat(
+                  bucketData = bucketData.concat(
                     data.map((d: any) => ({
                       ...(d.payload && typeof d.payload === 'object' ? d.payload : d),
                       source_tag: d.source_tag,
@@ -330,22 +345,38 @@ export default function App() {
                 }
               }
             }
-            if (fetchFailed) {
-              // Có lỗi khi tải → dùng cache đang hiển thị (đã show ở BƯỚC 0),
-              // không block dashboard nữa.
-              hasHydratedRef.current = true;
-              setIsInitialDataLoading(false);
-              return;
-            }
+            return bucketData;
           }
 
+          // Fetch 3 bucket độc lập — mỗi bucket có quota riêng, không tranh
+          // nhau. Chạy tuần tự để tránh dồn quá nhiều request cùng lúc lên
+          // Supabase Free tier (mỗi bucket bên trong đã tự chạy CONCURRENCY=3).
+          const salesResult = await fetchBucketRows('sales');
+          const manpowerResult = await fetchBucketRows('manpower');
+          const targetActualResult = await fetchBucketRows('target_actual');
+
+          if (salesResult === null && manpowerResult === null && targetActualResult === null) {
+            // Cả 3 bucket đều lỗi/timeout → giữ cache đang hiển thị (nếu có).
+            hasHydratedRef.current = true;
+            setIsInitialDataLoading(false);
+            return;
+          }
+
+          const sales = salesResult ?? [];
+          const manpower = manpowerResult ?? [];
+          const targetActual = targetActualResult ?? [];
+          const allData = [...sales, ...manpower, ...targetActual];
+
+          if (salesResult === null) console.warn('Bucket Sales tải thất bại — giữ dữ liệu Sales cache cũ (nếu có), 2 bucket khác vẫn cập nhật.');
+          if (manpowerResult === null) console.warn('Bucket Manpower tải thất bại — giữ dữ liệu Manpower cache cũ (nếu có), 2 bucket khác vẫn cập nhật.');
+          if (targetActualResult === null) console.warn('Bucket TargetActual tải thất bại — giữ dữ liệu TargetActual cache cũ (nếu có), 2 bucket khác vẫn cập nhật.');
+
           if (allData.length > 0) {
-            // Supabase có dữ liệu → dùng ngay (thay thế cache nếu đang hiện),
-            // cập nhật lại cache local cho lần F5 sau.
-            const { sales, manpower, targetActual } = bucketByTag(allData);
-            setSalesRows(sales);
-            setManpowerRows(manpower);
-            setTargetActualRows(targetActual);
+            // Chỉ ghi đè bucket nào tải THÀNH CÔNG (khác null) — bucket lỗi
+            // giữ nguyên state hiện có, tránh xoá mất dữ liệu đang hiển thị.
+            if (salesResult !== null) setSalesRows(sales);
+            if (manpowerResult !== null) setManpowerRows(manpower);
+            if (targetActualResult !== null) setTargetActualRows(targetActual);
             setAllRows(allData);
             setHeaders(Object.keys(allData[0]).map(k => k.trim()));
             setFilename('Supabase Cloud Database');
@@ -355,7 +386,12 @@ export default function App() {
             } catch (e) { /* ignore */ }
             hasHydratedRef.current = true;
             setIsInitialDataLoading(false);
-            console.log('Đã đồng bộ dữ liệu mới nhất từ Supabase:', allData.length, 'rows');
+            console.log(
+              'Đã đồng bộ dữ liệu mới nhất từ Supabase — Sales:', sales.length,
+              '| Manpower:', manpower.length,
+              '| TargetActual:', targetActual.length,
+              '| Tổng:', allData.length, 'rows'
+            );
             return;
           }
           console.log('Supabase connected but table is empty — giữ nguyên cache (nếu có) hoặc để trống');
