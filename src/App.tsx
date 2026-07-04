@@ -233,17 +233,18 @@ export default function App() {
         try {
           let allData: any[] = [];
           const PAGE_SIZE = 1000;
+          // Giới hạn tối đa 5 trang (5000 dòng) để tránh query offset lớn
+          // bị Supabase Free tier kill (error code 57014 - statement timeout).
+          // Nếu database bị phình (>5000 dòng), dùng cache và thông báo cần dọn.
+          const MAX_PAGES = 5;
 
-          // TIMEOUT 10 giây: nếu Supabase mất hơn 10s, bỏ qua và dùng cache.
-          // Đây là nguyên nhân chính khiến F5 màn hình chờ >1 phút khi có
-          // hàng chục nghìn dòng hoặc kết nối chậm.
-          const SUPABASE_TIMEOUT_MS = 10_000;
-          // Dùng `any` thay vì generic <T> để tránh lỗi TSX parse "<T>" → JSX
-          const withTimeout = (promise: Promise<any>): Promise<any> =>
+          // ─── TIMEOUT 10 giây cho HEAD request ───────────────────────────
+          const TIMEOUT_MS = 10_000;
+          const withTimeoutMs = (ms: number, promise: Promise<any>): Promise<any> =>
             Promise.race([
               promise,
-              new Promise<null>((_resolve, reject) =>
-                setTimeout(() => reject(new Error('Supabase timeout')), SUPABASE_TIMEOUT_MS)
+              new Promise<null>((_r, reject) =>
+                setTimeout(() => reject(new Error('Supabase timeout')), ms)
               ),
             ]).catch((err: Error) => {
               console.warn('Supabase bị timeout hoặc lỗi:', err.message);
@@ -251,7 +252,8 @@ export default function App() {
             });
 
           // Lấy tổng số dòng trước (head request).
-          const countResult = await withTimeout(
+          const countResult = await withTimeoutMs(
+            TIMEOUT_MS,
             Promise.resolve(db.from('sales_data').select('*', { count: 'exact', head: true }))
           );
 
@@ -267,34 +269,44 @@ export default function App() {
           if (countError) {
             console.error('Supabase count error:', countError);
           } else if (count && count > 0) {
-            const totalPages = Math.ceil(count / PAGE_SIZE);
+            const totalPages = Math.min(Math.ceil(count / PAGE_SIZE), MAX_PAGES);
+            if (count > MAX_PAGES * PAGE_SIZE) {
+              console.warn(`Database có ${count} dòng (vượt giới hạn ${MAX_PAGES * PAGE_SIZE}). Chỉ tải ${MAX_PAGES * PAGE_SIZE} dòng mới nhất. Hãy dọn dẹp database để cải thiện tốc độ.`);
+            }
 
-            const fetchPage = (i: number) => {
-              const from = i * PAGE_SIZE;
-              return withTimeout(
-                Promise.resolve(
-                  db
-                    .from('sales_data')
-                    .select('*')
-                    .order('id', { ascending: true })
-                    .range(from, from + PAGE_SIZE - 1)
-                )
-              );
-            };
-
-            const CONCURRENCY = 4;
+            const CONCURRENCY = 3;
             const pageIndexes = Array.from({ length: totalPages }, (_, i) => i);
-            let timedOut = false;
-            for (let i = 0; i < pageIndexes.length; i += CONCURRENCY) {
-              if (timedOut) break;
+            let fetchFailed = false;
+            for (let i = 0; i < pageIndexes.length && !fetchFailed; i += CONCURRENCY) {
               const batch = pageIndexes.slice(i, i + CONCURRENCY);
-              const results = await Promise.all(batch.map(fetchPage));
+              const results = await Promise.all(
+                batch.map(pi => {
+                  const from = pi * PAGE_SIZE;
+                  return withTimeoutMs(
+                    TIMEOUT_MS,
+                    Promise.resolve(
+                      db
+                        .from('sales_data')
+                        .select('*')
+                        .order('id', { ascending: false })
+                        .range(from, from + PAGE_SIZE - 1)
+                    )
+                  );
+                })
+              );
               for (const result of results) {
-                if (!result) { timedOut = true; break; }
+                if (!result) {
+                  // withTimeoutMs trả null → client timeout
+                  console.warn('Supabase page fetch timeout — dùng cache local.');
+                  fetchFailed = true;
+                  break;
+                }
                 const { data, error } = result as any;
                 if (error) {
-                  console.error('Supabase fetch error (1 trang):', error);
-                  continue;
+                  // Lỗi từ Supabase (bao gồm 57014 - statement timeout)
+                  console.warn('Supabase fetch error, dừng và dùng cache:', error.code, error.message);
+                  fetchFailed = true;
+                  break;
                 }
                 if (data) {
                   allData = allData.concat(
@@ -307,8 +319,9 @@ export default function App() {
                 }
               }
             }
-            if (timedOut) {
-              console.warn(`Supabase page fetch timeout tại trang ${Math.floor(allData.length / PAGE_SIZE)} — dùng cache.`);
+            if (fetchFailed) {
+              // Có lỗi khi tải → dùng cache đang hiển thị (đã show ở BƯỚC 0),
+              // không block dashboard nữa.
               hasHydratedRef.current = true;
               setIsInitialDataLoading(false);
               return;
