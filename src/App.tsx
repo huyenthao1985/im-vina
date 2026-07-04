@@ -23,6 +23,17 @@ import './App.css';
 
 const NONE = '__none__';
 
+// ── Khoá nghiệp vụ (business key) cho bảng sales_data ───────────────────────
+// Đây là bộ cột XÁC ĐỊNH DUY NHẤT 1 dòng dữ liệu (không tính `value` — value
+// là số liệu, được phép thay đổi/ghi đè khi cập nhật). Dùng bộ cột NÀY cho cả:
+//   1. UNIQUE CONSTRAINT phía Supabase (supabase_dedupe_and_constraint.sql)
+//   2. onConflict của upsert() phía client (syncBucketToSupabase bên dưới)
+// PHẢI giữ 2 nơi này khớp nhau tuyệt đối, nếu không upsert sẽ báo lỗi
+// "there is no unique or exclusion constraint matching the ON CONFLICT".
+const SALES_DATA_KEY = [
+  'source_tag', 'model', 'origin', 'customer', 'type', 'division', 'year', 'month',
+] as const;
+
 // ── Bucket routing helpers ───────────────────────────────────────────────
 // Root cause of "mất data khi chuyển tab" (Image 1): trước đây cả 3 dashboard
 // (Sales / Target-Actual / Manpower) dùng chung 1 mảng `allRows` duy nhất.
@@ -487,17 +498,47 @@ export default function App() {
         }));
       }
 
-      // 4) Insert theo từng lô để tránh vượt giới hạn payload Supabase.
+      // 4) Khử trùng NGAY TRONG cùng 1 lần upload trước khi gửi lên Supabase.
+      // Lý do bắt buộc: bước 5 dùng upsert(...).onConflict trên bộ cột khoá
+      // nghiệp vụ (SALES_DATA_KEY) — nếu 1 file Excel lỡ có 2 dòng trùng y
+      // hệt khoá đó, Postgres sẽ báo lỗi "ON CONFLICT DO UPDATE command
+      // cannot affect row a second time" vì cùng 1 câu lệnh không được đụng
+      // 1 dòng đích 2 lần. Dòng xuất hiện SAU trong file được giữ lại, ghi
+      // đè dòng trước — coi như "giá trị cập nhật gần nhất thắng".
+      const dedupedMap = new Map<string, Record<string, any>>();
+      for (const row of taggedRows) {
+        const key = SALES_DATA_KEY.map(k => String(row[k] ?? '')).join('||');
+        dedupedMap.set(key, row); // Set lại đè giá trị cũ nếu trùng khoá
+      }
+      const dedupedRows = Array.from(dedupedMap.values());
+      if (dedupedRows.length < taggedRows.length) {
+        console.warn(
+          `${bucketTag}: phát hiện ${taggedRows.length - dedupedRows.length} dòng trùng khoá ` +
+          `ngay trong file vừa tải lên — đã gộp, chỉ giữ giá trị cuối cùng cho mỗi khoá.`
+        );
+      }
+
+      // 5) Upsert theo từng lô thay vì insert thô — mỗi lô là "insert nếu
+      // chưa có khoá, update nếu đã có" (idempotent). Kết hợp với UNIQUE
+      // CONSTRAINT phía Supabase (supabase_dedupe_and_constraint.sql), đây
+      // là lớp bảo vệ triệt để: DÙ hàm này bị gọi trùng nhiều lần (double
+      // click, race condition, script cũ nào lỡ chạy lại, môi trường dev
+      // vô tình trỏ nhầm vào DB thật...), dữ liệu trong bảng KHÔNG BAO GIỜ
+      // bị nhân bản nữa — chỉ được ghi đè bằng giá trị mới nhất.
       const CHUNK_SIZE = 500;
-      for (let i = 0; i < taggedRows.length; i += CHUNK_SIZE) {
-        const chunk = taggedRows.slice(i, i + CHUNK_SIZE);
-        const { error: insertError } = await supabase.from('sales_data').insert(chunk);
-        if (insertError) {
-          console.error(`Supabase insert error (${bucketTag}) tại lô dòng ${i}:`, insertError);
+      for (let i = 0; i < dedupedRows.length; i += CHUNK_SIZE) {
+        const chunk = dedupedRows.slice(i, i + CHUNK_SIZE);
+        const { error: upsertError } = await supabase
+          .from('sales_data')
+          .upsert(chunk, { onConflict: SALES_DATA_KEY.join(',') });
+        if (upsertError) {
+          console.error(`Supabase upsert error (${bucketTag}) tại lô dòng ${i}:`, upsertError);
           alert(
             `⚠️ Đồng bộ Cloud thất bại (${bucketTag}, dòng ${i}–${i + chunk.length}).\n` +
             `Dữ liệu vẫn hiển thị tạm trên máy này nhưng sẽ MẤT khi F5.\n` +
-            `Chi tiết lỗi: ${insertError.message}`
+            `Chi tiết lỗi: ${upsertError.message}\n\n` +
+            `Nếu lỗi nhắc tới "unique constraint" hoặc "ON CONFLICT", hãy chạy file ` +
+            `supabase_dedupe_and_constraint.sql trong Supabase SQL Editor trước.`
           );
           setSyncStatus('error');
           return;
