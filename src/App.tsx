@@ -441,7 +441,20 @@ export default function App() {
         return;
       }
 
-      // 2) Helper: lấy giá trị field case-insensitive (Excel thường Capitalize đầu)
+      // 2) Helper: lấy giá trị field case-insensitive.
+      // ── FIX ROOT CAUSE "TargetActual/Manpower ra toàn số 0 sau khi sync" ──
+      // Bản cũ: `r[k] ?? r[Capitalize(k)] ?? r[k.toLowerCase()]` — biến thể
+      // thứ 3 TRÙNG LẶP VÔ NGHĨA với biến thể 1 (vì `k` truyền vào luôn đã
+      // là lowercase, ví dụ 'division') — ý định ban đầu rõ ràng là check
+      // thêm biến thể VIẾT HOA TOÀN BỘ ('DIVISION') nhưng bị viết nhầm.
+      // Hệ quả: nếu Excel dùng header viết hoa toàn bộ (rất phổ biến với
+      // file xuất từ hệ thống nội bộ — MODEL/DIVISION/TYPE1/TYPE2/DATE/VALUE),
+      // gv() không tìm thấy cột nào → rơi vào fallback ('sales', '', 0...).
+      // Với TargetActual, `division` fallback 'sales' không khớp bất kỳ điều
+      // kiện SHIPMENT/OIS/AMT* nào trong TargetActualDashboard → mọi
+      // qtyTarget/qtyActual/amtTarget/amtActual luôn = 0.
+      // Fix: quét TOÀN BỘ key thật của dòng dữ liệu, so khớp không phân biệt
+      // hoa/thường — bắt đúng bất kể Excel dùng casing nào.
       const MONTH_ABBRS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
       function guessYear(rawDate: any): number {
         if (rawDate instanceof Date) return rawDate.getFullYear();
@@ -455,7 +468,12 @@ export default function App() {
 
       function gv(r: any, ...keys: string[]): any {
         for (const k of keys) {
-          const v = r[k] ?? r[k.charAt(0).toUpperCase() + k.slice(1)] ?? r[k.toLowerCase()];
+          const target = k.toLowerCase();
+          // Quét toàn bộ key thật của dòng dữ liệu, so khớp không phân biệt
+          // hoa/thường/khoảng trắng đầu-cuối — bắt đúng dù Excel dùng
+          // 'division', 'Division', hay 'DIVISION'.
+          const matchKey = Object.keys(r).find(rk => rk.trim().toLowerCase() === target);
+          const v = matchKey !== undefined ? r[matchKey] : undefined;
           if (v !== undefined && v !== null && v !== '') return v;
         }
         return undefined;
@@ -498,7 +516,12 @@ export default function App() {
             source_tag: 'TargetActual',
             model:    String(gv(r, 'model', 'Model') ?? '').trim() || 'N/A',
             origin:   'TargetActual',
-            customer: String(gv(r, 'customer', 'Customer') ?? '').trim(),
+            // 'customer' thật trong file Excel gốc thường nằm ở cột Custom/
+            // Type2 (xem detectIsTargetActual + nhánh đọc file thô trong
+            // TargetActualDashboard.tsx: custCol tìm 'type2'/'custom'), không
+            // phải cột tên đúng chữ 'Customer' — thêm fallback để không bị
+            // rơi về 'Unknown' khi hiển thị donut chart theo khách hàng.
+            customer: String(gv(r, 'customer', 'Customer', 'custom', 'Custom', 'type2', 'Type2') ?? '').trim(),
             type:     String(gv(r, 'type', 'Type', 'type1', 'Type1') ?? '').trim(),
             division: String(gv(r, 'division', 'Division') ?? '').trim() || 'sales',
             year:     Number(gv(r, 'year', 'Year') ?? guessYear(rawDate)),
