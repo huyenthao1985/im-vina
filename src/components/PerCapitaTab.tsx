@@ -835,9 +835,12 @@ function useProdData(
 
     const prodRows = rows.filter(r => {
       const ts = String(r.type || (r as any).Type || '').trim().toLowerCase();
-      const hasKind  = ts.includes('plan') || ts.includes('actual');
+      const isPlan = ts.includes('plan') || ts.includes('target');
+      const isActual = ts.includes('actual') || (ts.includes('인당생산수') && !ts.includes('target') && !ts.includes('avg') && !ts.includes('달성율'));
+      if (!isPlan && !isActual) return false;
+
       const hasShift = ts.startsWith('day') || ts.startsWith('night') || ts.startsWith('ttl');
-      if (!hasKind || !hasShift) return false;
+      if (!hasShift) return false;
 
       if (modelFilter !== 'all') {
         const m = String(r.model || (r as any).Model || '').trim().toUpperCase();
@@ -884,8 +887,11 @@ function useProdData(
       if (!shift) return;
 
       let kind: 'plan' | 'actual' | null = null;
-      if (ts.includes('plan'))        kind = 'plan';
-      else if (ts.includes('actual')) kind = 'actual';
+      if (ts.includes('plan') || ts.includes('target')) {
+        kind = 'plan';
+      } else if (ts.includes('actual') || (ts.includes('인당생산수') && !ts.includes('target') && !ts.includes('avg') && !ts.includes('달성율'))) {
+        kind = 'actual';
+      }
       if (!kind) return;
 
       if (!acc[shift][kind][lbl]) acc[shift][kind][lbl] = [];
