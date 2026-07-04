@@ -570,15 +570,29 @@ export default function App() {
 
       if (bucketTag === 'Manpower') {
         // Chỉ lưu dòng nhân lực (type chứa 'manpower') và dòng sản xuất
-        // (division = SUB1/SUB2/MAIN và type chứa 'plan'/'actual').
-        // Lọc bỏ toàn bộ dòng rác không thuộc 2 loại này để tránh database bị phình.
+        // (type chứa 'plan'/'actual'). Lọc bỏ toàn bộ dòng rác không thuộc
+        // 2 loại này để tránh database bị phình.
+        //
+        // FIX "mất 33.191 dòng Plan/Actual thật của Test_3.xlsx": file
+        // Manpower thật (Model/Type/Date/Value, KHÔNG có cột Division —
+        // xem comment "Test_3.xlsx" ở isManpower phía dưới) không có cách
+        // nào thoả điều kiện division ∈ {SUB1,SUB2,MAIN} vì cột đó không
+        // tồn tại → isProdRow luôn false → toàn bộ dòng "TTL/DAY/NIGHT
+        // PRON'D PLAN" và "PRO ACTUAL" (dữ liệu sản xuất thật) bị loại âm
+        // thầm, không bao giờ lên Supabase. Gộp thêm nhánh nhận diện qua
+        // chính chuỗi Type (bắt đầu day/night/ttl + chứa plan/actual) để
+        // vẫn bắt đúng dòng sản xuất khi file không có cột Division —
+        // đồng thời GIỮ NGUYÊN nhánh division cũ cho các file khác có cột
+        // Division = SUB1/SUB2/MAIN.
         const filteredRows = rows.filter(r => {
-          const ts  = String(gv(r, 'type', 'Type') ?? '').toLowerCase();
+          const ts  = String(gv(r, 'type', 'Type') ?? '').trim().toLowerCase();
           const div = String(gv(r, 'division', 'Division') ?? '').trim().toUpperCase();
           const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수');
-          const isProdRow = ['SUB1','SUB2','MAIN'].includes(div) &&
-                            (ts.includes('plan') || ts.includes('actual'));
-          return isManpowerType || isProdRow;
+          const hasKind  = ts.includes('plan') || ts.includes('actual');
+          const isProdRowByDivision = ['SUB1','SUB2','MAIN'].includes(div) && hasKind;
+          const isProdRowByTypePrefix =
+            (ts.startsWith('day') || ts.startsWith('night') || ts.startsWith('ttl')) && hasKind;
+          return isManpowerType || isProdRowByDivision || isProdRowByTypePrefix;
         });
         taggedRows = filteredRows.map(r => {
           const rawDate = gv(r, 'date', 'Date', 'month', 'Month') ?? '';
