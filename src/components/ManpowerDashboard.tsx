@@ -609,7 +609,7 @@ function buildUpphChart(
       text: combinedText,
       x: (domStart + domEnd) / 2, y: 1.15, xref: 'paper', yref: 'paper',
       xanchor: 'center', yanchor: 'middle', showarrow: false,
-      font: { size: 11.5, color: chartTextColor },
+      font: { size: 14, color: chartTextColor },
     });
 
     const maxVal = Math.max(
