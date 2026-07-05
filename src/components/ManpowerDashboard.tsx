@@ -424,7 +424,7 @@ function useUpphData(
     // đoạn gần nhất" cho mỗi biểu đồ nhỏ. Cắt về 7 label gần nhất theo thời
     // gian (giữ nguyên thứ tự tăng dần) để 3 khối DAY/NIGHT/TTL luôn hiển thị
     // tối đa 7 cột, kể cả khi khoảng lọc ngày rộng hơn.
-    const labels = sortedUpphLabels.slice(-7);
+    const labels = sortedUpphLabels.slice(-10); // EPCC: tối đa 10 giai đoạn gần nhất (người dùng yêu cầu tăng từ 7→10)
 
     // Gom nhóm theo shift/metric/label, giá trị trùng label lấy trung bình
     // (giống hành vi của useManpowerData) để ổn định khi có nhiều dòng raw/tuần.
@@ -497,8 +497,8 @@ function useUpphData(
 // Yield(%) trên trục phụ riêng của khối đó. Mỗi khối có domain trục X/Y độc
 // lập vì thang giá trị DAY/NIGHT/TTL khác nhau rất nhiều (TTL ~ DAY+NIGHT).
 const UPPH_PLAN_COLOR = '#f97316';   // cam — Plan/Target, đồng bộ hình tham chiếu
-const UPPH_ACTUAL_COLOR = '#14b8a6'; // xanh ngọc — Actual
-const UPPH_RATE_COLOR = '#3b82f6';   // xanh dương — Yield (%)
+const UPPH_ACTUAL_COLOR = '#00d4aa'; // xanh lá tươi — Actual, đồng bộ màu hình tham chiếu
+const UPPH_RATE_COLOR = '#60a5fa';   // xanh dương nhạt — Yield (%), nổi hơn trên nền tối
 
 // 3 domain cột bằng nhau, có khoảng hở ở giữa để tách biệt 3 khối
 const UPPH_COL_DOMAINS: [number, number][] = [
@@ -591,7 +591,7 @@ function buildUpphChart(
         x: labels, y: rateVals, xaxis: xKey, yaxis: yRateKey,
         name: t('upphRate', lang), showlegend: false,
         type: 'scatter', mode: 'lines+markers+text', cliponaxis: false,
-        line: { color: UPPH_RATE_COLOR, width: 2, dash: 'dot', shape: 'spline', smoothing: 1 },
+        line: { color: UPPH_RATE_COLOR, width: 2.5, dash: 'solid', shape: 'spline', smoothing: 1 },
         marker: { size: 6, color: UPPH_RATE_COLOR },
         text: rateVals.map(v => v != null ? `${fmt1(v)}%` : ''),
         textposition: 'top center', textfont: { size: 9, color: UPPH_RATE_COLOR },
@@ -603,7 +603,7 @@ function buildUpphChart(
     const combinedText = `<b>${shiftLabel[shift].toUpperCase()}</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ` +
       `<span style="color:${UPPH_PLAN_COLOR}">■</span> ${t('upphTarget', lang)} &nbsp;&nbsp;&nbsp; ` +
       `<span style="color:${UPPH_ACTUAL_COLOR}">■</span> ${t('upphActual', lang)} &nbsp;&nbsp;&nbsp; ` +
-      `<span style="color:${UPPH_RATE_COLOR}">◆┈┈</span> ${t('upphRate', lang)}`;
+      `<span style="color:${UPPH_RATE_COLOR}">─◆─</span> ${t('upphRate', lang)}`;
 
     layout.annotations.push({
       text: combinedText,
@@ -1215,7 +1215,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
               <div className="chart-holder" id={chartIds.current.daily} style={{ minHeight: '300px' }} />
             </div>
 
-            <div className="panel" style={{ overflow: 'auto' }}>
+            <div className="panel" style={{ overflowX: 'auto', position: 'relative' }}>
               <div className="panel-head">
                 <h3>
                   {lang === 'vi' ? 'Bảng tổng hợp nhân lực' : lang === 'en' ? 'Manpower Summary Table' : '인력 현황 종합표'}
@@ -1224,7 +1224,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-2)' }}>
-                    <th style={thStyle}>Model</th>
+                    <th style={{ ...thStyle, position: 'sticky', left: 0, zIndex: 3, background: 'var(--surface-2)' }}>Model</th>
                     {data.activeLabels.map((lbl, idx) => {
                       const isLatest = idx === data.activeLabels.length - 1;
                       return (
@@ -1256,6 +1256,9 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                           ...tdStyle,
                           fontWeight: isTtl ? 700 : 500,
                           color: getModelColor(model, ri),
+                          position: 'sticky', left: 0, zIndex: 2,
+                          background: ri % 2 === 0 ? 'var(--surface-1, #1a1d2e)' : 'var(--surface-2)',
+                          boxShadow: '2px 0 4px rgba(0,0,0,0.25)',
                         }}>
                           {model}
                         </td>
