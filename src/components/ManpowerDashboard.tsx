@@ -389,10 +389,16 @@ function useUpphData(
     // đúng 9 loại DAY/NIGHT/TTL x TARGET(UPPH)/UPPH/UPPH 달성율 — đây chính là
     // dòng "Tất cả Model" cần dùng.
     // Plan: chỉ lấy dòng Model === 'TTL' làm nguồn cho chart 2.
-    const upphRows = rows.filter(r => {
+    let upphRows = rows.filter(r => {
       const model = String((r as any).model || (r as any).Model || '').trim().toUpperCase();
       return model === TTL_MODEL && classifyUpphRow(String(r.type || r.Type || '')) !== null;
     });
+    if (upphRows.length === 0) {
+      // Fallback: Nếu file upload mới không có dòng Model = 'TTL' cho UPPH, lấy tất cả các model khác
+      upphRows = rows.filter(r => {
+        return classifyUpphRow(String(r.type || r.Type || '')) !== null;
+      });
+    }
     if (upphRows.length === 0) return EMPTY_UPPH;
 
     const parsedRows = upphRows.map(r => {
