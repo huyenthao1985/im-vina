@@ -706,12 +706,19 @@ export default function App() {
       // click, race condition, script cũ nào lỡ chạy lại, môi trường dev
       // vô tình trỏ nhầm vào DB thật...), dữ liệu trong bảng KHÔNG BAO GIỜ
       // bị nhân bản nữa — chỉ được ghi đè bằng giá trị mới nhất.
-      const CHUNK_SIZE = 500;
+      const CHUNK_SIZE = 1000;
       for (let i = 0; i < dedupedRows.length; i += CHUNK_SIZE) {
         const chunk = dedupedRows.slice(i, i + CHUNK_SIZE);
-        const { error: upsertError } = await supabase
-          .from('sales_data')
-          .upsert(chunk, { onConflict: SALES_DATA_KEY.join(',') });
+        let upsertError: any = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const res = await supabase
+            .from('sales_data')
+            .upsert(chunk, { onConflict: SALES_DATA_KEY.join(',') });
+          upsertError = res.error;
+          if (!upsertError) break;
+          console.warn(`Attempt ${attempt} failed for chunk at ${i}:`, upsertError.message);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
         if (upsertError) {
           console.error(`Supabase upsert error (${bucketTag}) tại lô dòng ${i}:`, upsertError);
           alert(
