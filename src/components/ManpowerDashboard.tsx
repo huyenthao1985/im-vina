@@ -138,8 +138,16 @@ function useManpowerData(
   granularity: 'day' | 'week' | 'month' | 'year'
 ): ManpowerData {
   return useMemo(() => {
-    // Test_3.xlsx: Type = "TTL ManPower AVG" — lọc tất cả dòng có type chứa "manpower"
-    const mpRows = rows.filter(r => String(r.type || r.Type || '').toLowerCase().includes('manpower'));
+    // FIX: Test_3.xlsx có 6 biến thể Type song song cho mỗi model:
+    //   DAY ManPower / DAY ManPower AVG / NIGHT ManPower / NIGHT ManPower AVG / TTL ManPower / TTL ManPower AVG
+    // Filter cũ `.includes('manpower')` khớp CẢ 6 loại → bị gom chung vào 1 mảng
+    // rồi lấy trung bình (xem dưới), trộn lẫn DAY+NIGHT+TTL và raw+AVG với nhau
+    // → ra số hoàn toàn sai cho mỗi model. Dashboard này hiển thị tổng nhân lực
+    // theo model (không tách ca ngày/đêm) nên chỉ lấy đúng "TTL ManPower AVG".
+    const mpRows = rows.filter(r => {
+      const typeStr = String(r.type || r.Type || '').trim().toLowerCase();
+      return typeStr === 'ttl manpower avg';
+    });
 
     if (mpRows.length === 0) {
       // FIX: thiếu field `activeLabels` ở nhánh early-return này gây lỗi

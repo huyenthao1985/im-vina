@@ -129,7 +129,11 @@ interface PCTabData {
   lineTtlByModelLabel: Record<string, Record<string, number>>;
   lineDayByModelLabel: Record<string, Record<string, number>>;
   lineNightByModelLabel: Record<string, Record<string, number>>;
-  ttlByLabel: Record<string, number>;       // TTL headcount per label
+  ttlByLabel: Record<string, number>;       // TTL headcount per label (từ TTL ManPower AVG)
+  // FIX: dữ liệu thật cho Chart 3 (근무 인력 현황) — trước đây bị ước lượng bằng
+  // DAY_RATIO/NIGHT_RATIO thay vì đọc đúng "DAY ManPower AVG"/"NIGHT ManPower AVG".
+  dayMPByLabel: Record<string, number>;     // model TTL, từ DAY ManPower AVG
+  nightMPByLabel: Record<string, number>;   // model TTL, từ NIGHT ManPower AVG
   ttlStandard: number | null;               // YR24 standard
   allLabels: { label: string; dateMs: number }[];
   activeModels: string[];                   // non-TTL models with data
@@ -146,7 +150,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line') || typeStr.includes('라인');
     });
     if (mpRows.length === 0) {
-      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
+      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, dayMPByLabel: {}, nightMPByLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
     }
 
     // Standard
@@ -179,7 +183,14 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
     );
 
     // Build byModelLabel, pcByModelLabel và 3 nhóm số line YÊU CẦU (TTL/DAY/NIGHT LINE Q'TY)
-    const groups: Record<string, Record<string, number[]>> = {};
+    // FIX: Test_3.xlsx có 6 biến thể Type song song cho manpower:
+    //   DAY ManPower / DAY ManPower AVG / NIGHT ManPower / NIGHT ManPower AVG / TTL ManPower / TTL ManPower AVG
+    // Trước đây MỌI type chứa "manpower" bị gom chung vào 1 mảng rồi lấy trung bình
+    // → trộn lẫn DAY+NIGHT+TTL và raw+AVG với nhau, ra số sai. Nay tách riêng 3 nhóm
+    // và CHỈ nhận đúng bản "... AVG" (bỏ qua bản raw không có AVG) cho từng ca.
+    const groups: Record<string, Record<string, number[]>> = {};        // TTL ManPower AVG
+    const dayMPGroups: Record<string, Record<string, number[]>> = {};   // DAY ManPower AVG
+    const nightMPGroups: Record<string, Record<string, number[]>> = {}; // NIGHT ManPower AVG
     const pcGroups: Record<string, Record<string, number[]>> = {};
     const lineTtlGroups: Record<string, Record<string, number[]>> = {};
     const lineDayGroups: Record<string, Record<string, number[]>> = {};
@@ -204,10 +215,17 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
         if (!target[model]) target[model] = {};
         if (!target[model][label]) target[model][label] = [];
         target[model][label].push(val);
-      } else if (typeStr.includes('manpower')) {
-        if (!groups[model]) groups[model] = {};
-        if (!groups[model][label]) groups[model][label] = [];
-        groups[model][label].push(val);
+      } else if (typeStr.includes('manpower') && typeStr.includes('avg')) {
+        // FIX: chỉ nhận bản "... ManPower AVG" — bỏ qua "DAY/NIGHT/TTL ManPower" (raw, không AVG)
+        let target = groups; // mặc định TTL (type không chứa rõ "day"/"night")
+        if (typeStr.includes('day') && !typeStr.includes('holiday')) {
+          target = dayMPGroups;
+        } else if (typeStr.includes('night')) {
+          target = nightMPGroups;
+        }
+        if (!target[model]) target[model] = {};
+        if (!target[model][label]) target[model][label] = [];
+        target[model][label].push(val);
       } else if (typeStr.includes('인당생산수')) {
         if (!pcGroups[model]) pcGroups[model] = {};
         if (!pcGroups[model][label]) pcGroups[model][label] = [];
@@ -220,6 +238,24 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       byModelLabel[model] = {};
       Object.entries(lblMap).forEach(([lbl, vals]) => {
         byModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    // FIX: aggregate riêng cho DAY ManPower AVG / NIGHT ManPower AVG (dữ liệu thật,
+    // dùng cho Chart 3 thay vì công thức ước lượng DAY_RATIO/NIGHT_RATIO cũ)
+    const dayMPByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(dayMPGroups).forEach(([model, lblMap]) => {
+      dayMPByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        dayMPByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const nightMPByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(nightMPGroups).forEach(([model, lblMap]) => {
+      nightMPByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        nightMPByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
       });
     });
 
@@ -278,6 +314,37 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
 
     const ttlByLabel: Record<string, number> = byModelLabel['TTL'] ?? {};
 
+    // Nếu không có model TTL cho DAY/NIGHT ManPower AVG, tính tổng động từ các model khác
+    // (tương tự fallback của byModelLabel['TTL'] ở trên)
+    if (!dayMPByModelLabel['TTL']) {
+      dayMPByModelLabel['TTL'] = {};
+      allLabelsRaw.forEach(x => {
+        let sum = 0; let hasValue = false;
+        Object.keys(dayMPByModelLabel).forEach(m => {
+          if (m !== 'TTL') {
+            const v = dayMPByModelLabel[m][x.label];
+            if (v != null && v > 0) { sum += v; hasValue = true; }
+          }
+        });
+        if (hasValue) dayMPByModelLabel['TTL'][x.label] = sum;
+      });
+    }
+    if (!nightMPByModelLabel['TTL']) {
+      nightMPByModelLabel['TTL'] = {};
+      allLabelsRaw.forEach(x => {
+        let sum = 0; let hasValue = false;
+        Object.keys(nightMPByModelLabel).forEach(m => {
+          if (m !== 'TTL') {
+            const v = nightMPByModelLabel[m][x.label];
+            if (v != null && v > 0) { sum += v; hasValue = true; }
+          }
+        });
+        if (hasValue) nightMPByModelLabel['TTL'][x.label] = sum;
+      });
+    }
+    const dayMPByLabel: Record<string, number> = dayMPByModelLabel['TTL'] ?? {};
+    const nightMPByLabel: Record<string, number> = nightMPByModelLabel['TTL'] ?? {};
+
     // ─── Trim các label "kế tiếp" chưa có dữ liệu thật ─────────────────────
     // File Excel nguồn (Test_3) dựng khung sẵn cho cả năm → các ngày/tuần/
     // tháng chưa tới vẫn xuất hiện thành label nhưng TTL = 0/blank.
@@ -300,7 +367,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       .filter(m => m !== 'TTL')
       .sort();
 
-    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
+    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, dayMPByLabel, nightMPByLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
   }, [rows, dateFrom, dateTo]);
 }
 
@@ -469,8 +536,18 @@ function buildChart3(
   const tealAccent = isDark ? '#14b8a6' : '#0f766e';
   const roseAccent    = isDark ? '#f43f5e' : '#be123c';
 
-  const dayMP   = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * DAY_RATIO));
-  const nightMP = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * NIGHT_RATIO));
+  // FIX: dùng đúng dữ liệu thật "DAY ManPower AVG"/"NIGHT ManPower AVG" từ Excel
+  // (qua data.dayMPByLabel/nightMPByLabel) thay vì công thức ước lượng DAY_RATIO/
+  // NIGHT_RATIO cũ. Chỉ fallback về công thức ước lượng nếu period đó thực sự
+  // không có dữ liệu DAY/NIGHT ManPower AVG (an toàn, tránh chart bị trống).
+  const dayMP = labels.map(l => {
+    const real = data.dayMPByLabel[l];
+    return r1(real != null && real > 0 ? real : (data.ttlByLabel[l] ?? 0) * DAY_RATIO);
+  });
+  const nightMP = labels.map(l => {
+    const real = data.nightMPByLabel[l];
+    return r1(real != null && real > 0 ? real : (data.ttlByLabel[l] ?? 0) * NIGHT_RATIO);
+  });
   const ttlMP   = labels.map(l => r1(data.ttlByLabel[l] ?? 0));
   const stdVal  = data.ttlStandard ?? 0;
   const stdLine = labels.map(() => r1(stdVal));
