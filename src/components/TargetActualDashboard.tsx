@@ -754,7 +754,11 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     if (!dateBounds.max) return '';
     const now = new Date();
     const useToday = !!dateBounds.min && now >= dateBounds.min && now <= dateBounds.max;
-    return formatDateToYYYYMMDD(useToday ? now : dateBounds.max);
+    const refDate = useToday ? now : dateBounds.max;
+    const y = refDate.getFullYear();
+    const m = refDate.getMonth() + 1;
+    const lastDay = new Date(y, m, 0).getDate();
+    return formatDateToYYYYMMDD(new Date(y, m - 1, lastDay));
   }, [dateBounds.max, dateBounds.min]);
 
   const selectedMonthDays = useMemo(() => {
@@ -780,24 +784,45 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   }, [defaultStartDateStr, defaultEndDateStr]);
 
 
-  // Handle month changes from selectedDateEnd
-  const [lastEndMonthYear, setLastEndMonthYear] = useState<string>('');
+  /**
+   * Snaps a given date to the first day of its month.
+   */
+  const snapToMonthStart = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), 1);
 
-  useEffect(() => {
-    if (selectedDateEnd) {
-      const d = parseYYYYMMDD(selectedDateEnd);
-      if (d) {
-        const monthYearStr = `${d.getFullYear()}-${d.getMonth() + 1}`;
-        if (lastEndMonthYear && lastEndMonthYear !== monthYearStr) {
-          const viewYear = d.getFullYear();
-          const viewMonth = d.getMonth() + 1;
-          const defaultStart = getDefaultStartDate(viewMonth, viewYear);
-          setSelectedDateStart(formatDateToYYYYMMDD(defaultStart));
-        }
-        setLastEndMonthYear(monthYearStr);
-      }
-    }
-  }, [selectedDateEnd]);
+  /**
+   * Snaps a given date to the last day of its month.
+   */
+  const snapToMonthEnd = (d: Date): Date => {
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return new Date(d.getFullYear(), d.getMonth(), lastDay);
+  };
+
+  /**
+   * Whenever the user picks any date in either the Start or End date picker,
+   * the whole selection is snapped to cover the FULL month of that date
+   * (Start → day 1, End → last day of month).
+   *
+   * Why: Target/Plan rows only exist at monthly granularity (they're parsed
+   * as day 1 of the month), while Actual rows exist per-day. If a partial
+   * month range were allowed, the whole month's Target would still land on
+   * day 1 and get counted in full, while Actual would only reflect the days
+   * in range — making %Rate collapse artificially low. Forcing the filter to
+   * always span a complete month keeps Target vs Actual comparable, and the
+   * Day/Week view modes remain available to drill into that month's data.
+   */
+  const handleStartDateChange = (value: string) => {
+    const d = parseYYYYMMDD(value);
+    if (!d) { setSelectedDateStart(value); return; }
+    setSelectedDateStart(formatDateToYYYYMMDD(snapToMonthStart(d)));
+    setSelectedDateEnd(formatDateToYYYYMMDD(snapToMonthEnd(d)));
+  };
+
+  const handleEndDateChange = (value: string) => {
+    const d = parseYYYYMMDD(value);
+    if (!d) { setSelectedDateEnd(value); return; }
+    setSelectedDateStart(formatDateToYYYYMMDD(snapToMonthStart(d)));
+    setSelectedDateEnd(formatDateToYYYYMMDD(snapToMonthEnd(d)));
+  };
 
   // Handle selectedMonth dropdown change (e.g. from bottom table filter)
   useEffect(() => {
@@ -817,19 +842,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       }
     }
   }, [selectedMonth, normalizedRows, dateBounds.max]);
-
-  // Handle transition to viewMode = 'month' (Ensure Start Date aligns with day 1)
-  useEffect(() => {
-    if (viewMode === 'month' && selectedDateStart) {
-      const d = parseYYYYMMDD(selectedDateStart);
-      if (d && d.getDate() !== 1) {
-        const viewYear = d.getFullYear();
-        const viewMonth = d.getMonth() + 1;
-        const defaultStart = getDefaultStartDate(viewMonth, viewYear);
-        setSelectedDateStart(formatDateToYYYYMMDD(defaultStart));
-      }
-    }
-  }, [viewMode]);
 
   const customers = useMemo(() => {
     return [...new Set(normalizedRows.map(r => r.customer).filter(Boolean))].sort();
@@ -1968,14 +1980,14 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             <input 
               type="date" 
               value={selectedDateStart} 
-              onChange={e => setSelectedDateStart(e.target.value)}
+              onChange={e => handleStartDateChange(e.target.value)}
               className="filter-date-input"
               style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
             />
             <input 
               type="date" 
               value={selectedDateEnd} 
-              onChange={e => setSelectedDateEnd(e.target.value)}
+              onChange={e => handleEndDateChange(e.target.value)}
               className="filter-date-input"
               style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
             />
