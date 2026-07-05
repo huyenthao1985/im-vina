@@ -35,7 +35,11 @@ const T = {
   kpiModels: { vi: 'Models đang hoạt động', en: 'Active Models', ko: '가동 모델 수' },
   kpiLatest: { vi: 'Thời gian mới nhất', en: 'Latest Period', ko: '최근 기간' },
   chartMonth:{ vi: 'Nhân lực TB theo Tháng (TTL ManPower AVG)', en: 'Monthly Avg Manpower (TTL)', ko: '월별 평균 인원 (TTL)' },
-  chartWeek: { vi: 'Nhân lực TB theo Tuần (Recent Weeks)', en: 'Weekly Avg Manpower (Recent)', ko: '주별 평균 인원 (최근)' },
+  // FIX(chart2-upph): chart 2 trước đây là "Nhân lực TB theo Tuần" — trùng ý nghĩa
+  // với chart 1 (đều là stacked bar + TTL line theo Model). Đổi chart 2 thành
+  // biểu đồ UPPH (Target/Actual/Đạt tỷ lệ theo DAY/NIGHT/TTL) để bổ sung góc nhìn
+  // năng suất, không lặp lại chart 1.
+  chartWeek: { vi: 'UPPH theo Ca (Target vs Actual & Đạt tỷ lệ)', en: 'UPPH by Shift (Target vs Actual & Achievement Rate)', ko: '교대별 UPPH (목표 대비 실적 & 달성율)' },
   chartModel:{ vi: 'Phân bổ nhân lực theo Model — Giai đoạn gần nhất', en: 'Manpower by Model — Latest Period', ko: '모델별 인원 현황 (최근 기간)' },
   chartDay:  { vi: 'Nhân lực hàng ngày (TTL)', en: 'Daily Manpower (TTL)', ko: '일별 인원 현황 (TTL)' },
   chartRadar:{ vi: 'Phân bổ Model theo Giai đoạn (Spider)', en: 'Model Distribution by Period (Radar)', ko: '모델 인원 분포 (레이더)' },
@@ -56,6 +60,16 @@ const T = {
   week: { vi: 'Tuần', en: 'Week', ko: '주별' },
   month: { vi: 'Tháng', en: 'Month', ko: '월별' },
   year: { vi: 'Năm', en: 'Year', ko: '연별' },
+
+  // UPPH chart labels (chart 2)
+  upphUnit:    { vi: 'UPPH', en: 'UPPH', ko: 'UPPH' },
+  upphRate:    { vi: 'Đạt tỷ lệ (%)', en: 'Achievement Rate (%)', ko: '달성율 (%)' },
+  upphTarget:  { vi: 'Target', en: 'Target', ko: 'Target' },
+  upphActual:  { vi: 'Actual', en: 'Actual', ko: 'Actual' },
+  shiftDay:    { vi: 'DAY', en: 'DAY', ko: 'DAY' },
+  shiftNight:  { vi: 'NIGHT', en: 'NIGHT', ko: 'NIGHT' },
+  shiftTtl:    { vi: 'TTL', en: 'TTL', ko: 'TTL' },
+  noUpphData:  { vi: 'Chưa có dữ liệu UPPH (DAY/NIGHT/TTL Target-Actual)', en: 'No UPPH data (DAY/NIGHT/TTL Target-Actual)', ko: 'UPPH 데이터 없음 (DAY/NIGHT/TTL Target-Actual)' },
 };
 
 function t(key: keyof typeof T, lang: 'vi'|'en'|'ko'): string {
@@ -122,6 +136,40 @@ function getModelColor(model: string, index: number): string {
   return palette[index % palette.length];
 }
 
+// ─── Shared date/period helpers (dùng chung cho useManpowerData & useUpphData) ─
+// FIX(chart2-upph): trước đây các hàm này được khai báo LOCAL bên trong
+// useManpowerData nên useUpphData (hook mới cho chart 2) không tái sử dụng được,
+// phải chép lại code → dễ lệch logic phân loại tầng dữ liệu (day/week/month).
+// Đưa lên module scope để 2 hook luôn phân loại period giống hệt nhau.
+const MONTH_ABBRS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+type RowDateType = 'month' | 'week' | 'day' | 'other';
+
+function classifyRowDateType(dateVal: any): RowDateType {
+  // Excel date cell thật (cellDates:true) → coi như dòng daily
+  if (dateVal instanceof Date) return 'day';
+  const rawStr = String(dateVal).trim().toUpperCase();
+  if (MONTH_ABBRS.includes(rawStr)) return 'month';
+  if (/^W\d{1,2}$/.test(rawStr)) return 'week';
+  if (/^\d{1,2}[/-]\d{1,2}$/.test(rawStr)) return 'day';
+  return 'other';
+}
+
+function formatDayLabel(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${mm}/${dd}`;
+}
+
+function getPeriodLabel(d: Date, granularity: 'day' | 'week' | 'month' | 'year'): string {
+  switch (granularity) {
+    case 'day': return formatDayLabel(d);
+    case 'week': return 'W' + getISOWeek(d);
+    case 'month': return MONTH_ABBRS[d.getMonth()];
+    case 'year': return String(d.getFullYear());
+    default: return MONTH_ABBRS[d.getMonth()];
+  }
+}
+
 // ─── Data hook ────────────────────────────────────────────────────────────────
 interface ManpowerData {
   byModelPeriod: Record<string, Record<string, number | null>>;  // model → period → avg
@@ -174,17 +222,7 @@ function useManpowerData(
     // → 2 tầng dữ liệu bị trộn + average sai, đồng thời latestPeriod có thể bị
     // lệch sang 1 label rỗng theo model → Model Bar & Spider render trống.
     // Cách sửa: chỉ giữ đúng tầng dữ liệu khớp granularity đang chọn.
-    const MONTH_ABBRS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    type RowDateType = 'month' | 'week' | 'day' | 'other';
-    function classifyRowDateType(dateVal: any): RowDateType {
-      // Excel date cell thật (cellDates:true) → coi như dòng daily
-      if (dateVal instanceof Date) return 'day';
-      const rawStr = String(dateVal).trim().toUpperCase();
-      if (MONTH_ABBRS.includes(rawStr)) return 'month';
-      if (/^W\d{1,2}$/.test(rawStr)) return 'week';
-      if (/^\d{1,2}[/-]\d{1,2}$/.test(rawStr)) return 'day';
-      return 'other';
-    }
+    // (MONTH_ABBRS / classifyRowDateType nay dùng bản module-scope ở trên)
 
     // Parse dates and validate
     type ParsedManpowerRow = DataRow & { _parsedDate: Date | null; _dateType: RowDateType };
@@ -227,28 +265,11 @@ function useManpowerData(
         .filter(m => m && m.toUpperCase() !== 'TTL')
     )].sort();
 
-    // Helper functions for granularity formatting
-    const formatDayLabel = (d: Date) => {
-      const dd = String(d.getDate()).padStart(2, '0');
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      return `${mm}/${dd}`;
-    };
-    const monthsAbbr = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
-    const getPeriodLabel = (d: Date): string => {
-      switch (granularity) {
-        case 'day': return formatDayLabel(d);
-        case 'week': return 'W' + getISOWeek(d);
-        case 'month': return monthsAbbr[d.getMonth()];
-        case 'year': return String(d.getFullYear());
-        default: return monthsAbbr[d.getMonth()];
-      }
-    };
-
     // Extract sorted unique labels chronologically
+    // (formatDayLabel / getPeriodLabel nay dùng bản module-scope ở trên)
     const labelToMinDate: Record<string, number> = {};
     filtered.forEach(r => {
-      const label = getPeriodLabel(r._parsedDate);
+      const label = getPeriodLabel(r._parsedDate, granularity);
       const time = r._parsedDate.getTime();
       if (!labelToMinDate[label] || time < labelToMinDate[label]) {
         labelToMinDate[label] = time;
@@ -260,7 +281,7 @@ function useManpowerData(
     const groups: Record<string, Record<string, number[]>> = {};
     filtered.forEach(r => {
       const model = String(r.model || r.Model || '').trim().toUpperCase() || 'UNKNOWN';
-      const label = getPeriodLabel(r._parsedDate);
+      const label = getPeriodLabel(r._parsedDate, granularity);
       const val = Number(r.value || r.Value);
       if (isNaN(val)) return;
 
@@ -304,6 +325,131 @@ function useManpowerData(
     });
 
     return { byModelPeriod, ttlStandard, activeModels, labels, activeLabels };
+  }, [rows, dateFrom, dateTo, granularity]);
+}
+
+// ─── UPPH Data hook (Chart 2) ──────────────────────────────────────────────────
+// EPCC — Explore: chart 1 (Tháng) và chart 2 (Tuần) trước đây dùng chung
+// buildMonthlyChart/buildWeeklyChart với CÙNG dữ liệu byModelPeriod (TTL ManPower
+// AVG) → 2 biểu đồ trình bày giống hệt nhau về ý nghĩa, chỉ khác trục thời gian.
+// Plan: thay chart 2 bằng một góc nhìn NĂNG SUẤT khác hẳn — UPPH (Units Per
+// Person-Hour) theo 3 loại dòng dữ liệu trong Excel:
+//   DAY  TARGET (UPPH) / DAY  UPPH / DAY  UPPH 달성율(%)
+//   NIGHT TARGET (UPPH) / NIGHT UPPH / NIGHT UPPH 달성율(%)
+//   TTL  TARGET (UPPH) / TTL  UPPH / TTL  UPPH 달성율(%)
+// Code: hook riêng useUpphData, tái dùng đúng logic phân loại tầng dữ liệu
+// (classifyRowDateType/getPeriodLabel) như useManpowerData để 2 chart luôn khớp
+// trục X (cùng granularity/date range) nhưng khác hẳn nội dung.
+type UpphShift = 'DAY' | 'NIGHT' | 'TTL';
+type UpphMetric = 'target' | 'actual' | 'rate';
+
+function classifyUpphRow(typeStr: string): { shift: UpphShift; metric: UpphMetric } | null {
+  const norm = String(typeStr || '').trim().toUpperCase();
+  if (!norm.includes('UPPH')) return null;
+
+  let shift: UpphShift | null = null;
+  if (norm.startsWith('DAY')) shift = 'DAY';
+  else if (norm.startsWith('NIGHT')) shift = 'NIGHT';
+  else if (norm.startsWith('TTL')) shift = 'TTL';
+  if (!shift) return null;
+
+  let metric: UpphMetric;
+  if (norm.includes('TARGET')) metric = 'target';
+  else if (norm.includes('달성율') || norm.includes('RATE') || norm.includes('%')) metric = 'rate';
+  else metric = 'actual';
+
+  return { shift, metric };
+}
+
+interface UpphData {
+  labels: string[]; // period labels theo đúng thứ tự thời gian, khớp granularity hiện tại
+  byShift: Record<UpphShift, Record<string, { target: number | null; actual: number | null; rate: number | null }>>;
+  hasData: boolean;
+}
+
+const EMPTY_UPPH: UpphData = {
+  labels: [],
+  byShift: { DAY: {}, NIGHT: {}, TTL: {} },
+  hasData: false,
+};
+
+function useUpphData(
+  rows: DataRow[],
+  dateFrom: string,
+  dateTo: string,
+  granularity: 'day' | 'week' | 'month' | 'year'
+): UpphData {
+  return useMemo(() => {
+    const upphRows = rows.filter(r => classifyUpphRow(String(r.type || r.Type || '')) !== null);
+    if (upphRows.length === 0) return EMPTY_UPPH;
+
+    const parsedRows = upphRows.map(r => {
+      const dateVal = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
+      return { ...r, _parsedDate: parseManpowerDate(dateVal), _dateType: classifyRowDateType(dateVal) };
+    }).filter(r => {
+      const dateVal = (r as any).date || (r as any).Date || (r as any).month || (r as any).Month || '';
+      return r._parsedDate !== null && String(dateVal).trim().toUpperCase() !== 'YR24';
+    }) as (DataRow & { _parsedDate: Date; _dateType: RowDateType })[];
+
+    const wantedType: RowDateType = granularity === 'year' ? 'month' : granularity;
+    let typedRows = parsedRows.filter(r => r._dateType === wantedType);
+    if (typedRows.length === 0) typedRows = parsedRows;
+
+    let filtered = typedRows;
+    const fromDate = dateFrom ? new Date(dateFrom) : null;
+    const toDate = dateTo ? new Date(dateTo) : null;
+    if (toDate) toDate.setHours(23, 59, 59, 999);
+    if (fromDate) filtered = filtered.filter(r => r._parsedDate >= fromDate);
+    if (toDate) filtered = filtered.filter(r => r._parsedDate <= toDate);
+
+    const labelToMinDate: Record<string, number> = {};
+    filtered.forEach(r => {
+      const label = getPeriodLabel(r._parsedDate, granularity);
+      const time = r._parsedDate.getTime();
+      if (!labelToMinDate[label] || time < labelToMinDate[label]) labelToMinDate[label] = time;
+    });
+    const labels = Object.keys(labelToMinDate).sort((a, b) => labelToMinDate[a] - labelToMinDate[b]);
+
+    // Gom nhóm theo shift/metric/label, giá trị trùng label lấy trung bình
+    // (giống hành vi của useManpowerData) để ổn định khi có nhiều dòng raw/tuần.
+    const groups: Record<UpphShift, Record<UpphMetric, Record<string, number[]>>> = {
+      DAY: { target: {}, actual: {}, rate: {} },
+      NIGHT: { target: {}, actual: {}, rate: {} },
+      TTL: { target: {}, actual: {}, rate: {} },
+    };
+    filtered.forEach(r => {
+      const cls = classifyUpphRow(String((r as any).type || (r as any).Type || ''));
+      if (!cls) return;
+      const val = Number((r as any).value ?? (r as any).Value);
+      if (isNaN(val)) return;
+      const label = getPeriodLabel(r._parsedDate, granularity);
+      const bucket = groups[cls.shift][cls.metric];
+      if (!bucket[label]) bucket[label] = [];
+      bucket[label].push(val);
+    });
+
+    const avg = (arr: number[] | undefined): number | null =>
+      arr && arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+    const byShift: UpphData['byShift'] = { DAY: {}, NIGHT: {}, TTL: {} };
+    (['DAY', 'NIGHT', 'TTL'] as UpphShift[]).forEach(shift => {
+      byShift[shift] = {};
+      labels.forEach(label => {
+        const target = avg(groups[shift].target[label]);
+        const actual = avg(groups[shift].actual[label]);
+        let rate = avg(groups[shift].rate[label]);
+        // FIX: nếu Excel chưa có sẵn cột "UPPH 달성율" thì tự tính = Actual/Target*100
+        // để chart không bị trống cột đạt tỷ lệ.
+        if (rate == null && target != null && target > 0 && actual != null) {
+          rate = (actual / target) * 100;
+        }
+        byShift[shift][label] = { target, actual, rate };
+      });
+    });
+
+    const hasData = labels.some(l => byShift.TTL[l]?.actual != null || byShift.DAY[l]?.actual != null || byShift.NIGHT[l]?.actual != null);
+
+    return { labels, byShift, hasData };
   }, [rows, dateFrom, dateTo, granularity]);
 }
 
@@ -388,80 +534,110 @@ function buildMonthlyChart(
   return { traces, layout };
 }
 
-function buildWeeklyChart(
-  data: ManpowerData,
+// FIX(chart2-upph) — Commit: buildUpphChart thay thế buildWeeklyChart.
+// Combo chart: bar nhóm (Actual UPPH của DAY/NIGHT/TTL) + line nét đứt (Target
+// cùng màu từng ca, trục y trái, cùng đơn vị UPPH) + line nét chấm (Đạt tỷ lệ %,
+// trục y phải). Đổi từ stacked-bar-theo-Model (giống hệt chart 1) sang combo
+// bar+line-theo-Ca để 2 chart thể hiện 2 ý nghĩa khác nhau: chart 1 = quy mô
+// nhân lực theo Model, chart 2 = năng suất (UPPH) theo Ca.
+const UPPH_SHIFT_COLORS: Record<UpphShift, string> = {
+  DAY:   '#f59e0b', // amber
+  NIGHT: '#6366f1', // indigo
+  TTL:   '#14b8a6', // teal (đồng bộ màu TTL với chart 1)
+};
+
+function buildUpphChart(
+  data: UpphData,
   chartTextColor: string,
   chartGridColor: string,
-  lang: 'vi'|'en'|'ko',
-  models: string[]
+  lang: 'vi'|'en'|'ko'
 ) {
   const traces: any[] = [];
-  const activeLabels = data.activeLabels;
+  const labels = data.labels;
+  const shifts: UpphShift[] = ['DAY', 'NIGHT', 'TTL'];
+  const shiftLabel: Record<UpphShift, string> = {
+    DAY: t('shiftDay', lang),
+    NIGHT: t('shiftNight', lang),
+    TTL: t('shiftTtl', lang),
+  };
 
-  // Chỉ giữ models có ít nhất 1 label có value > 0
-  const activeModels = models.filter(m =>
-    activeLabels.some(l => (data.byModelPeriod[m]?.[l] ?? 0) > 0)
+  // Chỉ vẽ ca nào thực sự có ít nhất 1 giá trị Actual/Target > 0
+  const activeShifts = shifts.filter(s =>
+    labels.some(l => (data.byShift[s][l]?.actual ?? 0) > 0 || (data.byShift[s][l]?.target ?? 0) > 0)
   );
 
-  activeModels.forEach((model, index) => {
-    const vals = activeLabels.map(l => {
-      const val = data.byModelPeriod[model]?.[l];
-      return val != null && val > 0 ? round1(val) : null;
+  // 1) Bar nhóm: UPPH Actual theo từng ca
+  activeShifts.forEach(shift => {
+    const color = UPPH_SHIFT_COLORS[shift];
+    const vals = labels.map(l => {
+      const v = data.byShift[shift][l]?.actual;
+      return v != null ? round1(v) : null;
     });
     traces.push({
-      x: activeLabels,
+      x: labels,
       y: vals,
-      name: model,
+      name: `${shiftLabel[shift]} ${t('upphActual', lang)}`,
       type: 'bar',
-      marker: { color: getModelColor(model, index) },
-      hovertemplate: `<b>${model}</b><br>%{x}: %{y:.1f}<extra></extra>`,
+      marker: { color },
+      hovertemplate: `<b>${shiftLabel[shift]} ${t('upphActual', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
     });
   });
 
-  const ttlWeekly = activeLabels.map(l => {
-    const val = data.byModelPeriod[TTL_MODEL]?.[l];
-    return val != null && val > 0 ? round1(val) : null;
-  });
-  traces.push({
-    x: activeLabels,
-    y: ttlWeekly,
-    name: 'TTL',
-    type: 'scatter',
-    mode: 'lines+markers+text',
-    cliponaxis: false,
-    line: { color: '#14b8a6', width: 2.5, shape: 'spline', smoothing: 1 },
-    marker: { size: 7, color: '#14b8a6' },
-    text: ttlWeekly.map(v => v != null && v > 0 ? fmt1(v) : ''),
-    textposition: 'top center',
-    textfont: { size: 10, color: '#14b8a6', weight: 'bold' },
-    yaxis: 'y2',
-    hovertemplate: `<b>TTL</b><br>%{x}: %{y:.1f}<extra></extra>`,
-  });
-
-  const stdVal = round1(data.ttlStandard);
-  if (stdVal > 0) {
+  // 2) Line nét đứt: UPPH Target theo từng ca (cùng trục y với Actual)
+  activeShifts.forEach(shift => {
+    const color = UPPH_SHIFT_COLORS[shift];
+    const vals = labels.map(l => {
+      const v = data.byShift[shift][l]?.target;
+      return v != null ? round1(v) : null;
+    });
+    if (vals.every(v => v == null)) return;
     traces.push({
-      x: activeLabels,
-      y: Array(activeLabels.length).fill(stdVal),
-      name: t('standard', lang),
+      x: labels,
+      y: vals,
+      name: `${shiftLabel[shift]} ${t('upphTarget', lang)}`,
       type: 'scatter',
-      mode: 'lines',
-      line: { color: '#f43f5e', width: 1.5, dash: 'dash', shape: 'spline', smoothing: 1 },
-      yaxis: 'y2',
-      hoverinfo: 'skip',
+      mode: 'lines+markers',
+      line: { color, width: 1.75, dash: 'dash', shape: 'spline', smoothing: 1 },
+      marker: { size: 5, color, symbol: 'diamond' },
+      hovertemplate: `<b>${shiftLabel[shift]} ${t('upphTarget', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
     });
-  }
+  });
+
+  // 3) Line nét chấm: UPPH Đạt tỷ lệ (%) — trục phụ bên phải
+  activeShifts.forEach(shift => {
+    const color = UPPH_SHIFT_COLORS[shift];
+    const vals = labels.map(l => {
+      const v = data.byShift[shift][l]?.rate;
+      return v != null ? round1(v) : null;
+    });
+    if (vals.every(v => v == null)) return;
+    traces.push({
+      x: labels,
+      y: vals,
+      name: `${shiftLabel[shift]} ${t('upphRate', lang)}`,
+      type: 'scatter',
+      mode: 'lines+markers+text',
+      cliponaxis: false,
+      line: { color, width: 2, dash: 'dot', shape: 'spline', smoothing: 1 },
+      marker: { size: 6, color },
+      text: vals.map(v => v != null ? `${fmt1(v)}%` : ''),
+      textposition: 'top center',
+      textfont: { size: 9, color },
+      yaxis: 'y2',
+      hovertemplate: `<b>${shiftLabel[shift]} ${t('upphRate', lang)}</b><br>%{x}: %{y:.1f}%<extra></extra>`,
+    });
+  });
 
   const layout = {
-    barmode: 'stack',
+    barmode: 'group',
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     font: { family: 'Inter, sans-serif', color: chartTextColor, size: 11 },
-    margin: { l: 45, r: 55, t: 28, b: 36 },
-    legend: { orientation: 'h', y: -0.18, font: { size: 10 } },
+    margin: { l: 45, r: 50, t: 28, b: 46 },
+    legend: { orientation: 'h', y: -0.28, font: { size: 9 } },
     xaxis: { gridcolor: chartGridColor, tickfont: { size: 10 } },
-    yaxis:  { gridcolor: chartGridColor, tickfont: { size: 9 }, title: { text: t('persons', lang), font: { size: 10 } } },
-    yaxis2: { overlaying: 'y', side: 'right', showgrid: false, tickfont: { size: 9 } },
+    yaxis:  { gridcolor: chartGridColor, tickfont: { size: 9 }, title: { text: t('upphUnit', lang), font: { size: 10 } } },
+    yaxis2: { overlaying: 'y', side: 'right', showgrid: false, tickfont: { size: 9 }, title: { text: t('upphRate', lang), font: { size: 9 } } },
     hovermode: 'x unified',
   };
 
@@ -635,6 +811,8 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   // Nguồn data: dùng effectiveRows (stable cache) thay vì rows raw
   // để tránh bị reset khi allRows bị ghi đè bởi upload ở dashboard khác
   const data = useManpowerData(effectiveRows, dateFrom, dateTo, granularity);
+  // Chart 2 (trước là Weekly Manpower, nay là UPPH theo Ca — xem buildUpphChart)
+  const upphData = useUpphData(effectiveRows, dateFrom, dateTo, granularity);
 
   const hasData = data.activeLabels.length > 0;
 
@@ -674,7 +852,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   // Chart rendering — 4 charts only
   const chartIds = useRef({
     monthly: 'mp-chart-monthly',
-    weekly:  'mp-chart-weekly',
+    upph:    'mp-chart-upph',
     daily:   'mp-chart-daily',
   });
 
@@ -690,8 +868,10 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
         const monthly = buildMonthlyChart(data, chartTextColor, chartGridColor, lang, modelsToPlot);
         window.Plotly.react(ids.monthly, monthly.traces as any, monthly.layout as any, { displayModeBar: false, responsive: true });
 
-        const weekly = buildWeeklyChart(data, chartTextColor, chartGridColor, lang, modelsToPlot);
-        window.Plotly.react(ids.weekly, weekly.traces as any, weekly.layout as any, { displayModeBar: false, responsive: true });
+        if (upphData.hasData) {
+          const upph = buildUpphChart(upphData, chartTextColor, chartGridColor, lang);
+          window.Plotly.react(ids.upph, upph.traces as any, upph.layout as any, { displayModeBar: false, responsive: true });
+        }
 
         const daily = buildDailyChart(data, chartTextColor, chartGridColor, lang, modelsToPlot);
         window.Plotly.react(ids.daily, daily.traces as any, daily.layout as any, { displayModeBar: false, responsive: true });
@@ -702,7 +882,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
     const timerId = setTimeout(draw, 0);
     return () => clearTimeout(timerId);
-  }, [data, chartTextColor, chartGridColor, lang, hasData, modelFilter, modelsToPlot, activeTab, plotlyReady]);
+  }, [data, upphData, chartTextColor, chartGridColor, lang, hasData, modelFilter, modelsToPlot, activeTab, plotlyReady]);
 
   // Toolbar Handlers
   const handleDateFromChange = (val: string) => {
@@ -1016,7 +1196,16 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
               <div className="panel-head">
                 <h3>{t('chartWeek', lang)}</h3>
               </div>
-              <div className="chart-holder" id={chartIds.current.weekly} style={{ minHeight: '280px' }} />
+              {upphData.hasData ? (
+                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '280px' }} />
+              ) : (
+                <div style={{
+                  minHeight: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  textAlign: 'center', color: 'var(--text-3)', fontSize: '13px', padding: '0 16px',
+                }}>
+                  {t('noUpphData', lang)}
+                </div>
+              )}
             </div>
           </div>
 
