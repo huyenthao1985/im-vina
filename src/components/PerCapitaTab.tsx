@@ -134,6 +134,8 @@ interface PCTabData {
   // DAY_RATIO/NIGHT_RATIO thay vì đọc đúng "DAY ManPower AVG"/"NIGHT ManPower AVG".
   dayMPByLabel: Record<string, number>;     // model TTL, từ DAY ManPower AVG
   nightMPByLabel: Record<string, number>;   // model TTL, từ NIGHT ManPower AVG
+  dayMPByModelLabel: Record<string, Record<string, number>>;
+  nightMPByModelLabel: Record<string, Record<string, number>>;
   ttlStandard: number | null;               // YR24 standard
   allLabels: { label: string; dateMs: number }[];
   activeModels: string[];                   // non-TTL models with data
@@ -150,7 +152,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line') || typeStr.includes('라인');
     });
     if (mpRows.length === 0) {
-      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, dayMPByLabel: {}, nightMPByLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
+      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, dayMPByLabel: {}, nightMPByLabel: {}, dayMPByModelLabel: {}, nightMPByModelLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
     }
 
     // Standard
@@ -367,7 +369,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       .filter(m => m !== 'TTL')
       .sort();
 
-    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, dayMPByLabel, nightMPByLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
+    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, dayMPByLabel, nightMPByLabel, dayMPByModelLabel, nightMPByModelLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
   }, [rows, dateFrom, dateTo]);
 }
 
@@ -385,15 +387,19 @@ function buildChart1(
   gridColor: string,
   lang: 'vi'|'en'|'ko',
   targetPC: number,
-  isDark: boolean
+  isDark: boolean,
+  modelFilter: string = 'all'
 ) {
   // Màu accent đậm hơn ở light mode để chữ/đường không bị mờ trên nền sáng
   const tealAccent = isDark ? '#14b8a6' : '#0f766e';
   const roseAccent    = isDark ? '#f43f5e' : '#be123c';
 
-  const dayVals    = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * DAY_RATIO));
-  const nightVals  = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * NIGHT_RATIO));
-  const ttlVals    = labels.map(l => r1((data.ttlByLabel[l] ?? 0)));
+  const modelKey = modelFilter === 'all' ? 'TTL' : modelFilter.trim().toUpperCase();
+  const modelMP = data.byModelLabel[modelKey] ?? {};
+
+  const dayVals    = labels.map(l => r1((modelMP[l] ?? 0) * DAY_RATIO));
+  const nightVals  = labels.map(l => r1((modelMP[l] ?? 0) * NIGHT_RATIO));
+  const ttlVals    = labels.map(l => r1((modelMP[l] ?? 0)));
   const targetVals = labels.map(() => targetPC);
 
   const traces: any[] = [
@@ -459,15 +465,19 @@ function buildChart2(
   gridColor: string,
   lang: 'vi'|'en'|'ko',
   targetPC: number,
-  isDark: boolean
+  isDark: boolean,
+  modelFilter: string = 'all'
 ) {
   const tealAccent = isDark ? '#14b8a6' : '#0f766e';
   const amberAccent   = isDark ? '#f59e0b' : '#b45309';
 
-  const dayPro   = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * DAY_RATIO   * targetPC));
-  const nightPro = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * NIGHT_RATIO * targetPC));
-  const ttlPro   = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * targetPC));
-  const planLine = labels.map(l => r1((data.ttlByLabel[l] ?? 0) * targetPC * 1.05)); // +5% plan
+  const modelKey = modelFilter === 'all' ? 'TTL' : modelFilter.trim().toUpperCase();
+  const modelMP = data.byModelLabel[modelKey] ?? {};
+
+  const dayPro   = labels.map(l => r1((modelMP[l] ?? 0) * DAY_RATIO   * targetPC));
+  const nightPro = labels.map(l => r1((modelMP[l] ?? 0) * NIGHT_RATIO * targetPC));
+  const ttlPro   = labels.map(l => r1((modelMP[l] ?? 0) * targetPC));
+  const planLine = labels.map(l => r1((modelMP[l] ?? 0) * targetPC * 1.05)); // +5% plan
 
   const traces: any[] = [
     {
@@ -531,24 +541,28 @@ function buildChart3(
   textColor: string,
   gridColor: string,
   lang: 'vi'|'en'|'ko',
-  isDark: boolean
+  isDark: boolean,
+  modelFilter: string = 'all'
 ) {
   const tealAccent = isDark ? '#14b8a6' : '#0f766e';
   const roseAccent    = isDark ? '#f43f5e' : '#be123c';
+
+  const modelKey = modelFilter === 'all' ? 'TTL' : modelFilter.trim().toUpperCase();
+  const modelMP = data.byModelLabel[modelKey] ?? {};
 
   // FIX: dùng đúng dữ liệu thật "DAY ManPower AVG"/"NIGHT ManPower AVG" từ Excel
   // (qua data.dayMPByLabel/nightMPByLabel) thay vì công thức ước lượng DAY_RATIO/
   // NIGHT_RATIO cũ. Chỉ fallback về công thức ước lượng nếu period đó thực sự
   // không có dữ liệu DAY/NIGHT ManPower AVG (an toàn, tránh chart bị trống).
   const dayMP = labels.map(l => {
-    const real = data.dayMPByLabel[l];
-    return r1(real != null && real > 0 ? real : (data.ttlByLabel[l] ?? 0) * DAY_RATIO);
+    const real = data.dayMPByModelLabel[modelKey]?.[l];
+    return r1(real != null && real > 0 ? real : (modelMP[l] ?? 0) * DAY_RATIO);
   });
   const nightMP = labels.map(l => {
-    const real = data.nightMPByLabel[l];
-    return r1(real != null && real > 0 ? real : (data.ttlByLabel[l] ?? 0) * NIGHT_RATIO);
+    const real = data.nightMPByModelLabel[modelKey]?.[l];
+    return r1(real != null && real > 0 ? real : (modelMP[l] ?? 0) * NIGHT_RATIO);
   });
-  const ttlMP   = labels.map(l => r1(data.ttlByLabel[l] ?? 0));
+  const ttlMP   = labels.map(l => r1(modelMP[l] ?? 0));
   const stdVal  = data.ttlStandard ?? 0;
   const stdLine = labels.map(() => r1(stdVal));
 
@@ -919,9 +933,13 @@ function useProdData(
       const hasShift = ts.startsWith('day') || ts.startsWith('night') || ts.startsWith('ttl');
       if (!hasShift) return false;
 
+      const m = String(r.model || (r as any).Model || '').trim().toUpperCase();
       if (modelFilter !== 'all') {
-        const m = String(r.model || (r as any).Model || '').trim().toUpperCase();
         if (m !== modelFilter.trim().toUpperCase()) return false;
+      } else {
+        // Khi chọn "Tất cả" (all), loại bỏ model TTL để tránh bị cộng đúp
+        // giữa tổng tự tính với tổng TTL có sẵn trong Excel
+        if (m === 'TTL') return false;
       }
       return true;
     });
@@ -1210,9 +1228,12 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
   const displayLabels = filteredLabels.length > 0 ? filteredLabels : labelsAll;
 
+  const modelKey = modelFilter === 'all' ? 'TTL' : modelFilter.trim().toUpperCase();
+  const modelMPByLabel = data.byModelLabel[modelKey] ?? {};
+
   // KPI averages
   const avgTtl = displayLabels.length > 0
-    ? r1(displayLabels.reduce((s, l) => s + (data.ttlByLabel[l] ?? 0), 0) / displayLabels.length)
+    ? r1(displayLabels.reduce((s, l) => s + (modelMPByLabel[l] ?? 0), 0) / displayLabels.length)
     : 0;
   const avgDay   = r1(avgTtl * DAY_RATIO);
   const avgNight = r1(avgTtl * NIGHT_RATIO);
@@ -1247,13 +1268,13 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
       // vẫn hiển thị đầy đủ toàn bộ khoảng đã lọc).
       const prodLabels = labels.slice(-7);
       try {
-        const ch1 = buildChart1(data, labels, textColor, gridColor, lang, targetPC, isDark);
+        const ch1 = buildChart1(data, labels, textColor, gridColor, lang, targetPC, isDark, modelFilter);
         window.Plotly.react(ids.current.c1, ch1.traces, ch1.layout, { displayModeBar: false, responsive: true });
 
-        const ch2 = buildChart2(data, labels, textColor, gridColor, lang, targetPC, isDark);
+        const ch2 = buildChart2(data, labels, textColor, gridColor, lang, targetPC, isDark, modelFilter);
         window.Plotly.react(ids.current.c2, ch2.traces, ch2.layout, { displayModeBar: false, responsive: true });
 
-        const ch3 = buildChart3(data, labels, textColor, gridColor, lang, isDark);
+        const ch3 = buildChart3(data, labels, textColor, gridColor, lang, isDark, modelFilter);
         window.Plotly.react(ids.current.c3, ch3.traces, ch3.layout, { displayModeBar: false, responsive: true });
 
         // Production Charts: DAY / NIGHT / TTL (chỉ vẽ khi có dữ liệu thật, tối đa 7 giai đoạn gần nhất)
@@ -1352,6 +1373,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
               onChange={setModelFilter}
               options={[
                 { value: 'all', label: lang === 'vi' ? 'Tất cả' : lang === 'ko' ? '전체' : 'All' },
+                ...(Object.keys(data.byModelLabel).includes('TTL') ? [{ value: 'TTL', label: 'TTL' }] : []),
                 ...data.activeModels.map(m => ({ value: m, label: m })),
               ]}
               style={{ width: '140px', height: '38px' }}
