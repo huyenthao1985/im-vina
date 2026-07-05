@@ -602,7 +602,7 @@ export default function App() {
         const filteredRows = rows.filter(r => {
           const ts  = String(gv(r, 'type', 'Type') ?? '').trim().toLowerCase();
           const div = String(gv(r, 'division', 'Division') ?? '').trim().toUpperCase();
-          const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수');
+          const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수') || ts.includes('upph');
           const hasKind  = ts.includes('plan') || ts.includes('actual');
           const isProdRowByDivision = ['SUB1','SUB2','MAIN'].includes(div) && hasKind;
           const isProdRowByTypePrefix =

@@ -570,14 +570,20 @@ function buildUpphChart(
       x: labels, y: planVals, xaxis: xKey, yaxis: yBarKey,
       name: t('upphTarget', lang), showlegend: false,
       type: 'bar', marker: { color: UPPH_PLAN_COLOR },
-      text: planVals.map(v => v != null ? fmt1(v) : ''), textposition: 'outside', textfont: { size: 8 },
+      text: planVals.map(v => v != null ? fmt1(v) : ''),
+      textposition: 'inside',
+      insidetextanchor: 'middle',
+      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       hovertemplate: `<b>${shiftLabel[shift]} ${t('upphTarget', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
     });
     traces.push({
       x: labels, y: actualVals, xaxis: xKey, yaxis: yBarKey,
       name: t('upphActual', lang), showlegend: false,
       type: 'bar', marker: { color: UPPH_ACTUAL_COLOR },
-      text: actualVals.map(v => v != null ? fmt1(v) : ''), textposition: 'outside', textfont: { size: 8 },
+      text: actualVals.map(v => v != null ? fmt1(v) : ''),
+      textposition: 'inside',
+      insidetextanchor: 'middle',
+      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       hovertemplate: `<b>${shiftLabel[shift]} ${t('upphActual', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
     });
     if (rateVals.some(v => v != null)) {
@@ -603,7 +609,7 @@ function buildUpphChart(
       text: combinedText,
       x: (domStart + domEnd) / 2, y: 1.15, xref: 'paper', yref: 'paper',
       xanchor: 'center', yanchor: 'middle', showarrow: false,
-      font: { size: 9.5, color: chartTextColor },
+      font: { size: 11.5, color: chartTextColor },
     });
 
     const maxVal = Math.max(
