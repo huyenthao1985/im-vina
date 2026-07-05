@@ -136,6 +136,10 @@ interface PCTabData {
   nightMPByLabel: Record<string, number>;   // model TTL, từ NIGHT ManPower AVG
   dayMPByModelLabel: Record<string, Record<string, number>>;
   nightMPByModelLabel: Record<string, Record<string, number>>;
+  dayPCByModelLabel: Record<string, Record<string, number>>;
+  nightPCByModelLabel: Record<string, Record<string, number>>;
+  ttlPCByModelLabel: Record<string, Record<string, number>>;
+  targetPCByModelLabel: Record<string, Record<string, number>>;
   ttlStandard: number | null;               // YR24 standard
   allLabels: { label: string; dateMs: number }[];
   activeModels: string[];                   // non-TTL models with data
@@ -152,7 +156,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line') || typeStr.includes('라인');
     });
     if (mpRows.length === 0) {
-      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, dayMPByLabel: {}, nightMPByLabel: {}, dayMPByModelLabel: {}, nightMPByModelLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
+      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, dayMPByLabel: {}, nightMPByLabel: {}, dayMPByModelLabel: {}, nightMPByModelLabel: {}, dayPCByModelLabel: {}, nightPCByModelLabel: {}, ttlPCByModelLabel: {}, targetPCByModelLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
     }
 
     // Standard
@@ -194,6 +198,10 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
     const dayMPGroups: Record<string, Record<string, number[]>> = {};   // DAY ManPower AVG
     const nightMPGroups: Record<string, Record<string, number[]>> = {}; // NIGHT ManPower AVG
     const pcGroups: Record<string, Record<string, number[]>> = {};
+    const dayPCGroups: Record<string, Record<string, number[]>> = {};
+    const nightPCGroups: Record<string, Record<string, number[]>> = {};
+    const ttlPCGroups: Record<string, Record<string, number[]>> = {};
+    const targetPCGroups: Record<string, Record<string, number[]>> = {};
     const lineTtlGroups: Record<string, Record<string, number[]>> = {};
     const lineDayGroups: Record<string, Record<string, number[]>> = {};
     const lineNightGroups: Record<string, Record<string, number[]>> = {};
@@ -228,6 +236,24 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
         if (!target[model]) target[model] = {};
         if (!target[model][label]) target[model][label] = [];
         target[model][label].push(val);
+      } else if (typeStr === 'day 인당생산수') {
+        if (!dayPCGroups[model]) dayPCGroups[model] = {};
+        if (!dayPCGroups[model][label]) dayPCGroups[model][label] = [];
+        dayPCGroups[model][label].push(val);
+      } else if (typeStr === 'night 인당생산수') {
+        if (!nightPCGroups[model]) nightPCGroups[model] = {};
+        if (!nightPCGroups[model][label]) nightPCGroups[model][label] = [];
+        nightPCGroups[model][label].push(val);
+      } else if (typeStr === 'ttl 인당생산수') {
+        if (!ttlPCGroups[model]) ttlPCGroups[model] = {};
+        if (!ttlPCGroups[model][label]) ttlPCGroups[model][label] = [];
+        ttlPCGroups[model][label].push(val);
+      } else if (typeStr.includes('target (인당생산수)') || typeStr.includes('target(인당생산수)')) {
+        if (typeStr.startsWith('ttl')) {
+          if (!targetPCGroups[model]) targetPCGroups[model] = {};
+          if (!targetPCGroups[model][label]) targetPCGroups[model][label] = [];
+          targetPCGroups[model][label].push(val);
+        }
       } else if (typeStr.includes('인당생산수')) {
         if (!pcGroups[model]) pcGroups[model] = {};
         if (!pcGroups[model][label]) pcGroups[model][label] = [];
@@ -266,6 +292,38 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       pcByModelLabel[model] = {};
       Object.entries(lblMap).forEach(([lbl, vals]) => {
         pcByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const dayPCByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(dayPCGroups).forEach(([model, lblMap]) => {
+      dayPCByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        dayPCByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const nightPCByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(nightPCGroups).forEach(([model, lblMap]) => {
+      nightPCByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        nightPCByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const ttlPCByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(ttlPCGroups).forEach(([model, lblMap]) => {
+      ttlPCByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        ttlPCByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const targetPCByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(targetPCGroups).forEach(([model, lblMap]) => {
+      targetPCByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        targetPCByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
       });
     });
 
@@ -369,7 +427,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       .filter(m => m !== 'TTL')
       .sort();
 
-    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, dayMPByLabel, nightMPByLabel, dayMPByModelLabel, nightMPByModelLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
+    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, dayMPByLabel, nightMPByLabel, dayMPByModelLabel, nightMPByModelLabel, dayPCByModelLabel, nightPCByModelLabel, ttlPCByModelLabel, targetPCByModelLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
   }, [rows, dateFrom, dateTo]);
 }
 
@@ -396,11 +454,27 @@ function buildChart1(
 
   const modelKey = modelFilter === 'all' ? 'TTL' : modelFilter.trim().toUpperCase();
   const modelMP = data.byModelLabel[modelKey] ?? {};
+  const dayPCMap   = data.dayPCByModelLabel[modelKey] ?? {};
+  const nightPCMap = data.nightPCByModelLabel[modelKey] ?? {};
+  const ttlPCMap   = data.ttlPCByModelLabel[modelKey] ?? {};
 
-  const dayVals    = labels.map(l => r1((modelMP[l] ?? 0) * DAY_RATIO));
-  const nightVals  = labels.map(l => r1((modelMP[l] ?? 0) * NIGHT_RATIO));
-  const ttlVals    = labels.map(l => r1((modelMP[l] ?? 0)));
-  const targetVals = labels.map(() => targetPC);
+  // Sử dụng dữ liệu thực tế từ Excel (DAY/NIGHT/TTL 인당생산수) nếu có, fallback về công thức tính từ nhân lực
+  const dayVals    = labels.map(l => {
+    const val = dayPCMap[l];
+    return r1(val != null && val > 0 ? val : (modelMP[l] ?? 0) * DAY_RATIO);
+  });
+  const nightVals  = labels.map(l => {
+    const val = nightPCMap[l];
+    return r1(val != null && val > 0 ? val : (modelMP[l] ?? 0) * NIGHT_RATIO);
+  });
+  const ttlVals    = labels.map(l => {
+    const val = ttlPCMap[l];
+    return r1(val != null && val > 0 ? val : (modelMP[l] ?? 0));
+  });
+  const targetVals = labels.map(l => {
+    const customTarget = data.targetPCByModelLabel[modelKey]?.[l];
+    return customTarget != null && customTarget > 0 ? r1(customTarget) : targetPC;
+  });
 
   const traces: any[] = [
     {
@@ -1217,7 +1291,6 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
   const labelsAll = data.allLabels.map(x => x.label);
 
-  // Lọc theo modelFilter (nếu không phải TTL-only)
   const filteredLabels = useMemo(() => {
     if (granularity === 'year')  return labelsAll.filter(l => /^YR/i.test(l));
     if (granularity === 'month') return labelsAll.filter(l => /^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$/i.test(l));
@@ -1229,14 +1302,32 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   const displayLabels = filteredLabels.length > 0 ? filteredLabels : labelsAll;
 
   const modelKey = modelFilter === 'all' ? 'TTL' : modelFilter.trim().toUpperCase();
-  const modelMPByLabel = data.byModelLabel[modelKey] ?? {};
+  const modelMPMap = data.byModelLabel[modelKey] ?? {};
+  const dayPCMap   = data.dayPCByModelLabel[modelKey] ?? {};
+  const nightPCMap = data.nightPCByModelLabel[modelKey] ?? {};
+  const ttlPCMap   = data.ttlPCByModelLabel[modelKey] ?? {};
 
-  // KPI averages
-  const avgTtl = displayLabels.length > 0
-    ? r1(displayLabels.reduce((s, l) => s + (modelMPByLabel[l] ?? 0), 0) / displayLabels.length)
+  // KPI averages using actual Per Capita values if available, fallback to headcount estimation
+  const avgDay = displayLabels.length > 0
+    ? r1(displayLabels.reduce((s, l) => {
+        const val = dayPCMap[l];
+        return s + (val != null && val > 0 ? val : (modelMPMap[l] ?? 0) * DAY_RATIO);
+      }, 0) / displayLabels.length)
     : 0;
-  const avgDay   = r1(avgTtl * DAY_RATIO);
-  const avgNight = r1(avgTtl * NIGHT_RATIO);
+
+  const avgNight = displayLabels.length > 0
+    ? r1(displayLabels.reduce((s, l) => {
+        const val = nightPCMap[l];
+        return s + (val != null && val > 0 ? val : (modelMPMap[l] ?? 0) * NIGHT_RATIO);
+      }, 0) / displayLabels.length)
+    : 0;
+
+  const avgTtl = displayLabels.length > 0
+    ? r1(displayLabels.reduce((s, l) => {
+        const val = ttlPCMap[l];
+        return s + (val != null && val > 0 ? val : (modelMPMap[l] ?? 0));
+      }, 0) / displayLabels.length)
+    : 0;
 
   // Chart refs
   const ids = useRef({
@@ -1487,7 +1578,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
               icon: '📊',
               label: lang === 'vi' ? 'Sản lượng đầu người tổng TB' : lang === 'ko' ? 'TTL 인당생산수 평균' : 'AVG TTL Per Capita',
               value: fmt1(avgTtl),
-              unit: lang === 'vi' ? 'người' : lang === 'ko' ? '명' : 'prs',
+              unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
               bg: 'var(--cyan-soft)', color: '#14b8a6',
             },
             {
