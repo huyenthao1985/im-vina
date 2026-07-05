@@ -536,7 +536,7 @@ function buildUpphChart(
     // legend riêng của từng khối (annotation), tắt hẳn legend chung ở cuối
     // chart (showlegend:false + không set 'legend') vì hình tham chiếu KHÔNG
     // có 1 legend dùng chung — mỗi khối tự có legend nhỏ ngay dưới tiêu đề.
-    margin: { l: 15, r: 15, t: 95, b: 40 },
+    margin: { l: 15, r: 15, t: 80, b: 35 },
     showlegend: false,
     hovermode: 'x unified',
     annotations: [] as any[],
@@ -601,16 +601,18 @@ function buildUpphChart(
     }
 
     // Tiêu đề nhỏ + legend riêng cho từng khối — giống hệt hình tham chiếu.
-    // Tách tiêu đề ngắn gọn (DAY — TARGET / ACTUAL / YIELD) và legend màu thành 2 dòng riêng
-    layout.annotations.push({
-      text: `<b>${shiftLabel[shift].toUpperCase()} — TARGET / ACTUAL / YIELD</b>`,
-      x: (domStart + domEnd) / 2, y: 1.24, xref: 'paper', yref: 'paper',
-      showarrow: false, font: { size: 10, color: chartTextColor },
-    });
+    // Tách tiêu đề ngắn gọn (DAY / NIGHT / TTL) và legend màu thành 2 dòng riêng (legend ở trên, tiêu đề ở dưới)
     layout.annotations.push({
       text: legendHtml,
-      x: (domStart + domEnd) / 2, y: 1.11, xref: 'paper', yref: 'paper',
-      showarrow: false, font: { size: 9, color: chartTextColor },
+      x: (domStart + domEnd) / 2, y: 1.25, xref: 'paper', yref: 'paper',
+      xanchor: 'center', yanchor: 'middle', showarrow: false,
+      font: { size: 9, color: chartTextColor },
+    });
+    layout.annotations.push({
+      text: `<b>${shiftLabel[shift].toUpperCase()}</b>`,
+      x: (domStart + domEnd) / 2, y: 1.12, xref: 'paper', yref: 'paper',
+      xanchor: 'center', yanchor: 'middle', showarrow: false,
+      font: { size: 10, color: chartTextColor },
     });
 
     const maxVal = Math.max(
@@ -1184,22 +1186,21 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
               khối DAY/NIGHT/TTL hiển thị rõ hơn, đỡ bị bóp nhỏ. */}
           <div style={{ marginBottom: '16px' }}>
             <div className="panel">
-              <div className="panel-head">
-                <h3>{t('chartWeek', lang)}</h3>
-              </div>
-              {/* EPCC (upph-match-reference): thêm phụ đề "Tối đa 7 giai đoạn
-                  gần nhất" giống hình tham chiếu — nhắc rõ mỗi khối chỉ hiển
-                  thị tối đa 7 cột gần nhất (xem useUpphData: labels.slice(-7)). */}
-              <div style={{ padding: '0 16px', marginTop: '-6px', marginBottom: '4px', fontSize: '11px', color: 'var(--text-3)' }}>
-                {t('upphSubtitle', lang)}
+              <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                <h3 style={{ margin: 0 }}>{t('chartWeek', lang)}</h3>
+                <span style={{
+                  fontSize: '11px', color: 'var(--text-3)',
+                  background: 'var(--surface-2)', padding: '2px 8px', borderRadius: '4px',
+                  border: '1px solid var(--border)'
+                }}>
+                  {t('upphSubtitle', lang)}
+                </span>
               </div>
               {upphData.hasData ? (
-                // Tăng minHeight (360→420) để chừa chỗ cho tiêu đề + legend
-                // riêng của từng khối (2 dòng annotation phía trên mỗi subplot).
-                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '420px' }} />
+                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '350px' }} />
               ) : (
                 <div style={{
-                  minHeight: '420px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  minHeight: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   textAlign: 'center', color: 'var(--text-3)', fontSize: '13px', padding: '0 16px',
                 }}>
                   {t('noUpphData', lang)}
