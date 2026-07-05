@@ -536,18 +536,11 @@ function buildUpphChart(
     // legend riêng của từng khối (annotation), tắt hẳn legend chung ở cuối
     // chart (showlegend:false + không set 'legend') vì hình tham chiếu KHÔNG
     // có 1 legend dùng chung — mỗi khối tự có legend nhỏ ngay dưới tiêu đề.
-    margin: { l: 15, r: 15, t: 80, b: 35 },
+    margin: { l: 15, r: 15, t: 55, b: 35 },
     showlegend: false,
     hovermode: 'x unified',
     annotations: [] as any[],
   };
-
-  // Legend dạng annotation (■ màu + nhãn) — dùng chung 1 template cho cả 3 khối,
-  // đặt ngay dưới tiêu đề mỗi khối, giống hệt bố cục trong hình tham chiếu.
-  const legendHtml =
-    `<span style="color:${UPPH_PLAN_COLOR}">■</span> ${t('upphTarget', lang)}` +
-    `&nbsp;&nbsp;&nbsp;<span style="color:${UPPH_ACTUAL_COLOR}">■</span> ${t('upphActual', lang)}` +
-    `&nbsp;&nbsp;&nbsp;<span style="color:${UPPH_RATE_COLOR}">◆┈┈</span> ${t('upphRate', lang)}`;
 
   activeShifts.forEach((shift, i) => {
     // suffix trục theo Plotly convention: khối đầu dùng x/y, khối 2 dùng x2/y2 (bar)
@@ -600,19 +593,17 @@ function buildUpphChart(
       });
     }
 
-    // Tiêu đề nhỏ + legend riêng cho từng khối — giống hệt hình tham chiếu.
-    // Tách tiêu đề ngắn gọn (DAY / NIGHT / TTL) và legend màu thành 2 dòng riêng (legend ở trên, tiêu đề ở dưới)
+    // Tiêu đề nhỏ (DAY / NIGHT / TTL) kết hợp với Legend màu thành 1 dòng duy nhất để thu gọn tối đa không gian đứng
+    const combinedText = `<b>${shiftLabel[shift].toUpperCase()}</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ` +
+      `<span style="color:${UPPH_PLAN_COLOR}">■</span> ${t('upphTarget', lang)} &nbsp;&nbsp;&nbsp; ` +
+      `<span style="color:${UPPH_ACTUAL_COLOR}">■</span> ${t('upphActual', lang)} &nbsp;&nbsp;&nbsp; ` +
+      `<span style="color:${UPPH_RATE_COLOR}">◆┈┈</span> ${t('upphRate', lang)}`;
+
     layout.annotations.push({
-      text: legendHtml,
-      x: (domStart + domEnd) / 2, y: 1.25, xref: 'paper', yref: 'paper',
+      text: combinedText,
+      x: (domStart + domEnd) / 2, y: 1.15, xref: 'paper', yref: 'paper',
       xanchor: 'center', yanchor: 'middle', showarrow: false,
-      font: { size: 9, color: chartTextColor },
-    });
-    layout.annotations.push({
-      text: `<b>${shiftLabel[shift].toUpperCase()}</b>`,
-      x: (domStart + domEnd) / 2, y: 1.12, xref: 'paper', yref: 'paper',
-      xanchor: 'center', yanchor: 'middle', showarrow: false,
-      font: { size: 10, color: chartTextColor },
+      font: { size: 9.5, color: chartTextColor },
     });
 
     const maxVal = Math.max(
@@ -1197,10 +1188,10 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                 </span>
               </div>
               {upphData.hasData ? (
-                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '350px' }} />
+                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '300px' }} />
               ) : (
                 <div style={{
-                  minHeight: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   textAlign: 'center', color: 'var(--text-3)', fontSize: '13px', padding: '0 16px',
                 }}>
                   {t('noUpphData', lang)}
