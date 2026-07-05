@@ -34,12 +34,12 @@ const T = {
   kpiPeak:   { vi: 'Giai đoạn cao điểm', en: 'Peak Period', ko: '최고 기간' },
   kpiModels: { vi: 'Models đang hoạt động', en: 'Active Models', ko: '가동 모델 수' },
   kpiLatest: { vi: 'Thời gian mới nhất', en: 'Latest Period', ko: '최근 기간' },
-  chartMonth:{ vi: 'Nhân lực TB theo Tháng (TTL ManPower AVG)', en: 'Monthly Avg Manpower (TTL)', ko: '월별 평균 인원 (TTL)' },
   // FIX(chart2-upph): chart 2 trước đây là "Nhân lực TB theo Tuần" — trùng ý nghĩa
   // với chart 1 (đều là stacked bar + TTL line theo Model). Đổi chart 2 thành
   // biểu đồ UPPH (Target/Actual/Đạt tỷ lệ theo DAY/NIGHT/TTL) để bổ sung góc nhìn
   // năng suất, không lặp lại chart 1.
   chartWeek: { vi: 'UPPH theo Ca (Target vs Actual & Đạt tỷ lệ)', en: 'UPPH by Shift (Target vs Actual & Achievement Rate)', ko: '교대별 UPPH (목표 대비 실적 & 달성율)' },
+  upphSubtitle: { vi: 'Tối đa 7 giai đoạn gần nhất', en: 'Last 7 periods max', ko: '최근 7개 구간까지' },
   chartModel:{ vi: 'Phân bổ nhân lực theo Model — Giai đoạn gần nhất', en: 'Manpower by Model — Latest Period', ko: '모델별 인원 현황 (최근 기간)' },
   chartDay:  { vi: 'Nhân lực hàng ngày (TTL)', en: 'Daily Manpower (TTL)', ko: '일별 인원 현황 (TTL)' },
   chartRadar:{ vi: 'Phân bổ Model theo Giai đoạn (Spider)', en: 'Model Distribution by Period (Radar)', ko: '모델 인원 분포 (레이더)' },
@@ -380,7 +380,18 @@ function useUpphData(
   granularity: 'day' | 'week' | 'month' | 'year'
 ): UpphData {
   return useMemo(() => {
-    const upphRows = rows.filter(r => classifyUpphRow(String(r.type || r.Type || '')) !== null);
+    // EPCC (chart2-upph-v2) — Explore: bản cũ lấy UPPH từ TẤT CẢ Model (từng
+    // model đơn lẻ SO1B01, SO1C2G... LẪN dòng Model=TTL) rồi gộp trung bình
+    // chung 1 label → trộn lẫn 2 thang đo khác hẳn nhau (UPPH riêng từng model
+    // vs UPPH tổng hợp "Tất cả Model"), ra số sai và không khớp hình tham chiếu
+    // (Plan/Actual/Yield — Tất cả Model). Excel đã có sẵn dòng Model=TTL cho
+    // đúng 9 loại DAY/NIGHT/TTL x TARGET(UPPH)/UPPH/UPPH 달성율 — đây chính là
+    // dòng "Tất cả Model" cần dùng.
+    // Plan: chỉ lấy dòng Model === 'TTL' làm nguồn cho chart 2.
+    const upphRows = rows.filter(r => {
+      const model = String((r as any).model || (r as any).Model || '').trim().toUpperCase();
+      return model === TTL_MODEL && classifyUpphRow(String(r.type || r.Type || '')) !== null;
+    });
     if (upphRows.length === 0) return EMPTY_UPPH;
 
     const parsedRows = upphRows.map(r => {
@@ -408,7 +419,12 @@ function useUpphData(
       const time = r._parsedDate.getTime();
       if (!labelToMinDate[label] || time < labelToMinDate[label]) labelToMinDate[label] = time;
     });
-    const labels = Object.keys(labelToMinDate).sort((a, b) => labelToMinDate[a] - labelToMinDate[b]);
+    const sortedUpphLabels = Object.keys(labelToMinDate).sort((a, b) => labelToMinDate[a] - labelToMinDate[b]);
+    // EPCC (upph-match-reference) — hình tham chiếu giới hạn "Tối đa 7 giai
+    // đoạn gần nhất" cho mỗi biểu đồ nhỏ. Cắt về 7 label gần nhất theo thời
+    // gian (giữ nguyên thứ tự tăng dần) để 3 khối DAY/NIGHT/TTL luôn hiển thị
+    // tối đa 7 cột, kể cả khi khoảng lọc ngày rộng hơn.
+    const labels = sortedUpphLabels.slice(-7);
 
     // Gom nhóm theo shift/metric/label, giá trị trùng label lấy trung bình
     // (giống hành vi của useManpowerData) để ổn định khi có nhiều dòng raw/tuần.
@@ -437,11 +453,19 @@ function useUpphData(
       labels.forEach(label => {
         const target = avg(groups[shift].target[label]);
         const actual = avg(groups[shift].actual[label]);
-        let rate = avg(groups[shift].rate[label]);
-        // FIX: nếu Excel chưa có sẵn cột "UPPH 달성율" thì tự tính = Actual/Target*100
-        // để chart không bị trống cột đạt tỷ lệ.
-        if (rate == null && target != null && target > 0 && actual != null) {
+        // FIX(chart2-upph-v2): cột "UPPH 달성율" trong Excel lưu dạng PHÂN SỐ
+        // (vd 0.88, 1.09) chứ không phải phần trăm — bản cũ dùng thẳng giá trị
+        // này làm rate nên hiển thị sai (vd "1.0%" thay vì "109%"). Để luôn
+        // đồng nhất với hình tham chiếu (Yield % dạng 91%, 109%, 121%...),
+        // TỰ TÍNH rate = Actual/Target*100 mỗi khi có đủ target & actual;
+        // chỉ dùng cột 달성율 gốc (đã nhân 100) làm phương án dự phòng khi
+        // thiếu target hoặc actual.
+        let rate: number | null = null;
+        if (target != null && target > 0 && actual != null) {
           rate = (actual / target) * 100;
+        } else {
+          const rawRate = avg(groups[shift].rate[label]);
+          rate = rawRate != null ? rawRate * 100 : null;
         }
         byShift[shift][label] = { target, actual, rate };
       });
@@ -454,97 +478,34 @@ function useUpphData(
 }
 
 // ─── Chart builders ───────────────────────────────────────────────────────────
-function buildMonthlyChart(
-  data: ManpowerData,
-  chartTextColor: string,
-  chartGridColor: string,
-  lang: 'vi'|'en'|'ko',
-  models: string[]
-) {
-  const traces: any[] = [];
-  const activeLabels = data.activeLabels;
+// EPCC (remove-chart1-duplicate) — Explore: "Nhân lực TB theo Tháng" (chart 1,
+// stacked bar theo Model + line TTL theo THÁNG) và "Nhân lực hàng ngày" (chart 3,
+// line theo Model + TTL theo NGÀY) cùng vẽ lại đúng 1 nguồn dữ liệu
+// (useManpowerData.byModelPeriod) chỉ khác granularity hiển thị → trùng lặp ý
+// nghĩa, chiếm chỗ mà không thêm thông tin mới.
+// Plan: xoá hẳn buildMonthlyChart + panel/route render của nó, đồng thời xoá
+// theo các phần thừa liên quan (chart id 'monthly', lệnh vẽ trong effect) để
+// dồn không gian cho biểu đồ UPPH (chart 2) hiển thị rõ hơn.
+// Code: xem phần Component bên dưới — panel chart 1 đã được gỡ khỏi JSX, biểu
+// đồ UPPH chuyển sang chiếm trọn 1 hàng riêng (full width).
 
-  // Chỉ giữ models có ít nhất 1 label có value > 0 trong khoảng thời gian hiện tại
-  const activeModels = models.filter(m =>
-    activeLabels.some(l => (data.byModelPeriod[m]?.[l] ?? 0) > 0)
-  );
+// EPCC (chart2-upph-v2) — Commit: buildUpphChart viết lại theo đúng phong
+// cách của hình tham chiếu "Tình hình sản xuất — Plan/Actual/Yield(%) — Tất
+// cả Model": 3 KHỐI CẠNH NHAU (DAY | NIGHT | TTL), mỗi khối là 1 combo chart
+// riêng gồm bar nhóm Plan (Target) + Actual (cùng 1 cặp màu cố định cho cả 3
+// khối, không đổi màu theo ca — giống hệt hình tham chiếu) và line nét chấm
+// Yield(%) trên trục phụ riêng của khối đó. Mỗi khối có domain trục X/Y độc
+// lập vì thang giá trị DAY/NIGHT/TTL khác nhau rất nhiều (TTL ~ DAY+NIGHT).
+const UPPH_PLAN_COLOR = '#f97316';   // cam — Plan/Target, đồng bộ hình tham chiếu
+const UPPH_ACTUAL_COLOR = '#14b8a6'; // xanh ngọc — Actual
+const UPPH_RATE_COLOR = '#3b82f6';   // xanh dương — Yield (%)
 
-  activeModels.forEach((model, index) => {
-    const vals = activeLabels.map(l => {
-      const val = data.byModelPeriod[model]?.[l];
-      return val != null && val > 0 ? round1(val) : null;
-    });
-    traces.push({
-      x: activeLabels,
-      y: vals,
-      name: model,
-      type: 'bar',
-      marker: { color: getModelColor(model, index) },
-      hovertemplate: `<b>${model}</b><br>%{x}: %{y:.1f}<extra></extra>`,
-    });
-  });
-
-  const ttlMonthly = activeLabels.map(l => {
-    const val = data.byModelPeriod[TTL_MODEL]?.[l];
-    return val != null && val > 0 ? round1(val) : null;
-  });
-  traces.push({
-    x: activeLabels,
-    y: ttlMonthly,
-    name: 'TTL',
-    type: 'scatter',
-    mode: 'lines+markers+text',
-    cliponaxis: false,
-    line: { color: '#14b8a6', width: 2.5, shape: 'spline', smoothing: 1 },
-    marker: { size: 7, color: '#14b8a6' },
-    text: ttlMonthly.map(v => v != null && v > 0 ? fmt1(v) : ''),
-    textposition: 'top center',
-    textfont: { size: 10, color: '#14b8a6', weight: 'bold' },
-    yaxis: 'y2',
-    hovertemplate: `<b>TTL</b><br>%{x}: %{y:.1f}<extra></extra>`,
-  });
-
-  const stdVal = round1(data.ttlStandard);
-  if (stdVal > 0) {
-    traces.push({
-      x: activeLabels,
-      y: Array(activeLabels.length).fill(stdVal),
-      name: t('standard', lang),
-      type: 'scatter',
-      mode: 'lines',
-      line: { color: '#f43f5e', width: 1.5, dash: 'dash', shape: 'spline', smoothing: 1 },
-      yaxis: 'y2',
-      hoverinfo: 'skip',
-    });
-  }
-
-  const layout = {
-    barmode: 'stack',
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { family: 'Inter, sans-serif', color: chartTextColor, size: 11 },
-    margin: { l: 45, r: 55, t: 28, b: 36 },
-    legend: { orientation: 'h', y: -0.18, font: { size: 10 } },
-    xaxis: { gridcolor: chartGridColor, tickfont: { size: 10 } },
-    yaxis:  { gridcolor: chartGridColor, tickfont: { size: 9 }, title: { text: t('persons', lang), font: { size: 10 } } },
-    yaxis2: { overlaying: 'y', side: 'right', showgrid: false, tickfont: { size: 9 } },
-    hovermode: 'x unified',
-  };
-
-  return { traces, layout };
-}
-
-// FIX(chart2-upph) — Commit: buildUpphChart thay thế buildWeeklyChart.
-// Combo chart: bar nhóm (Actual UPPH của DAY/NIGHT/TTL) + line nét đứt (Target
-// cùng màu từng ca, trục y trái, cùng đơn vị UPPH) + line nét chấm (Đạt tỷ lệ %,
-// trục y phải). Đổi từ stacked-bar-theo-Model (giống hệt chart 1) sang combo
-// bar+line-theo-Ca để 2 chart thể hiện 2 ý nghĩa khác nhau: chart 1 = quy mô
-// nhân lực theo Model, chart 2 = năng suất (UPPH) theo Ca.
-const UPPH_SHIFT_COLORS: Record<UpphShift, string> = {
-  DAY:   '#f59e0b', // amber
-  NIGHT: '#6366f1', // indigo
-  TTL:   '#14b8a6', // teal (đồng bộ màu TTL với chart 1)
-};
+// 3 domain cột bằng nhau, có khoảng hở ở giữa để tách biệt 3 khối
+const UPPH_COL_DOMAINS: [number, number][] = [
+  [0, 0.30],
+  [0.36, 0.66],
+  [0.72, 1.0],
+];
 
 function buildUpphChart(
   data: UpphData,
@@ -566,80 +527,114 @@ function buildUpphChart(
     labels.some(l => (data.byShift[s][l]?.actual ?? 0) > 0 || (data.byShift[s][l]?.target ?? 0) > 0)
   );
 
-  // 1) Bar nhóm: UPPH Actual theo từng ca
-  activeShifts.forEach(shift => {
-    const color = UPPH_SHIFT_COLORS[shift];
-    const vals = labels.map(l => {
-      const v = data.byShift[shift][l]?.actual;
-      return v != null ? round1(v) : null;
-    });
-    traces.push({
-      x: labels,
-      y: vals,
-      name: `${shiftLabel[shift]} ${t('upphActual', lang)}`,
-      type: 'bar',
-      marker: { color },
-      hovertemplate: `<b>${shiftLabel[shift]} ${t('upphActual', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
-    });
-  });
-
-  // 2) Line nét đứt: UPPH Target theo từng ca (cùng trục y với Actual)
-  activeShifts.forEach(shift => {
-    const color = UPPH_SHIFT_COLORS[shift];
-    const vals = labels.map(l => {
-      const v = data.byShift[shift][l]?.target;
-      return v != null ? round1(v) : null;
-    });
-    if (vals.every(v => v == null)) return;
-    traces.push({
-      x: labels,
-      y: vals,
-      name: `${shiftLabel[shift]} ${t('upphTarget', lang)}`,
-      type: 'scatter',
-      mode: 'lines+markers',
-      line: { color, width: 1.75, dash: 'dash', shape: 'spline', smoothing: 1 },
-      marker: { size: 5, color, symbol: 'diamond' },
-      hovertemplate: `<b>${shiftLabel[shift]} ${t('upphTarget', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
-    });
-  });
-
-  // 3) Line nét chấm: UPPH Đạt tỷ lệ (%) — trục phụ bên phải
-  activeShifts.forEach(shift => {
-    const color = UPPH_SHIFT_COLORS[shift];
-    const vals = labels.map(l => {
-      const v = data.byShift[shift][l]?.rate;
-      return v != null ? round1(v) : null;
-    });
-    if (vals.every(v => v == null)) return;
-    traces.push({
-      x: labels,
-      y: vals,
-      name: `${shiftLabel[shift]} ${t('upphRate', lang)}`,
-      type: 'scatter',
-      mode: 'lines+markers+text',
-      cliponaxis: false,
-      line: { color, width: 2, dash: 'dot', shape: 'spline', smoothing: 1 },
-      marker: { size: 6, color },
-      text: vals.map(v => v != null ? `${fmt1(v)}%` : ''),
-      textposition: 'top center',
-      textfont: { size: 9, color },
-      yaxis: 'y2',
-      hovertemplate: `<b>${shiftLabel[shift]} ${t('upphRate', lang)}</b><br>%{x}: %{y:.1f}%<extra></extra>`,
-    });
-  });
-
-  const layout = {
+  const layout: any = {
     barmode: 'group',
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     font: { family: 'Inter, sans-serif', color: chartTextColor, size: 11 },
-    margin: { l: 45, r: 50, t: 28, b: 46 },
-    legend: { orientation: 'h', y: -0.28, font: { size: 9 } },
-    xaxis: { gridcolor: chartGridColor, tickfont: { size: 10 } },
-    yaxis:  { gridcolor: chartGridColor, tickfont: { size: 9 }, title: { text: t('upphUnit', lang), font: { size: 10 } } },
-    yaxis2: { overlaying: 'y', side: 'right', showgrid: false, tickfont: { size: 9 }, title: { text: t('upphRate', lang), font: { size: 9 } } },
+    // EPCC (upph-match-reference) — tăng margin.t để có chỗ cho tiêu đề +
+    // legend riêng của từng khối (annotation), tắt hẳn legend chung ở cuối
+    // chart (showlegend:false + không set 'legend') vì hình tham chiếu KHÔNG
+    // có 1 legend dùng chung — mỗi khối tự có legend nhỏ ngay dưới tiêu đề.
+    margin: { l: 15, r: 15, t: 95, b: 40 },
+    showlegend: false,
     hovermode: 'x unified',
+    annotations: [] as any[],
   };
+
+  // Legend dạng annotation (■ màu + nhãn) — dùng chung 1 template cho cả 3 khối,
+  // đặt ngay dưới tiêu đề mỗi khối, giống hệt bố cục trong hình tham chiếu.
+  const legendHtml =
+    `<span style="color:${UPPH_PLAN_COLOR}">■</span> ${t('upphTarget', lang)}` +
+    `&nbsp;&nbsp;&nbsp;<span style="color:${UPPH_ACTUAL_COLOR}">■</span> ${t('upphActual', lang)}` +
+    `&nbsp;&nbsp;&nbsp;<span style="color:${UPPH_RATE_COLOR}">◆┈┈</span> ${t('upphRate', lang)}`;
+
+  activeShifts.forEach((shift, i) => {
+    // suffix trục theo Plotly convention: khối đầu dùng x/y, khối 2 dùng x2/y2 (bar)
+    // + y3 (%) v.v — mỗi khối có 1 cặp trục y riêng (bar bên trái, % bên phải).
+    const xIdx = i === 0 ? '' : String(i + 1);
+    const yBarIdx = i === 0 ? '' : String(i * 2 + 1);
+    const yRateIdx = String(i * 2 + 2);
+    const xKey = `x${xIdx}`;
+    const yBarKey = `y${yBarIdx}`;
+    const yRateKey = `y${yRateIdx}`;
+    const [domStart, domEnd] = UPPH_COL_DOMAINS[i] || [0, 1];
+
+    const planVals = labels.map(l => {
+      const v = data.byShift[shift][l]?.target;
+      return v != null ? round1(v) : null;
+    });
+    const actualVals = labels.map(l => {
+      const v = data.byShift[shift][l]?.actual;
+      return v != null ? round1(v) : null;
+    });
+    const rateVals = labels.map(l => {
+      const v = data.byShift[shift][l]?.rate;
+      return v != null ? round1(v) : null;
+    });
+
+    traces.push({
+      x: labels, y: planVals, xaxis: xKey, yaxis: yBarKey,
+      name: t('upphTarget', lang), showlegend: false,
+      type: 'bar', marker: { color: UPPH_PLAN_COLOR },
+      text: planVals.map(v => v != null ? fmt1(v) : ''), textposition: 'outside', textfont: { size: 8 },
+      hovertemplate: `<b>${shiftLabel[shift]} ${t('upphTarget', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
+    });
+    traces.push({
+      x: labels, y: actualVals, xaxis: xKey, yaxis: yBarKey,
+      name: t('upphActual', lang), showlegend: false,
+      type: 'bar', marker: { color: UPPH_ACTUAL_COLOR },
+      text: actualVals.map(v => v != null ? fmt1(v) : ''), textposition: 'outside', textfont: { size: 8 },
+      hovertemplate: `<b>${shiftLabel[shift]} ${t('upphActual', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
+    });
+    if (rateVals.some(v => v != null)) {
+      traces.push({
+        x: labels, y: rateVals, xaxis: xKey, yaxis: yRateKey,
+        name: t('upphRate', lang), showlegend: false,
+        type: 'scatter', mode: 'lines+markers+text', cliponaxis: false,
+        line: { color: UPPH_RATE_COLOR, width: 2, dash: 'dot', shape: 'spline', smoothing: 1 },
+        marker: { size: 6, color: UPPH_RATE_COLOR },
+        text: rateVals.map(v => v != null ? `${fmt1(v)}%` : ''),
+        textposition: 'top center', textfont: { size: 9, color: UPPH_RATE_COLOR },
+        hovertemplate: `<b>${shiftLabel[shift]} ${t('upphRate', lang)}</b><br>%{x}: %{y:.1f}%<extra></extra>`,
+      });
+    }
+
+    // Tiêu đề nhỏ + legend riêng cho từng khối — giống hệt hình tham chiếu.
+    // Tách tiêu đề ngắn gọn (DAY — TARGET / ACTUAL / YIELD) và legend màu thành 2 dòng riêng
+    layout.annotations.push({
+      text: `<b>${shiftLabel[shift].toUpperCase()} — TARGET / ACTUAL / YIELD</b>`,
+      x: (domStart + domEnd) / 2, y: 1.24, xref: 'paper', yref: 'paper',
+      showarrow: false, font: { size: 10, color: chartTextColor },
+    });
+    layout.annotations.push({
+      text: legendHtml,
+      x: (domStart + domEnd) / 2, y: 1.11, xref: 'paper', yref: 'paper',
+      showarrow: false, font: { size: 9, color: chartTextColor },
+    });
+
+    const maxVal = Math.max(
+      ...planVals.filter((v): v is number => v !== null),
+      ...actualVals.filter((v): v is number => v !== null),
+      0
+    );
+    const barMax = maxVal > 0 ? maxVal * 1.45 : 10;
+
+    layout[xKey.replace('x', 'xaxis')] = {
+      domain: [domStart, domEnd], anchor: yBarKey,
+      gridcolor: chartGridColor, tickfont: { size: 9 },
+    };
+    layout[yBarKey.replace('y', 'yaxis')] = {
+      anchor: xKey, gridcolor: chartGridColor, tickfont: { size: 8 },
+      range: [0, barMax],
+      title: i === 0 ? { text: t('upphUnit', lang), font: { size: 9 } } : undefined,
+    };
+    layout[yRateKey.replace('y', 'yaxis')] = {
+      overlaying: yBarKey, anchor: xKey, side: 'right', showgrid: false, tickfont: { size: 8 },
+      range: [0, 150], ticksuffix: '%',
+      title: i === activeShifts.length - 1 ? { text: t('upphRate', lang), font: { size: 9 } } : undefined,
+    };
+  });
 
   return { traces, layout };
 }
@@ -849,11 +844,11 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     ).length;
   }, [data, modelFilter]);
 
-  // Chart rendering — 4 charts only
+  // Chart rendering — chart 1 (Monthly) đã bị xoá vì trùng dữ liệu với chart 3
+  // (Daily) — xem EPCC (remove-chart1-duplicate) ở phần buildDailyChart.
   const chartIds = useRef({
-    monthly: 'mp-chart-monthly',
-    upph:    'mp-chart-upph',
-    daily:   'mp-chart-daily',
+    upph:  'mp-chart-upph',
+    daily: 'mp-chart-daily',
   });
 
   useEffect(() => {
@@ -865,9 +860,6 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     const draw = () => {
       const ids = chartIds.current;
       try {
-        const monthly = buildMonthlyChart(data, chartTextColor, chartGridColor, lang, modelsToPlot);
-        window.Plotly.react(ids.monthly, monthly.traces as any, monthly.layout as any, { displayModeBar: false, responsive: true });
-
         if (upphData.hasData) {
           const upph = buildUpphChart(upphData, chartTextColor, chartGridColor, lang);
           window.Plotly.react(ids.upph, upph.traces as any, upph.layout as any, { displayModeBar: false, responsive: true });
@@ -1184,23 +1176,30 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
             </div>
           </div>
 
-          {/* ── Row 1: Monthly & Weekly ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-            <div className="panel">
-              <div className="panel-head">
-                <h3>{t('chartMonth', lang)}</h3>
-              </div>
-              <div className="chart-holder" id={chartIds.current.monthly} style={{ minHeight: '280px' }} />
-            </div>
+          {/* ── Row 1: UPPH (chart 2) — full width ──
+              EPCC (remove-chart1-duplicate): chart 1 (Nhân lực TB theo Tháng)
+              đã bị xoá vì trùng dữ liệu/ý nghĩa với chart 3 (Nhân lực hàng
+              ngày) bên dưới — cả 2 đều vẽ byModelPeriod theo Model, chỉ khác
+              granularity. Nhường toàn bộ chiều rộng hàng này cho UPPH để 3
+              khối DAY/NIGHT/TTL hiển thị rõ hơn, đỡ bị bóp nhỏ. */}
+          <div style={{ marginBottom: '16px' }}>
             <div className="panel">
               <div className="panel-head">
                 <h3>{t('chartWeek', lang)}</h3>
               </div>
+              {/* EPCC (upph-match-reference): thêm phụ đề "Tối đa 7 giai đoạn
+                  gần nhất" giống hình tham chiếu — nhắc rõ mỗi khối chỉ hiển
+                  thị tối đa 7 cột gần nhất (xem useUpphData: labels.slice(-7)). */}
+              <div style={{ padding: '0 16px', marginTop: '-6px', marginBottom: '4px', fontSize: '11px', color: 'var(--text-3)' }}>
+                {t('upphSubtitle', lang)}
+              </div>
               {upphData.hasData ? (
-                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '280px' }} />
+                // Tăng minHeight (360→420) để chừa chỗ cho tiêu đề + legend
+                // riêng của từng khối (2 dòng annotation phía trên mỗi subplot).
+                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '420px' }} />
               ) : (
                 <div style={{
-                  minHeight: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  minHeight: '420px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   textAlign: 'center', color: 'var(--text-3)', fontSize: '13px', padding: '0 16px',
                 }}>
                   {t('noUpphData', lang)}
