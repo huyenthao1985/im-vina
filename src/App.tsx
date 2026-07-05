@@ -306,7 +306,7 @@ export default function App() {
         // `db` là const nên narrowing được giữ nguyên trong mọi closure.
         const db = supabase;
         try {
-          const PAGE_SIZE = 10000;
+          const PAGE_SIZE = 1000;
           // ── FIX ROOT CAUSE "Manpower biến mất sau F5" ───────────────────
           // Bản cũ: 1 query DUY NHẤT order by id desc, cắt cứng 5000 dòng
           // cho TOÀN BẢNG (3 bucket gộp chung). Khi Sales/TargetActual có
@@ -317,7 +317,7 @@ export default function App() {
           // Fix: fetch RIÊNG theo từng bucket (source_tag), mỗi bucket có
           // ngân sách MAX_PAGES*PAGE_SIZE dòng riêng, không bị bucket lớn
           // "ăn hết" quota của bucket nhỏ.
-          const MAX_PAGES = 10; // tối đa 100,000 dòng / bucket (đủ cho mọi trường hợp thực tế)
+          const MAX_PAGES = 100; // tối đa 100,000 dòng / bucket (đủ cho mọi trường hợp thực tế)
 
           // ─── TIMEOUT 10 giây cho mỗi request ────────────────────────────
           const TIMEOUT_MS = 30_000;
