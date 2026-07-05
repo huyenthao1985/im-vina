@@ -319,10 +319,11 @@ function useManpowerData(
       });
     }
 
+    // Giới hạn 10 giai đoạn gần nhất cho Chart 2 (Nhân lực hàng ngày) để dễ đọc khi xem theo Ngày/Tuần
     const activeLabels = labels.filter(l => {
       const ttlVal = byModelPeriod[TTL_MODEL]?.[l];
       return ttlVal != null && ttlVal > 0;
-    });
+    }).slice(-10);
 
     return { byModelPeriod, ttlStandard, activeModels, labels, activeLabels };
   }, [rows, dateFrom, dateTo, granularity]);
@@ -424,7 +425,7 @@ function useUpphData(
     // đoạn gần nhất" cho mỗi biểu đồ nhỏ. Cắt về 7 label gần nhất theo thời
     // gian (giữ nguyên thứ tự tăng dần) để 3 khối DAY/NIGHT/TTL luôn hiển thị
     // tối đa 7 cột, kể cả khi khoảng lọc ngày rộng hơn.
-    const labels = sortedUpphLabels.slice(-10); // EPCC: tối đa 10 giai đoạn gần nhất (người dùng yêu cầu tăng từ 7→10)
+    const labels = sortedUpphLabels.slice(-7); // EPCC: tối đa 7 giai đoạn gần nhất cho UPPH (Chart 1)
 
     // Gom nhóm theo shift/metric/label, giá trị trùng label lấy trung bình
     // (giống hành vi của useManpowerData) để ổn định khi có nhiều dòng raw/tuần.
@@ -497,7 +498,7 @@ function useUpphData(
 // Yield(%) trên trục phụ riêng của khối đó. Mỗi khối có domain trục X/Y độc
 // lập vì thang giá trị DAY/NIGHT/TTL khác nhau rất nhiều (TTL ~ DAY+NIGHT).
 const UPPH_PLAN_COLOR = '#f97316';   // cam — Plan/Target, đồng bộ hình tham chiếu
-const UPPH_ACTUAL_COLOR = '#00d4aa'; // xanh lá tươi — Actual, đồng bộ màu hình tham chiếu
+const UPPH_ACTUAL_COLOR = '#2A788E'; // xanh ngọc đậm — Actual, màu theo yêu cầu người dùng
 const UPPH_RATE_COLOR = '#60a5fa';   // xanh dương nhạt — Yield (%), nổi hơn trên nền tối
 
 // 3 domain cột bằng nhau, có khoảng hở ở giữa để tách biệt 3 khối
