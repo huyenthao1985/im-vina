@@ -505,6 +505,16 @@ export default function App() {
   // "null value in column 'model' violates not-null constraint" — dữ liệu
   // KHÔNG BAO GIỜ lên được Supabase, biểu đồ F5 luôn trống.
   // Fix: map Excel columns → schema columns đúng cột, đúng NOT NULL.
+  //
+  // ── GUARD "gọi syncBucketToSupabase 2 lần chồng nhau cho cùng 1 bucket" ──
+  // Nếu người dùng double-click nút upload, hoặc effect nào đó gọi lại
+  // handleFileSelected trước khi lần sync trước kết thúc (DELETE xong nhưng
+  // UPSERT chưa xong), có thể xảy ra race giữa 2 lần gọi cho CÙNG bucket.
+  // Kết quả cuối cùng vẫn đúng vì cả 2 đều upsert theo cùng business key,
+  // nhưng vẫn chặn hẳn để khỏi lãng phí request / gây lỗi tạm thời — mỗi
+  // bucket chỉ cho phép 1 lần sync chạy tại 1 thời điểm.
+  const syncInFlightRef = useRef<Set<string>>(new Set());
+
   const syncBucketToSupabase = useCallback(async (
     rows: DataRow[],
     bucketTag: 'Sales' | 'Manpower' | 'TargetActual'
@@ -513,6 +523,11 @@ export default function App() {
       console.warn('Supabase not configured — bỏ qua đồng bộ, dữ liệu chỉ lưu local.');
       return;
     }
+    if (syncInFlightRef.current.has(bucketTag)) {
+      console.warn(`Bỏ qua: bucket [${bucketTag}] đang đồng bộ dở từ lần gọi trước — tránh gọi upsert chồng lặp.`);
+      return;
+    }
+    syncInFlightRef.current.add(bucketTag);
     setSyncStatus('syncing');
     try {
       // 1) Xoá toàn bộ dòng CŨ thuộc đúng bucket này trước khi insert dòng mới.
@@ -711,11 +726,34 @@ export default function App() {
         }
       }
 
+      // 6) Kiểm chứng lại: đếm số dòng THẬT SỰ đang có trên Supabase cho đúng
+      // bucket này sau khi ghi xong. Nếu con số này > dedupedRows.length, tức
+      // là vẫn còn dữ liệu trùng/rác CŨ (từ trước khi có UNIQUE CONSTRAINT)
+      // chưa được dọn — cần chạy supabase_dedupe_and_constraint.sql.
+      try {
+        const verifyQuery = supabase.from('sales_data').select('*', { count: 'exact', head: true });
+        const { count: verifyCount } = bucketTag === 'Sales'
+          ? await verifyQuery.or('source_tag.eq.Sales,source_tag.is.null')
+          : await verifyQuery.eq('source_tag', bucketTag);
+        console.log(`Đã đồng bộ ${dedupedRows.length} dòng duy nhất (${bucketTag}) lên Supabase. Tổng số dòng bucket này trên Supabase sau khi ghi: ${verifyCount}.`);
+        if (typeof verifyCount === 'number' && verifyCount > dedupedRows.length) {
+          console.warn(
+            `⚠️ Bucket [${bucketTag}] trên Supabase có ${verifyCount} dòng, nhiều hơn ` +
+            `${dedupedRows.length} dòng vừa upload. Khả năng cao vẫn còn dữ liệu trùng/rác ` +
+            `từ TRƯỚC khi có UNIQUE CONSTRAINT — hãy chạy supabase_dedupe_and_constraint.sql ` +
+            `(Bước 0-3) trong Supabase SQL Editor để dọn triệt để.`
+          );
+        }
+      } catch (verifyErr) {
+        console.warn(`Không kiểm chứng được số dòng sau sync (${bucketTag}):`, verifyErr);
+      }
+
       setSyncStatus('synced');
-      console.log(`Đã đồng bộ ${taggedRows.length} dòng (${bucketTag}) lên Supabase`);
     } catch (err) {
       console.error(`Supabase upsert exception (${bucketTag}):`, err);
       setSyncStatus('error');
+    } finally {
+      syncInFlightRef.current.delete(bucketTag);
     }
   }, []);
 
