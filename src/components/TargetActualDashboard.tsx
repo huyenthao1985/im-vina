@@ -362,6 +362,13 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     // Pre-scan: Identify which months/years/models have daily detail rows (e.g., date strings containing a slash '/')
     const targetMonthsWithDaily = new Set<string>();
     const actualMonthsWithDaily = new Set<string>();
+    // FIX: Set riêng cho AMT — trước đây AMT dùng chung điều kiện isTarget/isActual của QTY
+    // (chỉ check division SHIPMENT/SUB1/SUB2/OIS), nên daily-breakdown của AMT (division "AMT K$")
+    // không bao giờ được ghi nhận => dòng tổng tháng AMT không bao giờ bị loại => luôn bị cộng đôi.
+    // Dùng Set riêng (không gộp chung key với QTY) để tránh 1 model có AMT-daily nhưng không có
+    // QTY-daily lại vô tình làm mất luôn dòng tổng tháng QTY của model đó.
+    const amtTargetMonthsWithDaily = new Set<string>();
+    const amtActualMonthsWithDaily = new Set<string>();
     const monthsShort = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     
     rows.forEach(r => {
@@ -391,11 +398,15 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             const division = String(r.division ?? (r as any).Division ?? '').trim().toUpperCase();
             const typeStr = String(r.type ?? (r as any).Type ?? r.type1 ?? (r as any).Type1 ?? '').trim().toLowerCase();
             const normType = normalizeOisType(typeStr);
+            const isAmtDivision = division.startsWith('AMT');
             
             // Check if it's a target row or actual row
             const isTarget = (division === 'SHIPMENT' || division === 'SUB1' || division === 'SUB2' || division === 'OIS') && normType === 'plan';
             const isActual = (division === 'OIS' && normType === 'final_sales') || 
                              ((division === 'SHIPMENT' || division === 'SUB1' || division === 'SUB2') && normType === 'actual');
+            // FIX: nhánh riêng cho AMT — Plan = target, Actual = actual (AMT không phân biệt OIS/Shipment)
+            const isAmtTarget = isAmtDivision && normType === 'plan';
+            const isAmtActual = isAmtDivision && normType === 'actual';
             
             const key = `${monthAbbr}|${year}|${model}`;
             if (isTarget) {
@@ -404,10 +415,19 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             if (isActual) {
               actualMonthsWithDaily.add(key);
             }
+            if (isAmtTarget) {
+              amtTargetMonthsWithDaily.add(key);
+            }
+            if (isAmtActual) {
+              amtActualMonthsWithDaily.add(key);
+            }
           }
         }
       }
     });
+
+
+
 
     // 1.2 Detect if it's the Test 1.xlsx format (having MODEL, DIVISION, Type1/Type, Type2/Custom, DATE/Date, Value)
     const keysLower2 = keys.map(k => k.toLowerCase().trim());
@@ -461,11 +481,23 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           const isTargetRow = (divUpper === 'SHIPMENT' || divUpper === 'SUB1' || divUpper === 'SUB2' || divUpper === 'OIS') && shipNorm === 'plan';
           const isActualRow = (divUpper === 'OIS' && shipNorm === 'final_sales') ||
                               ((divUpper === 'SHIPMENT' || divUpper === 'SUB1' || divUpper === 'SUB2') && shipNorm === 'actual');
-          
+          // FIX: check riêng cho AMT — trước đây monthly-summary của AMT không bao giờ bị loại
+          // vì isTargetRow/isActualRow chỉ tính QTY division, khiến AMT luôn bị cộng đôi khi có breakdown ngày.
+          const isAmtTargetRow = divUpper.startsWith('AMT') && shipNorm === 'plan';
+          const isAmtActualRow = divUpper.startsWith('AMT') && shipNorm === 'actual';
+
+
+
           if (isTargetRow && targetMonthsWithDaily.has(targetKey)) {
             return null;
           }
           if (isActualRow && actualMonthsWithDaily.has(actualKey)) {
+            return null;
+          }
+          if (isAmtTargetRow && amtTargetMonthsWithDaily.has(targetKey)) {
+            return null;
+          }
+          if (isAmtActualRow && amtActualMonthsWithDaily.has(actualKey)) {
             return null;
           }
         }
@@ -549,6 +581,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     // 1.3 Supabase TargetActual format (được reconstruct từ nhiều dòng phân mảnh lưu trên cloud)
     const isSupabaseTargetActual = rows.some(r => r.source_tag === 'TargetActual' || r.origin === 'TargetActual');
 
+
+
     if (isSupabaseTargetActual) {
       const grouped: Record<string, any> = {};
       const MONTHS_SET = new Set(monthsShort);
@@ -578,11 +612,22 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           const isTargetRow = (div === 'SHIPMENT' || div === 'SUB1' || div === 'SUB2' || div === 'OIS') && normType === 'plan';
           const isActualRow = (div === 'OIS' && normType === 'final_sales') ||
                               ((div === 'SHIPMENT' || div === 'SUB1' || div === 'SUB2') && normType === 'actual');
-          
+          // FIX: check riêng cho AMT (xem giải thích ở nhánh Test1.xlsx phía trên)
+          const isAmtTargetRow = div.startsWith('AMT') && normType === 'plan';
+          const isAmtActualRow = div.startsWith('AMT') && normType === 'actual';
+
+
+
           if (isTargetRow && targetMonthsWithDaily.has(targetKey)) {
             return;
           }
           if (isActualRow && actualMonthsWithDaily.has(actualKey)) {
+            return;
+          }
+          if (isAmtTargetRow && amtTargetMonthsWithDaily.has(targetKey)) {
+            return;
+          }
+          if (isAmtActualRow && amtActualMonthsWithDaily.has(actualKey)) {
             return;
           }
         }
