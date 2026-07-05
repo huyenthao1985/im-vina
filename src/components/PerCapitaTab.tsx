@@ -8,8 +8,13 @@
  *    Hiển thị: Bar DAY + Bar NIGHT (ước lượng) + line TTL + line TARGET (경영목표)
  *    Trục X: tháng (JAN–JUN) + tuần gần (W24–W26) + ngày gần (06/22–06/26)
  *
- *  Chart 2 — 생산 현황 (Production Status) — ước lượng từ headcount × target_unit
- *    Bar DAY + Bar NIGHT + line TTL + line TARGET
+ *  Chart 2 — 근무시간 (Work Hours) — DAY/NIGHT/TTL 근무시간 Work Hours
+ *    Ưu tiên dữ liệu thật (Type "DAY/NIGHT/TTL 근무시간" trong Excel); nếu chưa
+ *    có thì tính = nhân lực thật (DAY/NIGHT ManPower AVG) × giờ chuẩn/ca ×
+ *    số ngày công của giai đoạn (getWorkingUnitsForLabel) — KHÁC với Chart 1
+ *    (per capita, hằng số tỉ lệ ca) và Chart 3 (headcount thô), tránh 3 biểu đồ
+ *    trông giống hệt nhau như trước.
+ *    Bar DAY + Bar NIGHT + line TTL + dashed line giờ công chuẩn (nếu có YR24)
  *
  *  Chart 3 — 근무 인력 현황 (Manpower Trend)
  *    Bar DAY + Bar NIGHT (group) + Line TTL + dashed 기준인력 Standard
@@ -32,6 +37,44 @@ import { CustomSelect } from './CustomSelect';
 const DAY_RATIO   = 0.507;   // ca ngày / tổng
 const NIGHT_RATIO = 0.493;   // ca đêm / tổng
 const DEFAULT_TARGET_PC = 160; // 경영목표 인당생산수
+const HOURS_PER_SHIFT = 8;   // 근무시간 chuẩn / ca (có thể chỉnh nếu nhà máy tính OT khác)
+
+/**
+ * getWorkingUnitsForLabel — số ngày công đại diện cho 1 label trên trục X.
+ * Dùng để tính 근무시간 (Work Hours) = nhân lực TB x giờ/ca x số ngày công,
+ * KHÔNG dùng chung 1 hằng số cho mọi giai đoạn (khác với targetPC cũ) để
+ * Chart 2 phản ánh đúng số ngày làm việc thực tế thay đổi theo tháng
+ * (vd tháng Tết ít ngày công hơn) — tạo khác biệt thật với Chart 1/Chart 3.
+ * Giả định: nghỉ Chủ nhật, làm 6 ngày/tuần (Thứ 2–Thứ 7). Có thể tinh chỉnh
+ * thêm ngày lễ VN sau nếu cần độ chính xác cao hơn.
+ */
+function getWorkingUnitsForLabel(label: string): number {
+  const s = label.trim().toUpperCase();
+  // Tháng: JAN..DEC → đếm số ngày không phải Chủ nhật trong tháng đó (năm 2026,
+  // đồng bộ với parseManpowerDate ở ManpowerDashboard.tsx)
+  const monthsAbbr = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const monthIdx = monthsAbbr.indexOf(s);
+  if (monthIdx !== -1) {
+    const daysInMonth = new Date(2026, monthIdx + 1, 0).getDate();
+    let sundays = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      if (new Date(2026, monthIdx, d).getDay() === 0) sundays++;
+    }
+    return daysInMonth - sundays;
+  }
+  // Tuần: W22, W26... → 6 ngày công / tuần
+  if (/^W\d{1,2}$/.test(s)) return 6;
+  // Ngày: 06/22, 06/26... → 1 ngày công (trừ khi rơi đúng Chủ nhật)
+  const dayMatch = s.match(/^(\d{2})[/-](\d{2})$/);
+  if (dayMatch) {
+    const m = parseInt(dayMatch[1], 10) - 1;
+    const d = parseInt(dayMatch[2], 10);
+    return new Date(2026, m, d).getDay() === 0 ? 0 : 1;
+  }
+  // Năm: mặc định ~ tổng ngày công cả năm
+  if (/^YR/.test(s)) return 313;
+  return 26; // fallback an toàn
+}
 
 const MODEL_COLORS: Record<string, string> = {
   SO1B01:    '#3b82f6',
@@ -58,17 +101,17 @@ const T = {
   title:        { vi: '인당 생산수 & 생산 현황 (근무인력 기준)', en: 'Per Capita Output & Production (Headcount Based)', ko: '인당 생산수 & 생산 현황 (근무인력 기준)' },
   subtitle:     { vi: 'Ước lượng từ dữ liệu nhân lực (DAY 50.7% / NIGHT 49.3%)', en: 'Estimated from manpower data (DAY 50.7% / NIGHT 49.3%)', ko: '근무인원 기준 추정 (DAY 50.7% / NIGHT 49.3%)' },
   chart1Title:  { vi: '인당생산수 - Sản lượng theo đầu người', en: 'Per Capita Output', ko: '인당생산수' },
-  chart2Title:  { vi: '생산 현황 - Tình hình sản xuất', en: 'Production Status (estimated)', ko: '생산 현황' },
+  chart2Title:  { vi: '근무시간 - Tổng giờ công', en: 'Work Hours', ko: '근무시간' },
   chart3Title:  { vi: '근무 인력 현황 - Tình hình nhân lực đi làm', en: 'Manpower Trend', ko: '근무 인력 현황' },
   dayPc:        { vi: 'DAY 인당생산수', en: 'DAY Per Capita', ko: 'DAY 인당생산수' },
   nightPc:      { vi: 'NIGHT 인당생산수', en: 'NIGHT Per Capita', ko: 'NIGHT 인당생산수' },
   ttlPc:        { vi: 'TTL 인당생산수', en: 'TTL Per Capita', ko: 'TTL 인당생산수' },
   target:       { vi: 'TTL TARGET (인당생산수)', en: 'TTL TARGET', ko: 'TTL TARGET (인당생산수)' },
   mgmtTarget:   { vi: '경영목표', en: 'Mgmt Target', ko: '경영목표' },
-  dayPro:       { vi: 'DAY Pro Actual', en: 'DAY Pro Actual', ko: 'DAY Pro Actual' },
-  nightPro:     { vi: 'NIGHT Pro Actual', en: 'NIGHT Pro Actual', ko: 'NIGHT Pro Actual' },
-  ttlPro:       { vi: 'TTL Pro Actual', en: 'TTL Pro Actual', ko: 'TTL Pro Actual' },
-  targetPlan:   { vi: "TTL PRON'D PLAN", en: "TTL PRON'D PLAN", ko: "TTL PRON'D PLAN" },
+  dayPro:       { vi: 'DAY 근무시간 Work Hours', en: 'DAY Work Hours', ko: 'DAY 근무시간' },
+  nightPro:     { vi: 'NIGHT 근무시간 Work Hours', en: 'NIGHT Work Hours', ko: 'NIGHT 근무시간' },
+  ttlPro:       { vi: 'TTL 근무시간 Work Hours', en: 'TTL Work Hours', ko: 'TTL 근무시간' },
+  targetPlan:   { vi: 'TTL 기준 근무시간 Standard', en: 'TTL Standard Hours', ko: 'TTL 기준 근무시간' },
   dayMP:        { vi: 'DAY ManPower AVG', en: 'DAY ManPower AVG', ko: 'DAY ManPower AVG' },
   nightMP:      { vi: 'NIGHT ManPower AVG', en: 'NIGHT ManPower AVG', ko: 'NIGHT ManPower AVG' },
   ttlMP:        { vi: 'TTL ManPower AVG', en: 'TTL ManPower AVG', ko: 'TTL ManPower AVG' },
@@ -77,6 +120,7 @@ const T = {
   estimatedBadge: { vi: '⚠ Ước lượng', en: '⚠ Estimated', ko: '⚠ 추정값' },
   persons:      { vi: 'người', en: 'prs', ko: '명' },
   unit:         { vi: 'sp/người', en: 'pcs/cap', ko: '개/인' },
+  hoursUnit:    { vi: 'giờ', en: 'hrs', ko: '시간' },
   kpiDayPC:     { vi: 'DAY 인당생산수 TB - Sản lượng đầu người ca ngày TB', en: 'AVG DAY Per Capita', ko: 'DAY 인당생산수 평균' },
   kpiNightPC:   { vi: 'NIGHT 인당생산수 TB - Sản lượng đầu người ca đêm TB', en: 'AVG NIGHT Per Capita', ko: 'NIGHT 인당생산수 평균' },
   kpiTtlPC:     { vi: 'TTL 인당생산수 TB - Sản lượng đầu người TTL TB', en: 'AVG TTL Per Capita', ko: 'TTL 인당생산수 평균' },
@@ -140,6 +184,13 @@ interface PCTabData {
   nightPCByModelLabel: Record<string, Record<string, number>>;
   ttlPCByModelLabel: Record<string, Record<string, number>>;
   targetPCByModelLabel: Record<string, Record<string, number>>;
+  // FIX: Chart 2 đổi từ "생산 현황 ước lượng" (chỉ là headcount x hằng số, trùng
+  // hình dạng Chart 1/3) sang "근무시간 Work Hours" — ưu tiên đọc dữ liệu thật
+  // nếu Excel có Type "DAY/NIGHT/TTL 근무시간" hoặc "Work Hours", fallback tính
+  // từ nhân lực thật x giờ/ca x số ngày công (khác targetPC cố định trước đây).
+  dayWHByModelLabel: Record<string, Record<string, number>>;
+  nightWHByModelLabel: Record<string, Record<string, number>>;
+  ttlWHByModelLabel: Record<string, Record<string, number>>;
   ttlStandard: number | null;               // YR24 standard
   allLabels: { label: string; dateMs: number }[];
   activeModels: string[];                   // non-TTL models with data
@@ -153,10 +204,10 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       const typeStr = String(r.type || r.Type || '').toLowerCase();
       // FIX: nhận diện thêm "라인" (tiếng Hàn) bên cạnh "line" (EN) để không bỏ sót
       // dòng dữ liệu Line Q'TY nhập bằng tiếng Hàn.
-      return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line') || typeStr.includes('라인');
+      return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line') || typeStr.includes('라인') || typeStr.includes('근무시간') || typeStr.includes('work hour') || typeStr.includes('working hour');
     });
     if (mpRows.length === 0) {
-      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, dayMPByLabel: {}, nightMPByLabel: {}, dayMPByModelLabel: {}, nightMPByModelLabel: {}, dayPCByModelLabel: {}, nightPCByModelLabel: {}, ttlPCByModelLabel: {}, targetPCByModelLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
+      return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, dayMPByLabel: {}, nightMPByLabel: {}, dayMPByModelLabel: {}, nightMPByModelLabel: {}, dayPCByModelLabel: {}, nightPCByModelLabel: {}, ttlPCByModelLabel: {}, targetPCByModelLabel: {}, dayWHByModelLabel: {}, nightWHByModelLabel: {}, ttlWHByModelLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
     }
 
     // Standard
@@ -202,6 +253,9 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
     const nightPCGroups: Record<string, Record<string, number[]>> = {};
     const ttlPCGroups: Record<string, Record<string, number[]>> = {};
     const targetPCGroups: Record<string, Record<string, number[]>> = {};
+    const dayWHGroups: Record<string, Record<string, number[]>> = {};
+    const nightWHGroups: Record<string, Record<string, number[]>> = {};
+    const ttlWHGroups: Record<string, Record<string, number[]>> = {};
     const lineTtlGroups: Record<string, Record<string, number[]>> = {};
     const lineDayGroups: Record<string, Record<string, number[]>> = {};
     const lineNightGroups: Record<string, Record<string, number[]>> = {};
@@ -212,7 +266,18 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       const typeStr = String(r.type || r.Type || '').toLowerCase();
       if (!model || isNaN(val) || val == null) return;
 
-      if (typeStr.includes('line') || typeStr.includes('라인')) {
+      if (typeStr.includes('근무시간') || typeStr.includes('work hour') || typeStr.includes('working hour')) {
+        // Type mẫu: "DAY 근무시간", "NIGHT 근무시간", "TTL 근무시간" (hoặc "DAY Work Hours"...)
+        let target = ttlWHGroups;
+        if (typeStr.includes('day') && !typeStr.includes('holiday')) {
+          target = dayWHGroups;
+        } else if (typeStr.includes('night')) {
+          target = nightWHGroups;
+        }
+        if (!target[model]) target[model] = {};
+        if (!target[model][label]) target[model][label] = [];
+        target[model][label].push(val);
+      } else if (typeStr.includes('line') || typeStr.includes('라인')) {
         // Type mẫu: "TTL LINE Q'TY", "DAY LINE Q'TY", "NIGHT LINE Q'TY"
         // Kiểm tra DAY/NIGHT trước vì "TTL" có thể không xuất hiện tường minh
         // trên 1 số dòng — mặc định còn lại (không phải DAY/NIGHT) là TTL.
@@ -327,6 +392,30 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       });
     });
 
+    const dayWHByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(dayWHGroups).forEach(([model, lblMap]) => {
+      dayWHByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        dayWHByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const nightWHByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(nightWHGroups).forEach(([model, lblMap]) => {
+      nightWHByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        nightWHByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
+    const ttlWHByModelLabel: Record<string, Record<string, number>> = {};
+    Object.entries(ttlWHGroups).forEach(([model, lblMap]) => {
+      ttlWHByModelLabel[model] = {};
+      Object.entries(lblMap).forEach(([lbl, vals]) => {
+        ttlWHByModelLabel[model][lbl] = vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    });
+
     const lineTtlByModelLabel: Record<string, Record<string, number>> = {};
     Object.entries(lineTtlGroups).forEach(([model, lblMap]) => {
       lineTtlByModelLabel[model] = {};
@@ -427,7 +516,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       .filter(m => m !== 'TTL')
       .sort();
 
-    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, dayMPByLabel, nightMPByLabel, dayMPByModelLabel, nightMPByModelLabel, dayPCByModelLabel, nightPCByModelLabel, ttlPCByModelLabel, targetPCByModelLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
+    return { byModelLabel, pcByModelLabel, lineTtlByModelLabel, lineDayByModelLabel, lineNightByModelLabel, ttlByLabel, dayMPByLabel, nightMPByLabel, dayMPByModelLabel, nightMPByModelLabel, dayPCByModelLabel, nightPCByModelLabel, ttlPCByModelLabel, targetPCByModelLabel, dayWHByModelLabel, nightWHByModelLabel, ttlWHByModelLabel, ttlStandard, allLabels, activeModels, lastDataDateMs, lastDataLabel };
   }, [rows, dateFrom, dateTo]);
 }
 
@@ -529,8 +618,15 @@ function buildChart1(
 }
 
 /**
- * Chart 2: 생산 현황
- * X = allLabels; Y = headcount × ratio × targetPC ≈ sản lượng ước lượng
+ * Chart 2: 근무시간 (Work Hours)
+ * FIX: trước đây Chart 2 = headcount x DAY_RATIO/NIGHT_RATIO x targetPC (hằng
+ * số cố định) → luôn cùng hình dạng với Chart 1 (per capita) và Chart 3 (headcount
+ * thô), chỉ khác thang đo → nhìn 3 biểu đồ "giống hệt nhau".
+ * Nay đổi hẳn ý nghĩa: DAY/NIGHT/TTL 근무시간 = TỔNG GIỜ CÔNG thực tế của giai
+ * đoạn đó = nhân lực TB (thật, từ DAY/NIGHT ManPower AVG) x giờ chuẩn/ca x SỐ
+ * NGÀY CÔNG của giai đoạn (khác nhau theo từng tháng/tuần/ngày — xem
+ * getWorkingUnitsForLabel). Ưu tiên dữ liệu thật nếu Excel có sẵn Type
+ * "DAY/NIGHT/TTL 근무시간".
  */
 function buildChart2(
   data: PCTabData,
@@ -538,7 +634,7 @@ function buildChart2(
   textColor: string,
   gridColor: string,
   lang: 'vi'|'en'|'ko',
-  targetPC: number,
+  _targetPC: number,
   isDark: boolean,
   modelFilter: string = 'all'
 ) {
@@ -546,50 +642,78 @@ function buildChart2(
   const amberAccent   = isDark ? '#f59e0b' : '#b45309';
 
   const modelKey = modelFilter === 'all' ? 'TTL' : modelFilter.trim().toUpperCase();
-  const modelMP = data.byModelLabel[modelKey] ?? {};
+  const modelMP    = data.byModelLabel[modelKey] ?? {};
+  const dayMPMap   = data.dayMPByModelLabel[modelKey] ?? {};
+  const nightMPMap = data.nightMPByModelLabel[modelKey] ?? {};
+  const dayWHMap   = data.dayWHByModelLabel[modelKey] ?? {};
+  const nightWHMap = data.nightWHByModelLabel[modelKey] ?? {};
+  const ttlWHMap   = data.ttlWHByModelLabel[modelKey] ?? {};
 
-  const dayPro   = labels.map(l => r1((modelMP[l] ?? 0) * DAY_RATIO   * targetPC));
-  const nightPro = labels.map(l => r1((modelMP[l] ?? 0) * NIGHT_RATIO * targetPC));
-  const ttlPro   = labels.map(l => r1((modelMP[l] ?? 0) * targetPC));
-  const planLine = labels.map(l => r1((modelMP[l] ?? 0) * targetPC * 1.05)); // +5% plan
+  // Ưu tiên dữ liệu thật (từ Type "…근무시간" trong Excel); fallback = nhân lực
+  // thật (hoặc ước lượng theo tỉ lệ ca nếu chưa có DAY/NIGHT ManPower AVG) x
+  // giờ/ca x số ngày công của giai đoạn.
+  const dayWH = labels.map(l => {
+    const real = dayWHMap[l];
+    if (real != null && real > 0) return r1(real);
+    const mp = dayMPMap[l] != null && dayMPMap[l] > 0 ? dayMPMap[l] : (modelMP[l] ?? 0) * DAY_RATIO;
+    return r1(mp * HOURS_PER_SHIFT * getWorkingUnitsForLabel(l));
+  });
+  const nightWH = labels.map(l => {
+    const real = nightWHMap[l];
+    if (real != null && real > 0) return r1(real);
+    const mp = nightMPMap[l] != null && nightMPMap[l] > 0 ? nightMPMap[l] : (modelMP[l] ?? 0) * NIGHT_RATIO;
+    return r1(mp * HOURS_PER_SHIFT * getWorkingUnitsForLabel(l));
+  });
+  const ttlWH = labels.map((l, i) => {
+    const real = ttlWHMap[l];
+    if (real != null && real > 0) return r1(real);
+    return r1(dayWH[i] + nightWH[i]);
+  });
+  // Đường tham chiếu: giờ công chuẩn nếu có ttlStandard, tính theo cùng công thức
+  const stdHours = labels.map(l =>
+    data.ttlStandard ? r1(data.ttlStandard * HOURS_PER_SHIFT * getWorkingUnitsForLabel(l)) : 0
+  );
 
   const traces: any[] = [
     {
-      x: labels, y: dayPro, name: t('dayPro', lang),
+      x: labels, y: dayWH, name: t('dayPro', lang),
       type: 'bar', marker: { color: '#1565C0' },
-      text: dayPro.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
+      text: dayWH.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
       textposition: 'inside',
       textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       insidetextanchor: 'middle',
     },
     {
-      x: labels, y: nightPro, name: t('nightPro', lang),
+      x: labels, y: nightWH, name: t('nightPro', lang),
       type: 'bar', marker: { color: '#ef4444' },
-      text: nightPro.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
+      text: nightWH.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
       textposition: 'inside',
       textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       insidetextanchor: 'middle',
     },
     {
-      x: labels, y: ttlPro, name: t('ttlPro', lang),
+      x: labels, y: ttlWH, name: t('ttlPro', lang),
       type: 'scatter', mode: 'lines+markers+text',
       line: { color: tealAccent, width: 1.6, shape: 'spline', smoothing: 1 },
       marker: { color: tealAccent, size: 6 },
-      text: ttlPro.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
+      text: ttlWH.map(v => v > 0 ? (v >= 1000 ? Math.round(v/1000)+'k' : fmt1(v)) : ''),
       textposition: 'top center',
       textfont: { size: 10, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
-      hovertemplate: `<b>${t('ttlPro', lang)}</b>: %{y:,.0f}<extra></extra>`,
-    },
-    {
-      x: labels, y: planLine, name: t('targetPlan', lang),
-      type: 'scatter', mode: 'lines',
-      line: { color: amberAccent, width: 1.2, dash: 'dash', shape: 'spline', smoothing: 1 },
+      hovertemplate: `<b>${t('ttlPro', lang)}</b>: %{y:,.0f} ${t('hoursUnit', lang)}<extra></extra>`,
     },
   ];
 
-  const maxVal = Math.max(...ttlPro, ...planLine, ...dayPro, ...nightPro, 0);
-  const yRange = [0, maxVal > 0 ? maxVal * 1.15 : 10000];
+  if (data.ttlStandard) {
+    traces.push({
+      x: labels, y: stdHours, name: t('targetPlan', lang),
+      type: 'scatter', mode: 'lines',
+      line: { color: amberAccent, width: 1.2, dash: 'dash', shape: 'spline', smoothing: 1 },
+    });
+  }
+
+  const maxVal = Math.max(...ttlWH, ...stdHours, ...dayWH, ...nightWH, 0);
+  const yRange = [0, maxVal > 0 ? maxVal * 1.15 : 1000];
 
   const layout = {
     barmode: 'group',
@@ -1625,12 +1749,12 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
             <div id={ids.current.c1} style={{ height: '270px' }} />
           </div>
 
-          {/* Chart 2: 생산 현황 */}
+          {/* Chart 2: 근무시간 (Work Hours) */}
           <div className="panel">
             <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '생산 현황 - Tình hình sản xuất' : lang === 'ko' ? '생산 현황' : 'Production Status (estimated)'}</h3>
+              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '근무시간 - Tổng giờ công' : lang === 'ko' ? '근무시간' : 'Work Hours'}</h3>
               <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
-                {lang === 'vi' ? `Nhân lực x tỉ lệ ca x ${targetPC} sp/người` : lang === 'ko' ? `근무인원 x 근무비율 x ${targetPC}개/인 (추정)` : `Headcount x ratio x ${targetPC} pcs/cap`}
+                {lang === 'vi' ? `Nhân lực x ${HOURS_PER_SHIFT}h/ca x số ngày công` : lang === 'ko' ? `근무인원 x ${HOURS_PER_SHIFT}시간/교대 x 근무일수` : `Headcount x ${HOURS_PER_SHIFT}h/shift x working days`}
               </span>
             </div>
             <div id={ids.current.c2} style={{ height: '270px' }} />
