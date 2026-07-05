@@ -505,7 +505,7 @@ function useUpphData(
 // lập vì thang giá trị DAY/NIGHT/TTL khác nhau rất nhiều (TTL ~ DAY+NIGHT).
 const UPPH_PLAN_COLOR = '#f97316';   // cam — Plan/Target, đồng bộ hình tham chiếu
 const UPPH_ACTUAL_COLOR = '#2A788E'; // xanh ngọc đậm — Actual, màu theo yêu cầu người dùng
-const UPPH_RATE_COLOR = '#60a5fa';   // xanh dương nhạt — Yield (%), nổi hơn trên nền tối
+const UPPH_RATE_COLOR = '#22c55e';   // xanh lá — Yield (%), tương phản tốt ở cả theme sáng lẫn tối (EPCC upph-green-line)
 
 // 3 domain cột bằng nhau, có khoảng hở ở giữa để tách biệt 3 khối
 const UPPH_COL_DOMAINS: [number, number][] = [
@@ -518,11 +518,15 @@ function buildUpphChart(
   data: UpphData,
   chartTextColor: string,
   chartGridColor: string,
-  lang: 'vi'|'en'|'ko'
+  lang: 'vi'|'en'|'ko',
+  isDark: boolean
 ) {
   const traces: any[] = [];
   const labels = data.labels;
   const shifts: UpphShift[] = ['DAY', 'NIGHT', 'TTL'];
+  // EPCC (upph-actual-label-contrast, upph-rate-label-contrast) — số liệu trên cột Actual (teal)
+  // và số % trên đường Đạt tỷ lệ đổi theo theme: light mode = đen, dark mode = trắng
+  const actualBarTextColor = isDark ? '#ffffff' : '#000000';
   const shiftLabel: Record<UpphShift, string> = {
     DAY: t('shiftDay', lang),
     NIGHT: t('shiftNight', lang),
@@ -538,12 +542,13 @@ function buildUpphChart(
     barmode: 'group',
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { family: 'Inter, sans-serif', color: chartTextColor, size: 11 },
+    font: { family: 'Inter, sans-serif', color: chartTextColor, size: 13 },
     // EPCC (upph-match-reference) — tăng margin.t để có chỗ cho tiêu đề +
     // legend riêng của từng khối (annotation), tắt hẳn legend chung ở cuối
     // chart (showlegend:false + không set 'legend') vì hình tham chiếu KHÔNG
     // có 1 legend dùng chung — mỗi khối tự có legend nhỏ ngay dưới tiêu đề.
-    margin: { l: 15, r: 15, t: 55, b: 35 },
+    // EPCC (upph-size-up-20pct) — tăng margin.t để chứa tiêu đề/legend đã to hơn 20%
+    margin: { l: 18, r: 18, t: 66, b: 42 },
     showlegend: false,
     hovermode: 'x unified',
     annotations: [] as any[],
@@ -580,7 +585,7 @@ function buildUpphChart(
       text: planVals.map(v => v != null ? fmt1(v) : ''),
       textposition: 'inside',
       insidetextanchor: 'middle',
-      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 12, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       hovertemplate: `<b>${shiftLabel[shift]} ${t('upphTarget', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
     });
     traces.push({
@@ -590,7 +595,7 @@ function buildUpphChart(
       text: actualVals.map(v => v != null ? fmt1(v) : ''),
       textposition: 'inside',
       insidetextanchor: 'middle',
-      textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 12, color: actualBarTextColor, family: 'Arial Black, Arial, sans-serif' },
       hovertemplate: `<b>${shiftLabel[shift]} ${t('upphActual', lang)}</b><br>%{x}: %{y:.1f} ${t('upphUnit', lang)}<extra></extra>`,
     });
     if (rateVals.some(v => v != null)) {
@@ -598,10 +603,10 @@ function buildUpphChart(
         x: labels, y: rateVals, xaxis: xKey, yaxis: yRateKey,
         name: t('upphRate', lang), showlegend: false,
         type: 'scatter', mode: 'lines+markers+text', cliponaxis: false,
-        line: { color: UPPH_RATE_COLOR, width: 2.5, dash: 'solid', shape: 'spline', smoothing: 1 },
-        marker: { size: 6, color: UPPH_RATE_COLOR },
+        line: { color: UPPH_RATE_COLOR, width: 3, dash: 'solid', shape: 'spline', smoothing: 1 },
+        marker: { size: 7, color: UPPH_RATE_COLOR },
         text: rateVals.map(v => v != null ? `${fmt1(v)}%` : ''),
-        textposition: 'top center', textfont: { size: 9, color: UPPH_RATE_COLOR },
+        textposition: 'top center', textfont: { size: 11, color: actualBarTextColor },
         hovertemplate: `<b>${shiftLabel[shift]} ${t('upphRate', lang)}</b><br>%{x}: %{y:.1f}%<extra></extra>`,
       });
     }
@@ -616,7 +621,7 @@ function buildUpphChart(
       text: combinedText,
       x: (domStart + domEnd) / 2, y: 1.15, xref: 'paper', yref: 'paper',
       xanchor: 'center', yanchor: 'middle', showarrow: false,
-      font: { size: 14, color: chartTextColor },
+      font: { size: 17, color: chartTextColor },
     });
 
     const maxVal = Math.max(
@@ -628,17 +633,17 @@ function buildUpphChart(
 
     layout[xKey.replace('x', 'xaxis')] = {
       domain: [domStart, domEnd], anchor: yBarKey,
-      gridcolor: chartGridColor, tickfont: { size: 9 },
+      gridcolor: chartGridColor, tickfont: { size: 11 },
     };
     layout[yBarKey.replace('y', 'yaxis')] = {
-      anchor: xKey, gridcolor: chartGridColor, tickfont: { size: 8 },
+      anchor: xKey, gridcolor: chartGridColor, tickfont: { size: 10 },
       range: [0, barMax],
-      title: i === 0 ? { text: t('upphUnit', lang), font: { size: 9 } } : undefined,
+      title: i === 0 ? { text: t('upphUnit', lang), font: { size: 11 } } : undefined,
     };
     layout[yRateKey.replace('y', 'yaxis')] = {
-      overlaying: yBarKey, anchor: xKey, side: 'right', showgrid: false, tickfont: { size: 8 },
+      overlaying: yBarKey, anchor: xKey, side: 'right', showgrid: false, tickfont: { size: 10 },
       range: [0, 150], ticksuffix: '%',
-      title: i === activeShifts.length - 1 ? { text: t('upphRate', lang), font: { size: 9 } } : undefined,
+      title: i === activeShifts.length - 1 ? { text: t('upphRate', lang), font: { size: 11 } } : undefined,
     };
   });
 
@@ -867,7 +872,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
       const ids = chartIds.current;
       try {
         if (upphData.hasData) {
-          const upph = buildUpphChart(upphData, chartTextColor, chartGridColor, lang);
+          const upph = buildUpphChart(upphData, chartTextColor, chartGridColor, lang, isDark);
           window.Plotly.react(ids.upph, upph.traces as any, upph.layout as any, { displayModeBar: false, responsive: true });
         }
 
@@ -880,7 +885,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
     const timerId = setTimeout(draw, 0);
     return () => clearTimeout(timerId);
-  }, [data, upphData, chartTextColor, chartGridColor, lang, hasData, modelFilter, modelsToPlot, activeTab, plotlyReady]);
+  }, [data, upphData, chartTextColor, chartGridColor, lang, hasData, modelFilter, modelsToPlot, activeTab, plotlyReady, isDark]);
 
   // Toolbar Handlers
   const handleDateFromChange = (val: string) => {
@@ -1201,7 +1206,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                 </span>
               </div>
               {upphData.hasData ? (
-                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '300px' }} />
+                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '360px' }} />
               ) : (
                 <div style={{
                   minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1264,8 +1269,8 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                           fontWeight: isTtl ? 700 : 500,
                           color: getModelColor(model, ri),
                           position: 'sticky', left: 0, zIndex: 2,
-                          background: ri % 2 === 0 ? 'var(--surface-1, #1a1d2e)' : 'var(--surface-2)',
-                          boxShadow: '2px 0 4px rgba(0,0,0,0.25)',
+                          background: ri % 2 === 0 ? 'var(--surface-1)' : 'var(--surface-2)',
+                          boxShadow: '2px 0 4px rgba(0,0,0,0.12)',
                         }}>
                           {model}
                         </td>

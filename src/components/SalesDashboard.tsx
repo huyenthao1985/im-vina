@@ -754,7 +754,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
           type: 'scatter',
           mode: 'lines+markers+text',
           name: lang === 'vi' ? 'DOANH SỐ (K$)' : lang === 'en' ? 'SALES AMT (K$)' : '매출 (K$)',
-          line: { color: '#00a65a', width: 4 },
+          line: { color: '#00a65a', width: 4, shape: 'spline', smoothing: 1.1 },
           marker: { size: 8, color: '#00a65a', symbol: 'circle' },
           yaxis: 'y',
           text: ySales.map(v => v > 0 ? Math.round(v).toLocaleString('vi-VN') : ''),
@@ -767,7 +767,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
           type: 'scatter',
           mode: 'lines+markers+text',
           name: growthName,
-          line: { color: '#f39c12', width: 3, dash: 'dash' },
+          line: { color: '#f39c12', width: 3, dash: 'dash', shape: 'spline', smoothing: 1.1 },
           marker: { size: 8, color: '#f39c12', symbol: 'circle' },
           yaxis: 'y2',
           text: yGrowth.map(v => v !== null && v > 0 ? Math.round(v * 100) + '%' : ''),
@@ -780,8 +780,8 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { family: 'Plus Jakarta Sans, sans-serif', color: chartTextColor, size: 11 },
-        margin: { l: 54, r: 54, t: 10, b: 36 },
-        legend: { orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center', font: { color: chartTextColor } },
+        margin: { l: 54, r: 54, t: 45, b: 36 },
+        legend: { orientation: 'h', y: 1.32, x: 0.5, xanchor: 'center', font: { color: chartTextColor } },
         xaxis: { gridcolor: chartGridColor, tickfont: { size: 10, color: chartTextColor }, type: 'category' },
         yaxis: {
           title: { text: lang === 'vi' ? 'Xuất hàng / Doanh số' : lang === 'en' ? 'Shipment / Sales' : '출하 / 매출', font: { size: 11, color: chartTextColor } },
@@ -802,6 +802,11 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
 
       const maxGrowthUnified = Math.max(...yGrowth.filter(v => v !== null).map(Number), 1.5);
       layoutUnified.yaxis2.range = [-0.5, Math.ceil(maxGrowthUnified * 1.25 * 2) / 2];
+
+      // EPCC (unified-chart-ylabel-headroom) — thêm khoảng đệm phía trên trục Y chính
+      // để nhãn số (text) của điểm cao nhất (VD năm 2023) không bị kẹt sát mép/mất chữ
+      const maxYUnified = Math.max(...yShip, ...ySales, 1);
+      (layoutUnified.yaxis as any).range = [0, maxYUnified * 1.3];
 
       const unifiedTrendEl = document.getElementById('trendChartUnified');
       if (unifiedTrendEl) {
