@@ -110,7 +110,17 @@ export function parseManpowerDate(raw: any): Date | null {
   }
 
   // 3. Handle Day Strings like 06/22, 06/26, etc.
-  const dayMatch = s.match(/^(\d{2})[/-](\d{2})$/);
+  // FIX (day-regex-1or2-digit): trước đây regex bắt buộc ĐÚNG 2 chữ số cho cả
+  // tháng lẫn ngày (\d{2}), trong khi classifyRowDateType() (dòng ~153) lại
+  // chấp nhận 1 HOẶC 2 chữ số (\d{1,2}) cho cùng định dạng MM/DD. Hệ quả: 1 dòng
+  // ngày dạng không có số 0 đứng đầu (VD "7/1", "7/2" thay vì "07/01", "07/02")
+  // vẫn được classifyRowDateType() xếp đúng vào nhóm 'day' (nên vẫn hiển thị ở
+  // chart Ngày), nhưng hàm này lại KHÔNG parse được → rơi xuống parseToDate()
+  // (hàm parse chung, không có ngữ cảnh năm 2026 mặc định như ở đây) → có thể
+  // trả về sai tháng/ngày → dòng dữ liệu bị gộp nhầm sang label khác, làm sai
+  // số liệu ở NHIỀU ngày (không chỉ đúng 1 ngày) — đúng hiện tượng quan sát được
+  // với model SO2701/SO3560. Sửa regex cho khớp \d{1,2} như classifyRowDateType.
+  const dayMatch = s.match(/^(\d{1,2})[/-](\d{1,2})$/);
   if (dayMatch) {
     const month = parseInt(dayMatch[1], 10) - 1;
     const day = parseInt(dayMatch[2], 10);
