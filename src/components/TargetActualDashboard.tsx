@@ -362,17 +362,16 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     // Pre-scan: Identify which months/years/models have daily detail rows (e.g., date strings containing a slash '/')
     const targetMonthsWithDaily = new Set<string>();
     const actualMonthsWithDaily = new Set<string>();
-    // FIX: Set riêng cho AMT — trước đây AMT dùng chung điều kiện isTarget/isActual của QTY
-    // (chỉ check division SHIPMENT/SUB1/SUB2/OIS), nên daily-breakdown của AMT (division "AMT K$")
-    // không bao giờ được ghi nhận => dòng tổng tháng AMT không bao giờ bị loại => luôn bị cộng đôi.
-    // Dùng Set riêng (không gộp chung key với QTY) để tránh 1 model có AMT-daily nhưng không có
-    // QTY-daily lại vô tình làm mất luôn dòng tổng tháng QTY của model đó.
     const amtTargetMonthsWithDaily = new Set<string>();
     const amtActualMonthsWithDaily = new Set<string>();
     const monthsShort = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     
     rows.forEach(r => {
-      const dateVal = r.date ?? (r as any).Date ?? r.month ?? (r as any).Month;
+      const dateKey = Object.keys(r).find(k => {
+        const kl = k.trim().toLowerCase();
+        return kl === 'date' || kl === 'month';
+      });
+      const dateVal = r.date ?? (r as any).Date ?? r.month ?? (r as any).Month ?? (dateKey ? r[dateKey] : undefined);
       if (!dateVal) return;
       const dateStr = String(dateVal).trim();
       if (dateStr.includes('/')) {
@@ -394,13 +393,20 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
               }
             }
             
-            const model = String(r.model ?? (r as any).Model ?? '').trim();
-            const division = String(r.division ?? (r as any).Division ?? '').trim().toUpperCase();
-            const typeStr = String(r.type ?? (r as any).Type ?? r.type1 ?? (r as any).Type1 ?? '').trim().toLowerCase();
+            const modelKey = Object.keys(r).find(k => k.trim().toLowerCase() === 'model');
+            const model = String(modelKey ? r[modelKey] : (r.model ?? (r as any).Model ?? '')).trim();
+            
+            const divisionKey = Object.keys(r).find(k => k.trim().toLowerCase() === 'division');
+            const division = String(divisionKey ? r[divisionKey] : (r.division ?? (r as any).Division ?? '')).trim().toUpperCase();
+            
+            const typeKey = Object.keys(r).find(k => {
+              const kl = k.trim().toLowerCase();
+              return kl === 'type' || kl === 'type1' || kl === 'phanloai' || kl === '구분';
+            });
+            const typeStr = String(typeKey ? r[typeKey] : (r.type ?? (r as any).Type ?? r.type1 ?? (r as any).Type1 ?? '')).trim().toLowerCase();
             const normType = normalizeOisType(typeStr);
             const isAmtDivision = division.startsWith('AMT');
             
-            // Check if it's a target row or actual row
             const isTarget = (division === 'SHIPMENT' || division === 'SUB1' || division === 'SUB2' || division === 'OIS') && normType === 'plan';
             const isActual = (division === 'OIS' && normType === 'final_sales') || 
                              ((division === 'SHIPMENT' || division === 'SUB1' || division === 'SUB2') && normType === 'actual');
@@ -736,6 +742,21 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       const monthNum = parsedDate.getMonth() + 1;
       const dayOfMonth = parsedDate.getDate();
       const week = getWeekOfMonth(year, monthNum, dayOfMonth);
+
+      // Skip this monthly summary row if daily rows are already present for the same month/year/model
+      const MONTHS_SET = new Set(monthsShort);
+      const dateRawVal = mapMonth ? r[mapMonth] : undefined;
+      const dateRawStr = String(dateRawVal ?? '').trim().toUpperCase();
+      if (MONTHS_SET.has(dateRawStr)) {
+        const targetKey = `${dateRawStr}|${year}|${model}`;
+        const actualKey = `${dateRawStr}|${year}|${model}`;
+        if (isTarget && (targetMonthsWithDaily.has(targetKey) || amtTargetMonthsWithDaily.has(targetKey))) {
+          return null;
+        }
+        if (isActual && (actualMonthsWithDaily.has(actualKey) || amtActualMonthsWithDaily.has(actualKey))) {
+          return null;
+        }
+      }
 
       return {
         model,

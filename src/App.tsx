@@ -391,7 +391,23 @@ export default function App() {
                         // được chọn hoàn toàn tình cờ, không phản ánh dữ liệu thật.
                         // Fix: sắp xếp theo `created_at` (thời điểm ghi thật) để
                         // "5000 dòng mới nhất" đúng nghĩa như tên gọi.
+                        //
+                        // ── FIX ROOT CAUSE "Mục 2 sai số liệu, đổi số mỗi lần F5" ──
+                        // `created_at` KHÔNG duy nhất: dữ liệu được nạp theo lô lớn
+                        // (bulk insert) nên rất nhiều dòng trùng y hệt created_at tới
+                        // từng mili-giây. Khi order() chỉ dựa vào 1 cột có giá trị
+                        // trùng lặp rồi phân trang bằng .range(), Postgres KHÔNG đảm
+                        // bảo thứ tự ổn định giữa các lần query khác nhau cho các
+                        // dòng có giá trị bằng nhau (tie) — nghĩa là trang 2, 3... có
+                        // thể lấy trúng lại dòng đã có ở trang 1 (đếm 2 lần) và bỏ sót
+                        // dòng khác. Vì bucket có hàng chục nghìn dòng cùng created_at,
+                        // tỉ lệ trùng/sót đủ lớn để tổng Target/Actual lệch hẳn và đổi
+                        // khác nhau mỗi lần tải lại trang (F5).
+                        // Fix: thêm khóa phụ DUY NHẤT (`id`) vào order() để có thứ tự
+                        // tuyệt đối, ổn định qua mọi lần gọi — cùng 1 tập dữ liệu thì
+                        // luôn phân trang ra đúng 1 kết quả, không lặp/không sót.
                         .order('created_at', { ascending: false })
+                        .order('id', { ascending: true })
                         .range(from, from + PAGE_SIZE - 1)
                     )
                   );
@@ -411,6 +427,7 @@ export default function App() {
                   bucketData = bucketData.concat(
                     data.map((d: any) => ({
                       ...(d.payload && typeof d.payload === 'object' ? d.payload : d),
+                      id: d.id,
                       source_tag: d.source_tag,
                       date: d.date ?? (d.payload?.date) ?? d.month ?? (d.payload?.month),
                     }))
@@ -418,6 +435,33 @@ export default function App() {
                 }
               }
             }
+
+            // ── Lớp bảo vệ thứ 2 (defensive dedup) ─────────────────────────
+            // Dù đã sửa order() ở trên để phân trang ổn định, vẫn giữ bước
+            // khử trùng lặp theo `id` (khóa duy nhất thật của bảng) trước khi
+            // trả dữ liệu ra ngoài. Vô hại với dữ liệu đã đúng (mỗi id chỉ có
+            // 1 dòng nên dedup không đổi gì), nhưng chặn đứng việc 1 dòng bị
+            // đếm 2 lần nếu tương lai còn phát sinh tình huống trùng tương tự.
+            if (bucketData.length > 0) {
+              const seen = new Set<string>();
+              const deduped: any[] = [];
+              for (const row of bucketData) {
+                const key = row?.id != null ? String(row.id) : null;
+                if (key === null) {
+                  // Không có id (dữ liệu cũ/local) — giữ nguyên, không dedup.
+                  deduped.push(row);
+                  continue;
+                }
+                if (seen.has(key)) continue;
+                seen.add(key);
+                deduped.push(row);
+              }
+              if (deduped.length !== bucketData.length) {
+                console.warn(`Bucket [${kind}] phát hiện ${bucketData.length - deduped.length} dòng trùng id do phân trang — đã loại bỏ.`);
+              }
+              bucketData = deduped;
+            }
+
             return bucketData;
           }
 
