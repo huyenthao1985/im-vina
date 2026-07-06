@@ -170,6 +170,54 @@ function getPeriodLabel(d: Date, granularity: 'day' | 'week' | 'month' | 'year')
   }
 }
 
+// EPCC (chart-daily-zero-dedupe) — fix lỗi Chart "Nhân lực hàng ngày (TTL)" hiển thị
+// số liệu "nhảy"/tụt đột ngột ~50% tại 1 số label (VD 06/30 khi xem Ngày, W21-W23
+// khi xem Tuần). Root cause: nếu 1 label (model+date) vô tình có >1 dòng dữ liệu do
+// trùng/đồng bộ lại (VD 1 dòng giá trị thật + 1 dòng giá trị 0/placeholder), trung
+// bình cộng TRỰC TIẾP trên mảng gốc sẽ bị kéo tụt gần một nửa — đúng hiện tượng quan
+// sát được (5 model độc lập cùng tụt đúng ~50% trong đúng 1 label).
+// Đây là CÙNG lớp lỗi đã được PerCapitaTab.tsx xử lý bằng avgDedup() (xem comment
+// "percapita-dedupe-avg" ở file đó) nhưng chưa được áp dụng ở hook này.
+// Cách xử lý (thận trọng, KHÔNG "vá câm"):
+//   1. Dedupe giá trị TRÙNG TUYỆT ĐỐI trước (giữ nguyên avgDedup pattern).
+//   2. Nếu sau dedupe vẫn còn nhiều giá trị KHÁC NHAU cho cùng 1 label, và có
+//      ít nhất 1 giá trị > 0 lẫn với giá trị 0 — loại 0 khỏi trung bình (ngày
+//      nghỉ/model chưa hoạt động thật thường KHÔNG có dòng dữ liệu nào, không
+//      phải 1 dòng giá trị 0 — nên 0 lẫn giữa các giá trị dương nhiều khả năng
+//      là dòng lỗi/trùng/placeholder).
+//   3. LUÔN console.warn để người dùng đối chiếu lại Excel/Supabase gốc cho
+//      đúng model/label này — phòng trường hợp giả thiết trên sai (VD model
+//      thật sự chỉ làm nửa ca hôm đó và 0 là số liệu thật).
+function averageGroupValues(vals: number[], model: string, label: string): number {
+  const unique = Array.from(new Set(vals));
+  if (unique.length > 1) {
+    const hasZero = unique.includes(0);
+    const hasPositive = unique.some(v => v > 0);
+    if (hasZero && hasPositive) {
+      const withoutZero = unique.filter(v => v > 0);
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[ManpowerDashboard][chart-daily-zero-dedupe] model="${model}" label="${label}": ` +
+        `phát hiện nhiều dòng giá trị cho cùng model+label, gồm cả 0 lẫn giá trị dương ` +
+        `— giá trị gốc = [${vals.join(', ')}]. Đã LOẠI 0 khỏi trung bình (nghi dòng lỗi/` +
+        `trùng/placeholder). Vui lòng đối chiếu lại Excel/Supabase gốc cho đúng model/` +
+        `label này để xác nhận — nếu 0 là số liệu THẬT (model nghỉ nửa ca...), cần điều ` +
+        `chỉnh lại logic này.`
+      );
+      return withoutZero.reduce((a, b) => a + b, 0) / withoutZero.length;
+    }
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[ManpowerDashboard][chart-daily-zero-dedupe] model="${model}" label="${label}" ` +
+      `có nhiều dòng giá trị KHÁC NHAU (không phải trùng lặp thuần tuý): ` +
+      `[${unique.join(', ')}] — đang lấy trung bình các giá trị này. Nếu đây là dữ ` +
+      `liệu trùng ngoài ý muốn (không phải nhiều ca/nhiều nguồn hợp lệ), cần rà lại ` +
+      `nguồn dữ liệu gốc.`
+    );
+  }
+  return unique.reduce((a, b) => a + b, 0) / unique.length;
+}
+
 // ─── Data hook ────────────────────────────────────────────────────────────────
 interface ManpowerData {
   byModelPeriod: Record<string, Record<string, number | null>>;  // model → period → avg
@@ -295,8 +343,10 @@ function useManpowerData(
       byModelPeriod[model] = {};
       Object.keys(groups[model]).forEach(label => {
         const vals = groups[model][label];
-        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-        byModelPeriod[model][label] = avg;
+        // FIX (chart-daily-zero-dedupe): thay average thẳng bằng averageGroupValues()
+        // — dedupe trùng tuyệt đối + loại 0 nghi trùng/placeholder, có console.warn
+        // để đối chiếu. Xem comment chi tiết tại định nghĩa hàm phía trên.
+        byModelPeriod[model][label] = averageGroupValues(vals, model, label);
       });
     });
 
