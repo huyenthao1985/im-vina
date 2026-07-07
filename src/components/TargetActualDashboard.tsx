@@ -2465,7 +2465,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             </div>
           ) : (
             <div className="table-container" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <div className="table-scroll" style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, padding: '0 15px 15px 15px' }}>
+              <div className="table-scroll" style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, minHeight: 0, padding: '0 15px 15px 15px' }}>
                 <table className="stat-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                     {/* Group header row */}
@@ -2626,7 +2626,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
               </div>
 
               {/* Pagination bar */}
-              <div className="pagination-bar" style={{ padding: '10px 15px', background: 'var(--surface)', borderTop: '1px solid var(--border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+              <div className="pagination-bar" style={{ padding: '10px 15px', background: 'var(--surface)', borderTop: '1px solid var(--border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', flexShrink: 0 }}>
                 <div className="pagination-info">
                   {lang === 'vi' 
                     ? `Hiển thị ${processedRows.length > 0 ? (safePage - 1) * pageSize + 1 : 0}-${Math.min(safePage * pageSize, processedRows.length)} / ${processedRows.length} dòng`
