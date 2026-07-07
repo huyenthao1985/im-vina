@@ -233,7 +233,36 @@ export default function App() {
   const hasHydratedRef = useRef(false);
   // Trạng thái đồng bộ Supabase khi upload thủ công — có thể dùng để hiện
   // badge "Đang đồng bộ..." / "Đã lên Cloud" / "Lỗi đồng bộ" trên UI nếu cần.
-  const [, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  // EPCC (sync-progress-visibility) - FIX ROOT CAUSE "mat du lieu sau khi bam F5":
+  // gia tri syncStatus truoc day bi BO QUA hoan toan luc doc (`[, setSyncStatus]`)
+  // -- khong co bat ky UI nao hien thi dang dong bo. Ket hop voi viec
+  // syncBucketToSupabase() duoc goi KHONG await trong parseSheet (man hinh
+  // chuyen sang dashboard NGAY LAP TUC du qua trinh upload len Supabase van
+  // dang chay ngam), nguoi dung khong co cach nao biet minh dang upload do
+  // (voi file lon ~750K dong, can hang tram request 1000-dong/lo) -- ho tu
+  // nhien F5 vi tuong da xong, khien trinh duyet HUY NGANG cac request dang
+  // bay, chi con lai 1 phan nho du lieu da kip ghi len Supabase (giai thich
+  // vi sao so dong Manpower tut dan khong theo quy luat: 62895 -> 51000 ->
+  // 22000 -> 11000 -- moi lan tuy F5 som/muon khac nhau ma dung lai o cho khac).
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [syncProgress, setSyncProgress] = useState<{ bucket: string; done: number; total: number } | null>(null);
+
+  // EPCC (sync-progress-visibility) — chặn người dùng vô tình F5/đóng tab
+  // TRONG LÚC đang đồng bộ dở lên Supabase — đây chính là hành động đã làm
+  // mất dữ liệu ở các lần trước (browser huỷ ngang mọi request đang bay khi
+  // điều hướng/tải lại trang). Trình duyệt sẽ hiện hộp thoại xác nhận gốc
+  // ("Các thay đổi bạn thực hiện có thể không được lưu") nếu syncStatus vẫn
+  // là 'syncing' khi người dùng thử rời trang.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (syncStatus === 'syncing') {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [syncStatus]);
 
   // Cờ loading cho lần tải dữ liệu đầu tiên từ Supabase/cache. Trong lúc
   // headers vẫn còn rỗng, dashboardMode sẽ mặc định rơi vào 'marketing' —
@@ -766,6 +795,7 @@ export default function App() {
       // vô tình trỏ nhầm vào DB thật...), dữ liệu trong bảng KHÔNG BAO GIỜ
       // bị nhân bản nữa — chỉ được ghi đè bằng giá trị mới nhất.
       const CHUNK_SIZE = 1000;
+      setSyncProgress({ bucket: bucketTag, done: 0, total: dedupedRows.length });
       for (let i = 0; i < dedupedRows.length; i += CHUNK_SIZE) {
         const chunk = dedupedRows.slice(i, i + CHUNK_SIZE);
         let upsertError: any = null;
@@ -778,6 +808,7 @@ export default function App() {
           console.warn(`Attempt ${attempt} failed for chunk at ${i}:`, upsertError.message);
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
+        setSyncProgress({ bucket: bucketTag, done: Math.min(i + chunk.length, dedupedRows.length), total: dedupedRows.length });
         if (upsertError) {
           console.error(`Supabase upsert error (${bucketTag}) tại lô dòng ${i}:`, upsertError);
           alert(
@@ -820,6 +851,7 @@ export default function App() {
       setSyncStatus('error');
     } finally {
       syncInFlightRef.current.delete(bucketTag);
+      setSyncProgress(null);
     }
   }, []);
 
@@ -1013,6 +1045,23 @@ export default function App() {
   return (
     <>
       <div className="bg-aura" />
+
+      {/* EPCC (sync-progress-visibility) — banner cố định, luôn nổi trên
+          cùng, hiển thị khi đang đồng bộ dữ liệu lớn lên Supabase. Mục đích
+          duy nhất: ngăn người dùng vô tình F5/đóng tab giữa chừng — hành
+          động đã từng làm mất phần lớn dữ liệu Manpower nhiều lần liên tiếp
+          (mỗi lần dừng ở một điểm khác nhau tuỳ lúc người dùng thao tác). */}
+      {syncProgress && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 99999,
+          background: '#b45309', color: '#fff', textAlign: 'center',
+          padding: '8px 16px', fontSize: '13px', fontWeight: 600,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+        }}>
+          ⏳ Đang đồng bộ dữ liệu ({syncProgress.bucket}) lên Cloud: {syncProgress.done.toLocaleString('vi-VN')}/{syncProgress.total.toLocaleString('vi-VN')} dòng —
+          {' '}VUI LÒNG KHÔNG tải lại (F5) hoặc đóng tab cho đến khi hoàn tất, nếu không dữ liệu sẽ bị mất dở.
+        </div>
+      )}
 
       {screen === 'dashboard' ? (
         <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
