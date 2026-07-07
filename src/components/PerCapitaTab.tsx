@@ -768,7 +768,12 @@ function buildChart1(
       line: { color: '#f59e0b', width: 1.6, dash: 'dot', shape: 'spline', smoothing: 1 },
       marker: { color: '#f59e0b', size: 5 },
       text: targetVals.map(v => v > 0 ? fmt1(v) : ''),
-      textposition: 'top center',
+      // EPCC (chart1-target-label-below) — đường TTL 인당생산수 (teal) và đường
+      // TTL TARGET (vàng, nét chấm) trước đây CÙNG để nhãn số 'top center' nên
+      // đè số lên nhau khi 2 đường ở gần nhau (đúng vùng khoanh đỏ người dùng
+      // gửi). Chuyển nhãn đường vàng xuống 'bottom center' — đường teal vẫn
+      // hiện số ở trên, đường vàng hiện số ở dưới, không còn chồng chữ.
+      textposition: 'bottom center',
       textfont: { size: 9, color: '#f59e0b', family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
       hovertemplate: `<b>${t('target', lang)}</b>: %{y}<extra></extra>`,
@@ -898,7 +903,14 @@ function buildChart2(
       marker: { color: tealAccent, size: 6 },
       text: ttlCost.map(v => v !== 0 ? fmt1(v) : ''),
       textposition: 'top center',
-      textfont: { size: 10, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
+      // EPCC (chart2-negative-red-label) — số dương giữ nguyên màu teal hiện tại;
+      // số âm chuyển sang đỏ để phân biệt nhanh tháng lỗ/tiết kiệm mà không cần
+      // nhìn dấu trừ (theo yêu cầu người dùng, khoanh đỏ các điểm âm trên chart).
+      textfont: {
+        size: 10,
+        color: ttlCost.map(v => v < 0 ? '#ef4444' : tealAccent),
+        family: 'Arial Black, Arial, sans-serif',
+      },
       cliponaxis: false,
       hovertemplate: `<b>${t('ttlLossCost', lang)}</b>: %{y}<extra></extra>`,
     },
