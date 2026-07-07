@@ -2651,6 +2651,42 @@ select {
 }
 
 /* ================================================================
+   FIX: bảng "Chi tiết Sản lượng & Doanh số" (TargetActualDashboard,
+   tab "DOANH SỐ & SẢN LƯỢNG") chỉ hiện được vài dòng rồi để trống
+   khoảng lớn phía dưới, dù bên trong đã dùng flex:1 để giãn hết cỡ.
+
+   NGUYÊN NHÂN GỐC (xác nhận từ chính file này):
+   #root, .app-layout, body chỉ dùng min-height:100vh (SÀN tối thiểu,
+   không phải chiều cao thật cố định), và .app-content không có bất
+   kỳ khai báo height nào. Khi nội dung bên trong ngắn hơn 1 màn hình,
+   các box này CÓ THỂ đúng bằng 100vh, nhưng vì không phải "chiều cao
+   thật/definite" theo đúng nghĩa CSS, phần tử con dùng height:100%
+   bên trong (TargetActualDashboard) không có gì chắc chắn để bám vào
+   → co lại theo nội dung thay vì giãn hết viewport, để lộ nền trang
+   trắng phía dưới đúng như ảnh chụp bị khoanh đỏ.
+
+   CÁCH XỬ LÝ: ép cả 3 lớp cha (#root, .app-layout, .app-content)
+   thành CHIỀU CAO THẬT 100dvh + overflow:hidden — nhưng CHỈ khi có
+   mặt .second-dashboard bên trong (dùng :has()), để KHÔNG ảnh hưởng
+   hành vi cuộn trang hiện tại của Mục 1 (Sales), Mục 3 (Manpower),
+   hay màn hình Upload/Placeholder — những nơi vẫn cần cuộn toàn
+   trang bình thường.
+   ================================================================ */
+#root:has(.second-dashboard),
+.app-layout:has(.second-dashboard) {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+}
+.app-content:has(> .second-dashboard) {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* ================================================================
    LIGHT MODE CONTRAST FIX
    Vấn đề: --text-2 = #8580aa (tím nhạt) tương phản thấp trên nền trắng
    Giải pháp: Override tất cả selector dùng --text-2 sang --text-1 / --text-0

@@ -1015,7 +1015,28 @@ export default function App() {
             lang={lang}
           />
           
-          <main className="app-content" style={{ position: 'relative' }}>
+          <main
+            className="app-content"
+            style={{
+              position: 'relative',
+              /* FIX: bảng "DOANH SỐ & SẢN LƯỢNG" trong TargetActualDashboard
+                 chỉ hiện được vài dòng rồi để trống khoảng lớn phía dưới,
+                 dù đã set flex:1 bên trong. Nguyên nhân: .app-content (cha
+                 trực tiếp) không có chiều cao THẬT nào để flex:1 bên trong
+                 tính toán dựa vào — nên nó co lại theo nội dung (auto) thay
+                 vì giãn hết viewport, để lộ nền trắng/nền app phía dưới.
+                 Chỉ ép height:100vh khi đang ở Mục Target/Actual (không đụng
+                 tới Mục 1/Manpower/Placeholder để tránh ảnh hưởng hành vi
+                 cuộn trang hiện có của các mục đó). */
+              ...(activeViewId === 'target_actual' ? {
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100vh',
+                overflow: 'hidden',
+                boxSizing: 'border-box',
+              } : {}),
+            }}
+          >
 
           {/* ── Global header bar: Lang + Theme ─────────────────────────────────
               LỊCH SỬ FIX:

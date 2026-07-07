@@ -133,6 +133,34 @@ function t(key: keyof typeof T, lang: 'vi'|'en'|'ko') {
   return (T[key] as any)[lang] ?? (T[key] as any)['vi'];
 }
 
+// EPCC (chart2-loss-cost-vi-keywords) — FIX lỗi Chart 2 (인력 유실 비용 / Chi phí
+// hao hụt nhân lực) trống toàn bộ: bộ nhận diện Type trước đây CHỈ khớp từ khóa
+// tiếng Hàn ("유실") hoặc tiếng Anh ("loss"+"cost"), bỏ sót hoàn toàn trường hợp
+// Excel/Supabase nhập Type bằng TIẾNG VIỆT (vd "DAY Chi phí hao hụt nhân lực",
+// "NIGHT hao hụt nhân lực"...) — vốn là ngôn ngữ hiển thị chính của chart này
+// (xem chart2Title/chart2Subtitle ở trên). Khi Type không khớp bất kỳ từ khóa
+// nào, dòng dữ liệu bị loại NGAY TỪ bước lọc mpRows đầu tiên → 3 map
+// dayLossCostByModelLabel/nightLossCostByModelLabel/ttlLossCostByModelLabel
+// rỗng cho MỌI model → buildChart2 luôn ra toàn số 0 (đúng như ảnh lỗi: trục Y
+// chỉ chạy 0-10, không có cột/đường nào). stripDiacritics giúp so khớp không
+// phụ thuộc dấu tiếng Việt (hao hụt / hao hut đều nhận ra như nhau).
+function stripDiacritics(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd');
+}
+function isLossCostType(typeStrLower: string): boolean {
+  if (typeStrLower.includes('유실') || typeStrLower.includes('loss cost') ||
+      (typeStrLower.includes('loss') && typeStrLower.includes('cost'))) {
+    return true;
+  }
+  const n = stripDiacritics(typeStrLower);
+  return n.includes('hao hut') || n.includes('thieu hut') ||
+         n.includes('ton that nhan luc') || n.includes('chi phi hao hut') ||
+         n.includes('hut nhan luc');
+}
+
 function r1(n: number | null | undefined): number {
   if (n == null || isNaN(n as number)) return 0;
   return Math.round((n as number) * 10) / 10;
@@ -230,7 +258,10 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
       // dòng dữ liệu Line Q'TY nhập bằng tiếng Hàn.
       // EPCC (chart2-loss-cost) — thêm nhận diện Type "DAY/NIGHT/TTL 인력 유실 비용"
       // (Labor Loss Cost) — nguồn dữ liệu mới thay thế cho LINE Q'TY ở Chart 2.
-      return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line') || typeStr.includes('라인') || typeStr.includes('근무시간') || typeStr.includes('work hour') || typeStr.includes('working hour') || typeStr.includes('유실') || typeStr.includes('loss cost') || (typeStr.includes('loss') && typeStr.includes('cost'));
+      // EPCC (chart2-loss-cost-vi-keywords) — dùng isLossCostType() thay vì check
+      // '유실'/'loss'+'cost' trực tiếp, để nhận diện thêm Type tiếng Việt
+      // ("Chi phí hao hụt nhân lực"...) — nguyên nhân chart bị trống hoàn toàn.
+      return typeStr.includes('manpower') || typeStr.includes('인당생산수') || typeStr.includes('line') || typeStr.includes('라인') || typeStr.includes('근무시간') || typeStr.includes('work hour') || typeStr.includes('working hour') || isLossCostType(typeStr);
     });
     if (mpRows.length === 0) {
       return { byModelLabel: {}, pcByModelLabel: {}, lineTtlByModelLabel: {}, lineDayByModelLabel: {}, lineNightByModelLabel: {}, ttlByLabel: {}, dayMPByLabel: {}, nightMPByLabel: {}, dayMPByModelLabel: {}, nightMPByModelLabel: {}, dayPCByModelLabel: {}, nightPCByModelLabel: {}, ttlPCByModelLabel: {}, targetPCByModelLabel: {}, mgmtGoalPCByModelLabel: {}, dayWHByModelLabel: {}, nightWHByModelLabel: {}, ttlWHByModelLabel: {}, dayLossCostByModelLabel: {}, nightLossCostByModelLabel: {}, ttlLossCostByModelLabel: {}, ttlStandard: null, allLabels: [], activeModels: [], lastDataDateMs: null, lastDataLabel: null };
@@ -308,10 +339,12 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
         if (!target[model]) target[model] = {};
         if (!target[model][label]) target[model][label] = [];
         target[model][label].push(val);
-      } else if (typeStr.includes('유실') || typeStr.includes('loss cost') || (typeStr.includes('loss') && typeStr.includes('cost'))) {
+      } else if (isLossCostType(typeStr)) {
         // EPCC (chart2-loss-cost) — Type mẫu: "DAY 인력 유실 비용", "NIGHT 인력 유실 비용",
         // "TTL 인력 유실 비용" (Chi phí hao hụt nhân lực theo Ca). Cùng quy tắc phân loại
         // DAY/NIGHT/TTL như 근무시간 / LINE Q'TY ở trên.
+        // EPCC (chart2-loss-cost-vi-keywords) — isLossCostType() nay cũng nhận
+        // diện Type thuần tiếng Việt ("DAY Chi phí hao hụt nhân lực"...).
         let target = ttlLossCostGroups;
         if (typeStr.includes('day') && !typeStr.includes('holiday')) {
           target = dayLossCostGroups;
@@ -586,8 +619,21 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
     // đúng vì nó quét qua TẤT CẢ model. Áp dụng lại đúng pattern fallback đã dùng
     // cho byModelLabel/dayMPByModelLabel/nightMPByModelLabel ở trên: nếu chưa có
     // model "TTL" tường minh, cộng dồn từ các model khác cho từng label.
+    // EPCC (chart2-line-qty-ttl-fallback) — FIX lỗi Chart 2 (LINE Q'TY) không hiện
+    // dữ liệu: Excel thường nhập "DAY/NIGHT/TTL LINE Q'TY" theo TỪNG MODEL (SO1B01,
+    // SO1C2EF...) chứ không có sẵn dòng model = "TTL" tổng hợp. buildChart2 lại chỉ
+    // đọc đúng modelKey "TTL" nên luôn ra toàn số 0/rỗng — dù Chart 4 vẫn hiển thị
+    // đúng vì nó quét qua TẤT CẢ model. Áp dụng lại đúng pattern fallback đã dùng
+    // cho byModelLabel/dayMPByModelLabel/nightMPByModelLabel ở trên: nếu chưa có
+    // model "TTL" tường minh, cộng dồn từ các model khác cho từng label.
+    // EPCC (chart2-negative-values) — thêm tham số allowNegative: LINE Q'TY/
+    // headcount không bao giờ âm nên giữ nguyên lọc `v > 0` (bỏ qua rác/placeholder
+    // âm nếu có); nhưng Chi phí hao hụt nhân lực (LossCost) có thể âm hợp lệ
+    // (tháng tiết kiệm được chi phí so với kế hoạch) — nếu chỉ cộng số dương sẽ
+    // làm mất hẳn phần đóng góp âm, ra tổng TTL sai lệch hẳn so với thực tế.
     const sumFallbackTTL = (
-      target: Record<string, Record<string, number>>
+      target: Record<string, Record<string, number>>,
+      allowNegative: boolean = false
     ) => {
       if (target['TTL']) return; // đã có dữ liệu TTL thật, không ghi đè
       target['TTL'] = {};
@@ -596,7 +642,7 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
         Object.keys(target).forEach(m => {
           if (m !== 'TTL') {
             const v = target[m][x.label];
-            if (v != null && v > 0) { sum += v; hasValue = true; }
+            if (v != null && (allowNegative || v > 0)) { sum += v; hasValue = true; }
           }
         });
         if (hasValue) target['TTL'][x.label] = sum;
@@ -605,9 +651,9 @@ function usePCTabData(rows: DataRow[], dateFrom: string, dateTo: string): PCTabD
     sumFallbackTTL(lineTtlByModelLabel);
     sumFallbackTTL(lineDayByModelLabel);
     sumFallbackTTL(lineNightByModelLabel);
-    sumFallbackTTL(dayLossCostByModelLabel);
-    sumFallbackTTL(nightLossCostByModelLabel);
-    sumFallbackTTL(ttlLossCostByModelLabel);
+    sumFallbackTTL(dayLossCostByModelLabel, true);
+    sumFallbackTTL(nightLossCostByModelLabel, true);
+    sumFallbackTTL(ttlLossCostByModelLabel, true);
 
     // ─── Trim các label "kế tiếp" chưa có dữ liệu thật ─────────────────────
     // File Excel nguồn (Test_3) dựng khung sẵn cho cả năm → các ngày/tuần/
@@ -814,16 +860,23 @@ function buildChart2(
 
   const dayCost = labels.map(l => r1(dayCostMap[l] ?? 0));
   const nightCost = labels.map(l => r1(nightCostMap[l] ?? 0));
+  // EPCC (chart2-negative-values) — FIX: Chi phí hao hụt nhân lực (인력 유실 비용)
+  // là số liệu THỰC TẾ có thể ÂM (tháng nào hao hụt ít/âm nghĩa là tiết kiệm được
+  // chi phí so với kế hoạch) — KHÔNG phải lỗi hay thiếu dữ liệu. Trước đây điều
+  // kiện `real > 0` coi TTL âm là "không có dữ liệu thật" rồi tự ý thay bằng
+  // dayCost+nightCost (thường ra kết quả khác hẳn, sai lệch số liệu thật) — chỉ
+  // nên fallback khi ô đó THỰC SỰ không có dữ liệu (null/undefined), không phải
+  // khi có dữ liệu thật nhưng là số âm.
   const ttlCost = labels.map((l, i) => {
     const real = ttlCostMap[l];
-    return r1(real != null && real > 0 ? real : dayCost[i] + nightCost[i]);
+    return r1(real != null ? real : dayCost[i] + nightCost[i]);
   });
 
   const traces: any[] = [
     {
       x: labels, y: dayCost, name: t('dayLossCost', lang),
       type: 'bar', marker: { color: '#1565C0' },
-      text: dayCost.map(v => v > 0 ? fmt1(v) : ''),
+      text: dayCost.map(v => v !== 0 ? fmt1(v) : ''),
       textposition: 'inside',
       textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       insidetextanchor: 'middle',
@@ -832,7 +885,7 @@ function buildChart2(
     {
       x: labels, y: nightCost, name: t('nightLossCost', lang),
       type: 'bar', marker: { color: '#ef4444' },
-      text: nightCost.map(v => v > 0 ? fmt1(v) : ''),
+      text: nightCost.map(v => v !== 0 ? fmt1(v) : ''),
       textposition: 'inside',
       textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
       insidetextanchor: 'middle',
@@ -843,7 +896,7 @@ function buildChart2(
       type: 'scatter', mode: 'lines+markers+text',
       line: { color: tealAccent, width: 1.6, shape: 'spline', smoothing: 1 },
       marker: { color: tealAccent, size: 6 },
-      text: ttlCost.map(v => v > 0 ? fmt1(v) : ''),
+      text: ttlCost.map(v => v !== 0 ? fmt1(v) : ''),
       textposition: 'top center',
       textfont: { size: 10, color: tealAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
@@ -851,8 +904,19 @@ function buildChart2(
     },
   ];
 
-  const maxVal = Math.max(...ttlCost, ...dayCost, ...nightCost, 0);
-  const yRange = [0, maxVal > 0 ? maxVal * 1.15 : 10];
+  // EPCC (chart2-negative-values) — FIX: trục Y trước đây LUÔN neo cứng ở 0
+  // (`range: [0, ...]`) — hợp lý cho số liệu chỉ dương (headcount, sản lượng…)
+  // nhưng với Chi phí hao hụt nhân lực (có thể âm/dương xen kẽ theo tháng),
+  // ép sàn = 0 khiến MỌI cột/đường âm bị đẩy ra ngoài vùng nhìn thấy của chart
+  // → nhìn như "mất dữ liệu" dù số liệu vẫn có, chỉ là âm. Nay tính range theo
+  // CẢ min lẫn max thực tế của 3 chuỗi dữ liệu, có đệm 15% mỗi đầu, và chỉ giữ
+  // sàn = 0 khi toàn bộ dữ liệu không âm (giữ nguyên hành vi cũ cho các chart
+  // number luôn dương khác nếu tái sử dụng hàm này).
+  const allVals = [...dayCost, ...nightCost, ...ttlCost];
+  const maxVal = Math.max(...allVals, 0);
+  const minVal = Math.min(...allVals, 0);
+  const pad = Math.max(Math.abs(maxVal), Math.abs(minVal)) * 0.15 || 10;
+  const yRange = [minVal < 0 ? minVal - pad : 0, maxVal > 0 ? maxVal + pad : 10];
 
   const layout = {
     barmode: 'group',
@@ -862,7 +926,7 @@ function buildChart2(
     margin: { t: 44, r: 12, b: 28, l: 56 },
     legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 10 } },
     xaxis: { tickfont: { size: 11, color: textColor }, gridcolor: gridColor },
-    yaxis: { gridcolor: gridColor, tickfont: { size: 10 }, range: yRange },
+    yaxis: { gridcolor: gridColor, tickfont: { size: 10 }, range: yRange, zeroline: true, zerolinecolor: gridColor, zerolinewidth: 1.5 },
     hoverlabel: { font: { size: 10 } },
   };
   return { traces, layout };
@@ -1539,6 +1603,14 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
   const hasData = data.allLabels.length > 0 && Object.keys(data.ttlByLabel).length > 0;
 
+  // EPCC (chart2-loss-cost-vi-keywords) — cờ báo Chart 2 có dữ liệu thật hay
+  // không, để hiện gợi ý ngay dưới chart khi Type trong Excel không khớp bất
+  // kỳ từ khóa nào (tránh lặp lại tình trạng chart trống mà không rõ lý do).
+  const hasChart2Data =
+    Object.keys(data.dayLossCostByModelLabel).length > 0 ||
+    Object.keys(data.nightLossCostByModelLabel).length > 0 ||
+    Object.keys(data.ttlLossCostByModelLabel).length > 0;
+
   // FIX: cùng nguyên nhân với lỗi trục Y ở Chart 3 — nếu data.ttlStandard bị
   // lệch/sai định dạng (vd quá lớn bất thường), targetPC suy ra từ nó cũng sẽ
   // bị thổi phồng theo, kéo hỏng scale của Chart 1 & Chart 2 (dùng chung targetPC).
@@ -1901,6 +1973,20 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
               <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
                 {t('chart2Subtitle', lang)}
               </span>
+              {!hasChart2Data && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic',
+                  padding: '5px 12px', borderRadius: '6px',
+                  background: 'var(--surface-2)', border: '1px dashed var(--border)',
+                }}>
+                  ⚠️ {lang === 'vi'
+                    ? 'Chưa nhận diện được dữ liệu Chi phí hao hụt nhân lực. Kiểm tra cột Type trong Excel có chứa "DAY/NIGHT/TTL 인력 유실 비용" hoặc "hao hụt nhân lực" không, rồi tải lại.'
+                    : lang === 'ko'
+                    ? '인력 유실 비용 데이터를 찾을 수 없습니다. Excel의 Type 열에 "DAY/NIGHT/TTL 인력 유실 비용"이 포함되어 있는지 확인 후 다시 업로드하세요.'
+                    : 'No labor loss cost data recognized. Check that the Type column in Excel contains "DAY/NIGHT/TTL Labor Loss Cost", then re-upload.'}
+                </span>
+              )}
             </div>
             <div id={ids.current.c2} style={{ height: '270px' }} />
           </div>

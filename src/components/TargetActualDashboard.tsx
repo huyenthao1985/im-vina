@@ -1767,13 +1767,58 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         ...(activeTab === 'merged' ? {
           display: 'flex',
           flexDirection: 'column',
-          height: '100vh',
+          height: '100%',
+          minHeight: 0,
           overflow: 'hidden',
           boxSizing: 'border-box'
         } : {})
       }}
     >
       <style>{`
+        /* ═══════════════════════════════════════════════════════════════
+           FIX: bảng "DOANH SỐ & SẢN LƯỢNG" bị cắt cụt, chỉ hiện vài dòng
+           rồi để trống khoảng lớn phía dưới thay vì giãn hết màn hình.
+
+           NGUYÊN NHÂN GỐC: div gốc của component này trước đây ép cứng
+           height:'100vh' + overflow:'hidden', với giả định nó luôn nằm
+           SÁT MÉP TRÊN của viewport. Nhưng thực tế nó được render bên
+           trong <main class="app-content"> (App.tsx), nằm dưới sidebar/
+           header khác — nên khối 100vh này bị lố xuống dưới màn hình
+           thật, khiến flex:1 của bảng tính toán trên một tổng chiều cao
+           sai, và phần dòng dữ liệu phía dưới bị hụt/cắt.
+
+           Ngoài ra, class ".panel" dùng chung toàn app (định nghĩa ở
+           file CSS khác, không có trong 2 file được cung cấp) có khả
+           năng đang set height/max-height CỐ ĐỊNH cho mọi panel — bản
+           vá cũ (.second-dashboard.second-dashboard .merged-fill-panel)
+           không đủ vì nó không chắc thắng thứ tự nạp stylesheet.
+
+           CÁCH XỬ LÝ: 
+           1) Đổi height:'100vh' → '100%' trên div gốc (không tự ý giả
+              định vị trí trong viewport nữa, chỉ giãn theo chiều cao
+              THẬT của cha .app-content/.app-layout).
+           2) Ép chính .app-content/.app-layout (cha thật sự) giãn đủ
+              100dvh + overflow hidden CHỈ khi đang hiển thị tab merged
+              của dashboard này (dùng :has() để không ảnh hưởng các
+              Mục/tab khác dùng chung .app-content).
+           3) Ép .panel dùng chung thắng tuyệt đối bằng selector có độ
+              đặc hiệu cao hơn + để rule này SAU CÙNG trong stylesheet.
+           ═══════════════════════════════════════════════════════════════ */
+        .app-content:has(> .second-dashboard),
+        .app-layout:has(> .app-content > .second-dashboard) {
+          height: 100dvh !important;
+          max-height: 100dvh !important;
+          overflow: hidden !important;
+          display: flex !important;
+          flex-direction: column !important;
+        }
+        .app-content:has(> .second-dashboard) {
+          flex: 1 1 auto !important;
+        }
+        .app-content:has(> .second-dashboard) > .second-dashboard {
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+        }
         .second-dashboard .hero {
           padding: 16px 20px 4px !important;
         }
@@ -1814,8 +1859,13 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           margin-bottom: 24px;
         }
         /* Ép buộc panel chứa bảng "DOANH SỐ & SẢN LƯỢNG" luôn giãn hết chiều cao còn lại,
-           bất kể có class .panel dùng chung nào khác trong app định nghĩa height/max-height cố định. */
-        .second-dashboard.second-dashboard .merged-fill-panel {
+           bất kể có class .panel dùng chung nào khác trong app định nghĩa height/max-height cố định.
+           Selector lặp 3 lớp class (thay vì 2) để tăng độ đặc hiệu hơn MỌI biến thể của
+           .panel dùng chung (kể cả .panel có thêm class phụ, hoặc .panel!important cũ),
+           và vì đây là rule NẠP SAU CÙNG trong DOM khi tab merged mở, nó luôn thắng khi
+           độ đặc hiệu ngang nhau. */
+        .second-dashboard.second-dashboard.second-dashboard .merged-fill-panel,
+        div.panel.merged-fill-panel {
           flex: 1 1 0% !important;
           height: auto !important;
           max-height: none !important;
@@ -1823,11 +1873,18 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           display: flex !important;
           flex-direction: column !important;
         }
-        .second-dashboard.second-dashboard .merged-fill-table-container {
+        .second-dashboard.second-dashboard.second-dashboard .merged-fill-table-container,
+        div.table-container.merged-fill-table-container {
           flex: 1 1 0% !important;
           height: auto !important;
           max-height: none !important;
           min-height: 0 !important;
+        }
+        /* Chốt chặn cuối: mọi .panel là con trực tiếp của .second-dashboard (tab merged)
+           không được phép bị giới hạn chiều cao bởi rule .panel dùng chung ở nơi khác. */
+        .second-dashboard > .merged-fill-panel.panel {
+          max-height: none !important;
+          height: auto !important;
         }
         .second-dashboard .chart-panel {
           padding: 0 !important;
