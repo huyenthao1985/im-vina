@@ -785,7 +785,9 @@ function buildChart1(
       line: { color: roseAccent, width: 1.6, dash: 'dash', shape: 'spline', smoothing: 1 },
       marker: { color: roseAccent, size: 5 },
       text: mgmtGoalVals.map(v => v > 0 ? fmt1(v) : ''),
-      textposition: 'bottom center',
+      // EPCC (chart1-mgmtgoal-label-above) — theo yêu cầu người dùng: nhãn số
+      // của đường 경영목표 (đỏ, nét đứt) chuyển từ 'bottom center' lên 'top center'.
+      textposition: 'top center',
       textfont: { size: 9, color: roseAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
       hovertemplate: `<b>${t('mgmtTarget', lang)}</b>: %{y}<extra></extra>`,
