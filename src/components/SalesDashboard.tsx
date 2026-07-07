@@ -738,6 +738,20 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
         });
       }
 
+      // EPCC (chart1-max-12-periods) — giới hạn Chart 1 (Xuất hàng & Doanh số)
+      // tối đa 12 điểm GẦN NHẤT, bất kể đang xem theo Tháng/Quý/Năm. Trước đây
+      // vẽ TOÀN BỘ khoảng năm lọc (VD 2017-2026 theo Quý = ~40 cột) khiến trục
+      // X dồn nén, nhãn số đè lên nhau, không đọc được (đúng vùng khoanh đỏ
+      // trong ảnh lỗi người dùng gửi). Luôn ưu tiên giai đoạn GẦN NHẤT vì đó
+      // là thông tin người dùng quan tâm nhất khi xem xu hướng ngắn hạn.
+      const MAX_TREND_POINTS = 12;
+      if (xList.length > MAX_TREND_POINTS) {
+        xList = xList.slice(-MAX_TREND_POINTS);
+        yShip = yShip.slice(-MAX_TREND_POINTS);
+        ySales = ySales.slice(-MAX_TREND_POINTS);
+        yGrowth = yGrowth.slice(-MAX_TREND_POINTS);
+      }
+
       const tracesUnified = [
         {
           x: xList,
@@ -914,6 +928,13 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
             }
           });
         }
+      }
+
+      // EPCC (chart1-max-12-periods) — cùng lý do với Chart 1 phía trên: giới
+      // hạn Chart 3 (Doanh số theo Khách hàng) tối đa 12 giai đoạn GẦN NHẤT,
+      // tránh trục X dồn quá nhiều cột khi khoảng năm lọc rộng.
+      if (custKeys.length > MAX_TREND_POINTS) {
+        custKeys = custKeys.slice(-MAX_TREND_POINTS);
       }
 
       custKeys.forEach(item => {
