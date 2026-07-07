@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { DataRow } from '../types';
 import { translations } from '../translations';
 import { CustomSelect } from './CustomSelect';
 import { usePagination } from '../hooks/usePagination';
 import { GlobalHeaderControls } from './GlobalHeaderControls';
 import { chartTheme, getChartLayout } from './chartTheme';
+import { NeonButton } from './NeonButton';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
@@ -241,6 +242,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   setLang: _setLang,
   onFileSelected
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[lang];
   const isLightMode = theme === 'light';
 
@@ -2126,8 +2128,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             )}
 
             {showReset && (
-              <button
-                className="btn-text"
+              <NeonButton
+                className="btn btn-ghost btn-sm"
                 onClick={() => {
                   setSelectedCustomer('');
                   setSelectedModel('');
@@ -2138,37 +2140,42 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                     setSelectedDateEnd(defaultEndDateStr);
                   }
                 }}
-                style={{ width: '60px', height: '38px', display: 'inline-flex', alignItems: 'center', boxSizing: 'border-box', justifyContent: 'center', padding: 0, flexShrink: 0 }}
+                style={{ height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
               >
                 {t.resetBtn}
-              </button>
+              </NeonButton>
             )}
           </div>
           {/* Cụm phải dòng 2: Buttons */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-            <label className="btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text)', border: '1px solid var(--border)', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}>
-              <input 
-                type="file" 
-                accept=".xlsx, .xls" 
-                style={{ display: 'none' }} 
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = async (evt) => {
-                    try {
-                      const data = new Uint8Array(evt.target!.result as ArrayBuffer);
-                      const XLSX = await import('xlsx');
-                      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                      onFileSelected(file, workbook);
-                    } catch (err) {
-                      alert('Error reading Excel file');
-                    }
-                  };
-                  reader.readAsArrayBuffer(file);
-                  e.target.value = '';
-                }} 
-              />
+            <input 
+              ref={fileInputRef}
+              type="file" 
+              accept=".xlsx, .xls" 
+              style={{ display: 'none' }} 
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                  try {
+                    const data = new Uint8Array(evt.target!.result as ArrayBuffer);
+                    const XLSX = await import('xlsx');
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    onFileSelected(file, workbook);
+                  } catch (err) {
+                    alert('Error reading Excel file');
+                  }
+                };
+                reader.readAsArrayBuffer(file);
+                e.target.value = '';
+              }} 
+            />
+            <NeonButton
+              className="btn btn-outline btn-sm"
+              onClick={() => fileInputRef.current?.click()}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
                 <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
                 <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
@@ -2176,7 +2183,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                 <path d="M16 3h5v5" />
               </svg>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.loadExcelBtn}</span>
-            </label>
+            </NeonButton>
 
             {/* Lang select + Theme toggle đã di chuyển lên GlobalHeaderControls
                 ở góc trên-phải toàn trang trong App.tsx */}

@@ -4,6 +4,7 @@ import type { DataRow, ColumnMapping, FilterState } from '../types';
 import { translations } from '../translations';
 import { CustomSelect } from './CustomSelect';
 import { GlobalHeaderControls } from './GlobalHeaderControls';
+import { NeonButton } from './NeonButton';
 
 interface SalesDashboardProps {
   rows: DataRow[];
@@ -36,6 +37,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   setLang: _setLang,
   onFileSelected
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
   // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
   // tại thời điểm effect vẽ chart chạy lần đầu. Guard cũ chỉ kiểm tra
@@ -1364,13 +1366,13 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                 </span>
               )}
               {activeFilterCount > 0 && (
-                <button 
-                  className="btn-text" 
+                <NeonButton 
+                  className="btn btn-ghost btn-sm" 
                   onClick={handleResetFilters}
-                  style={{ width: '60px', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', padding: 0, flexShrink: 0 }}
+                  style={{ height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                 >
                   {t.resetBtn}
-                </button>
+                </NeonButton>
               )}
             </div>
             {/* Cụm phải dòng 2: Tải file lên + Save to Cloud */}
@@ -1382,31 +1384,33 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                   (onFileSelected prop nhận vào nhưng chưa từng được gọi) → user
                   không có cách nào tải dữ liệu mới trực tiếp tại Mục 1.
                   Bổ sung theo đúng pattern của TargetActualDashboard. */}
-              <label
-                className="btn-outline"
-                style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text)', border: '1px solid var(--border)', height: '38px', width: '130px', boxSizing: 'border-box', fontSize: '13px' }}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx, .xls"
+                style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = async (evt) => {
+                    try {
+                      const data = new Uint8Array(evt.target!.result as ArrayBuffer);
+                      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                      onFileSelected(file, workbook);
+                    } catch (err) {
+                      alert('Error reading Excel file');
+                    }
+                  };
+                  reader.readAsArrayBuffer(file);
+                  e.target.value = '';
+                }}
+              />
+              <NeonButton
+                className="btn btn-outline btn-sm"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', width: '130px', boxSizing: 'border-box', fontSize: '13px' }}
               >
-                <input
-                  type="file"
-                  accept=".xlsx, .xls"
-                  style={{ display: 'none' }}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = async (evt) => {
-                      try {
-                        const data = new Uint8Array(evt.target!.result as ArrayBuffer);
-                        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                        onFileSelected(file, workbook);
-                      } catch (err) {
-                        alert('Error reading Excel file');
-                      }
-                    };
-                    reader.readAsArrayBuffer(file);
-                    e.target.value = '';
-                  }}
-                />
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                   <path d="M17 8l-5-5-5 5" />
@@ -1415,7 +1419,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {lang === 'vi' ? 'Tải tệp lên' : lang === 'ko' ? '파일 업로드' : 'Upload File'}
                 </span>
-              </label>
+              </NeonButton>
             </div>
           </div>
         </div>

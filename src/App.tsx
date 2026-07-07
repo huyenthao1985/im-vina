@@ -20,6 +20,7 @@ import { GlobalHeaderControls } from './components/GlobalHeaderControls';
 import { ManpowerDashboard } from './components/ManpowerDashboard';
 // ─────────────────────────────────────────────────────
 import './App.css';
+import { NeonButton } from './components/NeonButton';
 
 const NONE = '__none__';
 
@@ -209,6 +210,7 @@ function countActiveFilters(filters: FilterState): number {
 }
 
 export default function App() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [lang, setLang] = useState<'vi' | 'en' | 'ko'>('vi');
   const [screen, setScreen] = useState<ScreenState>('dashboard');
@@ -1146,9 +1148,9 @@ export default function App() {
                       <span>📁</span>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{filename}</span>
                     </div>
-                    <button className="btn btn-ghost btn-sm" onClick={handleReset}>
-                      ← Tải file khác
-                    </button>
+                    <NeonButton className="btn btn-ghost btn-sm" onClick={handleReset}>
+                      {"\u2190"} Tải file khác
+                    </NeonButton>
                     <button className="theme-toggle" onClick={toggleTheme}>
                       {theme === 'dark' ? '☀️' : '🌙'}
                     </button>
@@ -1183,29 +1185,30 @@ export default function App() {
               <p style={{ color: 'var(--text-2)', marginBottom: '24px' }}>
                 {lang === 'vi' ? 'Vui lòng tải lên tệp Excel dữ liệu để bắt đầu.' : 'Please upload an Excel data file to start.'}
               </p>
-              <label className="btn btn-outline" style={{ cursor: 'pointer', display: 'inline-flex', padding: '12px 24px', fontSize: '15px' }}>
-                <input 
-                  type="file" 
-                  accept=".xlsx, .xls" 
-                  style={{ display: 'none' }} 
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = async (evt) => {
-                      try {
-                        const data = new Uint8Array(evt.target!.result as ArrayBuffer);
-                        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                        handleFileSelected(file, workbook);
-                      } catch (err) {
-                        alert('Error reading Excel file');
-                      }
-                    };
-                    reader.readAsArrayBuffer(file);
-                  }}
-                />
-                📁 {lang === 'vi' ? 'Tải tệp Excel' : 'Upload Excel'}
-              </label>
+              <input 
+                ref={fileInputRef}
+                type="file" 
+                accept=".xlsx, .xls" 
+                style={{ display: 'none' }} 
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = async (evt) => {
+                    try {
+                      const data = new Uint8Array(evt.target!.result as ArrayBuffer);
+                      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                      handleFileSelected(file, workbook);
+                    } catch (err) {
+                      alert('Error reading Excel file');
+                    }
+                  };
+                  reader.readAsArrayBuffer(file);
+                }}
+              />
+              <NeonButton className="btn btn-outline" style={{ cursor: 'pointer', display: 'inline-flex', padding: '12px 24px', fontSize: '15px' }} onClick={() => fileInputRef.current?.click()}>
+                {"\uD83D\uDCC1"} {lang === 'vi' ? 'T\u1EA3i t\u1EC7p Excel' : 'Upload Excel'}
+              </NeonButton>
             </div>
           </div>
         ) : null

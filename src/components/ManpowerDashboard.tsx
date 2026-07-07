@@ -5,6 +5,7 @@ import { parseToDate } from '../utils';
 import { PerCapitaTab } from './PerCapitaTab';
 import { GlobalHeaderControls } from './GlobalHeaderControls';
 import { CustomSelect } from './CustomSelect';
+import { NeonButton } from './NeonButton';
 
 interface ManpowerDashboardProps {
   rows: DataRow[];
@@ -790,6 +791,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   setLang,
   onFileSelected,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isDark = theme === 'dark';
   const chartTextColor = isDark ? '#e2e8f0' : '#1e293b';
   const chartGridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
@@ -1135,13 +1137,18 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
             {/* Cụm phải dòng 2: Tải Excel (upload) + Lên mây (Save to Cloud) */}
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-              <label className="btn-outline" style={{ cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-1)', background: 'transparent', border: '1px solid var(--border)', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}>
-                <input
-                  type="file"
-                  accept=".xlsx, .xls"
-                  style={{ display: 'none' }}
-                  onChange={handleFileUpload}
-                />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx, .xls"
+                style={{ display: 'none' }}
+                onChange={handleFileUpload}
+              />
+              <NeonButton
+                className="btn btn-outline btn-sm"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-1)', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
                   <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
                   <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
@@ -1149,7 +1156,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                   <path d="M16 3h5v5" />
                 </svg>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('exportBtn', lang)}</span>
-              </label>
+              </NeonButton>
             </div>
           </div>
         </div>

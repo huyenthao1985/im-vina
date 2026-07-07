@@ -1,5 +1,6 @@
 import type { FilterState, ColumnMapping } from '../types';
 import { toDateInputValue } from '../utils';
+import { NeonButton } from './NeonButton';
 
 interface FilterBarProps {
   filters: FilterState;
@@ -126,7 +127,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         {activeCount > 0 && (
           <>
             <span className="active-filter-count">{activeCount}</span>
-            <button className="btn btn-ghost btn-sm" onClick={onReset}>✕ Xóa lọc</button>
+            <NeonButton className="btn btn-ghost btn-sm" onClick={onReset}>✕ Xóa lọc</NeonButton>
           </>
         )}
       </div>

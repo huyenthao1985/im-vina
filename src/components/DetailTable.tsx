@@ -3,6 +3,7 @@ import type { DataRow, SortState, ColumnMapping } from '../types';
 import { formatCellValue, exportToCSV, toNumber, fmtVND } from '../utils';
 import { usePagination } from '../hooks/usePagination';
 import * as XLSX from 'xlsx';
+import { NeonButton } from './NeonButton';
 
 interface DetailTableProps {
   rows: DataRow[];
@@ -188,9 +189,9 @@ export const DetailTable: React.FC<DetailTableProps> = ({ rows, headers, mapping
           />
 
           <div className="export-menu" ref={exportRef}>
-            <button className="btn btn-secondary btn-sm" onClick={handleExportToggle}>
+            <NeonButton className="btn btn-secondary btn-sm" onClick={handleExportToggle}>
               ⬇️ Xuất
-            </button>
+            </NeonButton>
             {showExport && (
               <div className="export-dropdown">
                 <button className="export-dropdown-item" onClick={handleExportExcel}>

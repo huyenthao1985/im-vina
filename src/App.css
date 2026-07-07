@@ -1,1 +1,102 @@
-/* App.css - empty, all styles managed in index.css */
+/* ══════════════════════════════════════════════════════════════════════
+   NEON BUTTONS — hiệu ứng viền sáng chạy quanh nút (chasing border glow)
+   Thêm khối này vào cuối App.css.
+   Cách dùng: đổi <button className="btn ..."> thành <NeonButton className="btn ...">
+   (xem NeonButton.tsx) — component tự thêm 4 span cần thiết.
+   Màu neon mặc định lấy theo --primary; có thể override bằng class phụ:
+   .neon-pink / .neon-cyan / .neon-violet / .neon-amber
+   ══════════════════════════════════════════════════════════════════════ */
+
+.btn.neon {
+  --neon-color: var(--primary, #6366f1);
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.08);
+  transition: color 0.3s ease, box-shadow 0.3s ease, text-shadow 0.3s ease;
+}
+
+.btn.neon .neon-line {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+/* cạnh trên: chạy trái → phải */
+.btn.neon .neon-line:nth-child(1) {
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--neon-color));
+  animation: neon-top 2s linear infinite;
+}
+
+/* cạnh phải: chạy trên → dưới */
+.btn.neon .neon-line:nth-child(2) {
+  top: -100%;
+  right: 0;
+  width: 2px;
+  height: 100%;
+  background: linear-gradient(180deg, transparent, var(--neon-color));
+  animation: neon-right 2s linear infinite;
+  animation-delay: 0.5s;
+}
+
+/* cạnh dưới: chạy phải → trái */
+.btn.neon .neon-line:nth-child(3) {
+  bottom: 0;
+  right: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(270deg, transparent, var(--neon-color));
+  animation: neon-bottom 2s linear infinite;
+  animation-delay: 1s;
+}
+
+/* cạnh trái: chạy dưới → trên */
+.btn.neon .neon-line:nth-child(4) {
+  bottom: -100%;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: linear-gradient(360deg, transparent, var(--neon-color));
+  animation: neon-left 2s linear infinite;
+  animation-delay: 1.5s;
+}
+
+@keyframes neon-top {
+  0% { left: -100%; }
+  50%, 100% { left: 100%; }
+}
+@keyframes neon-right {
+  0% { top: -100%; }
+  50%, 100% { top: 100%; }
+}
+@keyframes neon-bottom {
+  0% { right: -100%; }
+  50%, 100% { right: 100%; }
+}
+@keyframes neon-left {
+  0% { bottom: -100%; }
+  50%, 100% { bottom: 100%; }
+}
+
+.btn.neon:hover {
+  color: var(--neon-color);
+  text-shadow: 0 0 8px var(--neon-color);
+  box-shadow:
+    0 0 12px var(--neon-color),
+    0 0 28px color-mix(in srgb, var(--neon-color) 45%, transparent);
+}
+
+/* Biến thể màu — dùng chung với class .neon, ví dụ: className="btn neon neon-pink" */
+.btn.neon.neon-pink   { --neon-color: #e8399a; }
+.btn.neon.neon-cyan   { --neon-color: #03e9f4; }
+.btn.neon.neon-violet { --neon-color: #a855f7; }
+.btn.neon.neon-amber  { --neon-color: #f5a524; }
+
+/* Tôn trọng prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .btn.neon .neon-line { animation: none; }
+}
