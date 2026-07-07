@@ -648,7 +648,20 @@ export default function App() {
         const filteredRows = rows.filter(r => {
           const ts  = String(gv(r, 'type', 'Type') ?? '').trim().toLowerCase();
           const div = String(gv(r, 'division', 'Division') ?? '').trim().toUpperCase();
-          const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수') || ts.includes('upph');
+          const isManpowerType = ts.includes('manpower') || ts.includes('인당생산수') || ts.includes('upph')
+            // EPCC (upload-filter-loss-cost-line-wh) - FIX ROOT CAUSE khien Chart 2 (Loss Cost),
+            // LINE Q'TY, va Work Hours bien mat ngay ca sau khi re-upload lai Test_3.xlsx:
+            // bo loc phia upload nay truoc day CHI chap nhan dong chua 'manpower'/'인당생산수'/'upph',
+            // hoac dong bat dau bang day/night/ttl VA chua plan/actual. Cac Type nhu
+            // 'DAY 인력 유실 비용' (Loss Cost), 'TTL LINE Q`TY', 'TTL 근무시간 Work hours', va
+            // '기준인력 Standard' bat dau bang day/night/ttl nhung KHONG chua plan/actual,
+            // nen bi AM THAM LOAI BO truoc khi kip len Supabase -- giai thich vi sao moi lan
+            // re-upload lai CUNG 1 file, so dong bucket Manpower cu tut dan (62895 -> 51000
+            // -> 22000) vi cac nhom du lieu nay lien tuc khong duoc luu lai.
+            || ts.includes('근무시간') || ts.includes('work hour') || ts.includes('working hour')
+            || ts.includes('line') || ts.includes('라인')
+            || ts.includes('유실') || ts.includes('loss cost') || (ts.includes('loss') && ts.includes('cost'))
+            || ts.includes('기준인력') || ts.includes('standard');
           const hasKind  = ts.includes('plan') || ts.includes('actual');
           const isProdRowByDivision = ['SUB1','SUB2','MAIN'].includes(div) && hasKind;
           const isProdRowByTypePrefix =
