@@ -1813,6 +1813,22 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           gap: 20px;
           margin-bottom: 24px;
         }
+        /* Ép buộc panel chứa bảng "DOANH SỐ & SẢN LƯỢNG" luôn giãn hết chiều cao còn lại,
+           bất kể có class .panel dùng chung nào khác trong app định nghĩa height/max-height cố định. */
+        .second-dashboard.second-dashboard .merged-fill-panel {
+          flex: 1 1 0% !important;
+          height: auto !important;
+          max-height: none !important;
+          min-height: 0 !important;
+          display: flex !important;
+          flex-direction: column !important;
+        }
+        .second-dashboard.second-dashboard .merged-fill-table-container {
+          flex: 1 1 0% !important;
+          height: auto !important;
+          max-height: none !important;
+          min-height: 0 !important;
+        }
         .second-dashboard .chart-panel {
           padding: 0 !important;
           overflow: hidden;
@@ -2444,7 +2460,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
 
       {/* Table details for active tabs */}
       {activeTab === 'merged' && (
-        <div className="panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div className="panel merged-fill-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <div className="card-header-styled blue-style" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>
               {formatReportTitle(
@@ -2464,7 +2480,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
               {lang === 'vi' ? 'Không có dữ liệu phù hợp.' : 'No matching data.'}
             </div>
           ) : (
-            <div className="table-container" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div className="table-container merged-fill-table-container" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <div className="table-scroll" style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, minHeight: 0, padding: '0 15px 15px 15px' }}>
                 <table className="stat-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>

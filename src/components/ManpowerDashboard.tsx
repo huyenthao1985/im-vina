@@ -1091,15 +1091,17 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                 className="filter-date-input"
                 style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
               />
-              <CustomSelect
-                value={modelFilter}
-                onChange={setModelFilter}
-                options={[
-                  { value: 'all', label: t('allModels', lang) },
-                  ...data.activeModels.map(m => ({ value: m, label: m })),
-                ]}
-                style={{ width: '140px', height: '38px' }}
-              />
+              <div style={{ width: '140px', flexShrink: 0, overflow: 'hidden' }}>
+                <CustomSelect
+                  value={modelFilter}
+                  onChange={setModelFilter}
+                  options={[
+                    { value: 'all', label: t('allModels', lang) },
+                    ...data.activeModels.map(m => ({ value: m, label: m })),
+                  ]}
+                  style={{ width: '100%', height: '38px' }}
+                />
+              </div>
               <div style={{ display: 'flex', gap: '0px', height: '38px', width: '220px', flexShrink: 0 }}>
                 {(['day', 'week', 'month', 'year'] as const).map(mode => (
                   <button
