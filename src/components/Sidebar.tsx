@@ -43,6 +43,31 @@ const ITEMS = [
   },
 ];
 
+// Icon SVG kiểu Lucide (stroke="currentColor" — tự ăn theo màu chữ của thẻ
+// cha, luôn đúng theme sáng/tối, không cần set màu riêng). Icon "log-out" là
+// icon chuẩn dev hay dùng cho hành động đăng xuất (mũi tên thoát khỏi khung
+// cửa), "settings" (bánh răng) chuẩn cho hành động quản trị/cấu hình.
+function LogOutIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({
   activeViewId,
   onSelectView,
@@ -94,16 +119,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* FIX (user-info-in-sidebar): chân Sidebar — thông tin người đăng nhập
           + nút Quản trị (chỉ admin) + Đăng xuất. Thay thế cho overlay nổi cũ
           trong App.tsx. Ở trạng thái collapsed chỉ hiện avatar viết tắt +
-          icon đăng xuất để không phá layout thu gọn. */}
+          icon đăng xuất để không phá layout thu gọn. Dùng biến CSS theme-aware
+          (--text-0, --text-2, --border-soft) để tự đổi màu đúng theo
+          theme sáng/tối, tránh chữ trắng biến mất trên nền sáng. */}
       <div style={{
-        borderTop: '1px solid rgba(255,255,255,0.08)',
+        borderTop: '1px solid var(--border-soft, rgba(255,255,255,0.08))',
         padding: collapsed ? '10px 8px' : '12px',
         display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0,
       }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: '8px',
-          padding: collapsed ? '4px' : '6px 8px',
-          borderRadius: '10px', background: 'rgba(255,255,255,0.06)',
+          padding: collapsed ? '5px' : '7px 8px',
+          borderRadius: '10px',
+          border: '1px solid rgba(120,120,130,0.35)',
+          background: 'rgba(120,120,130,0.16)',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
         }}>
           <div style={{
             width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
@@ -116,20 +146,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!collapsed && (
             <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25, minWidth: 0 }}>
               <span style={{
-                fontSize: '13px', fontWeight: 700, color: '#fff',
+                fontSize: '13px', fontWeight: 700, color: 'var(--text-0, #111827)',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
                 {profile.full_name || profile.email}
               </span>
               <span style={{
-                fontSize: '11px', color: 'rgba(255,255,255,0.6)',
+                fontSize: '11px', color: 'var(--text-2, #6b7280)',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
-                {profile.email} · {
-                  profile.role === 'admin' ? (lang === 'vi' ? 'Quản trị viên' : lang === 'en' ? 'Admin' : '관리자')
-                  : profile.role === 'editor' ? (lang === 'vi' ? 'Biên tập viên' : lang === 'en' ? 'Editor' : '편집자')
-                  : (lang === 'vi' ? 'Người dùng' : lang === 'en' ? 'User' : '사용자')
-                }
+                {profile.email}
               </span>
             </div>
           )}
@@ -139,25 +165,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={onOpenAdmin}
             style={{
-              padding: '7px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 600,
-              fontSize: '13px', cursor: 'pointer', textAlign: collapsed ? 'center' : 'left',
+              padding: '8px 10px', borderRadius: '8px',
+              border: '1px solid rgba(120,120,130,0.35)',
+              background: 'rgba(120,120,130,0.16)',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+              color: 'var(--text-0, #111827)', fontWeight: 600,
+              fontSize: '13px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              gap: '8px',
             }}
             title={lang === 'vi' ? 'Quản trị' : lang === 'en' ? 'Admin' : '관리자'}
           >
-            {collapsed ? '⚙️' : (lang === 'vi' ? '⚙️ Quản trị' : lang === 'en' ? '⚙️ Admin' : '⚙️ 관리자')}
+            <SettingsIcon />
+            {!collapsed && (lang === 'vi' ? 'Quản trị' : lang === 'en' ? 'Admin' : '관리자')}
           </button>
         )}
         <button
           onClick={onSignOut}
           style={{
-            padding: '7px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)',
-            background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 600,
-            fontSize: '13px', cursor: 'pointer', textAlign: collapsed ? 'center' : 'left',
+            padding: '8px 10px', borderRadius: '8px',
+            border: '1px solid rgba(120,120,130,0.35)',
+            background: 'rgba(120,120,130,0.16)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+            color: 'var(--text-0, #111827)', fontWeight: 600,
+            fontSize: '13px', cursor: 'pointer',
+            display: 'flex', alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            gap: '8px',
           }}
           title={lang === 'vi' ? 'Đăng xuất' : lang === 'en' ? 'Sign out' : '로그아웃'}
         >
-          {collapsed ? '🚪' : (lang === 'vi' ? 'Đăng xuất' : lang === 'en' ? 'Sign out' : '로그아웃')}
+          <LogOutIcon />
+          {!collapsed && (lang === 'vi' ? 'Đăng xuất' : lang === 'en' ? 'Sign out' : '로그아웃')}
         </button>
       </div>
     </aside>

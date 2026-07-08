@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import loginBg from '../assets/login-bg.png';
 
 interface LoginGateProps {
   lang: 'vi' | 'en' | 'ko';
@@ -11,10 +12,10 @@ interface LoginGateProps {
 // (index.html/app.js gốc) làm component React, dùng chung Supabase client
 // hiện có (./lib/supabase — KHÔNG tạo client thứ 2).
 //
-// Khác biệt duy nhất so với bản gốc: bỏ ảnh nền base64 (~300KB nhúng thẳng
-// trong <style>, sẽ làm phình bundle rất nhiều và không cần thiết) — thay
-// bằng gradient tối tương tự tông màu ảnh gốc. Toàn bộ hiệu ứng đèn (kéo dây
-// bật/tắt, spotlight, glow, kính mờ, gradient tay cầm...) giữ nguyên y hệt.
+// Ảnh nền: import trực tiếp từ src/assets/login-bg.png (ảnh linh kiện camera
+// module IM Vina), gán qua style inline của .imv-bg-photo, phủ 1 lớp
+// gradient tối để chữ + hiệu ứng đèn vẫn đọc rõ. Đổi ảnh khác chỉ cần thay
+// file cùng tên trong src/assets/, không cần sửa code.
 //
 // Toàn bộ class được đặt tiền tố "imv-" để KHÔNG đụng các class chung của
 // dashboard (.card, .field, .btn... đã dùng ở nơi khác trong app).
@@ -158,7 +159,15 @@ export function LoginGate({ lang, setLang }: LoginGateProps) {
     <div className={`imv-body ${lampOn ? 'imv-is-on' : ''}`}>
       <style>{IMV_CSS}</style>
 
-      <div className="imv-bg-photo" />
+      <div
+        className="imv-bg-photo"
+        style={{
+          backgroundImage: `linear-gradient(rgba(8,9,14,0.62), rgba(8,9,14,0.72)), url(${loginBg})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center 40%',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
       <div className="imv-bg-overlay" />
       <div className="imv-spotlight" />
 
@@ -296,7 +305,10 @@ const IMV_CSS = `
 }
 .imv-bg-photo{
   position:fixed; inset:0;
-  background: radial-gradient(circle at 30% 20%, #3a3550 0%, #14141c 55%, #0b0b10 100%);
+  background:
+    linear-gradient(rgba(8,9,14,0.62), rgba(8,9,14,0.72)),
+    radial-gradient(circle at 30% 20%, #3a3550 0%, #14141c 55%, #0b0b10 100%);
+  background-size: cover;
   filter: saturate(0.85) brightness(0.92);
   transition: filter 1.1s cubic-bezier(.4,0,.2,1);
   z-index:0;
