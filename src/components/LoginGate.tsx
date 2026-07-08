@@ -98,7 +98,7 @@ function useImVinaFonts() {
     const link = document.createElement('link');
     link.id = 'imv-fonts';
     link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Poppins:wght@700;800;900&family=Pixelify+Sans:wght@600;700&display=swap';
+    link.href = 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Poppins:wght@700;800;900&family=Pixelify+Sans:wght@600;700&family=Fredoka:wght@600;700&display=swap';
     document.head.appendChild(link);
   }, []);
 }
@@ -469,13 +469,13 @@ const IMV_CSS = `
   margin-bottom:6px; transition: color 1.1s ease;
 }
 .imv-eyebrow-brand{
-  font-family:'Pixelify Sans', monospace; font-weight:700;
+  font-family:'Fredoka', sans-serif; font-weight:700;
   font-size:24px; letter-spacing:0.02em; text-transform:uppercase;
   color:#e1ff51;
   text-shadow: 0 2px 6px rgba(0,0,0,0.4);
 }
 .imv-eyebrow-sub{
-  font-family:'Pixelify Sans', monospace; font-size:24px; font-weight:700;
+  font-family:'Fredoka', sans-serif; font-size:24px; font-weight:700;
   letter-spacing:0.02em; text-transform:uppercase;
   color:#e1ff51;
   text-shadow: 0 2px 6px rgba(0,0,0,0.4);
@@ -483,7 +483,7 @@ const IMV_CSS = `
 }
 .imv-is-on .imv-eyebrow-brand, .imv-is-on .imv-eyebrow-sub{ color:#7a9c0f; text-shadow: 0 1px 4px rgba(0,0,0,0.15); }
 .imv-headline{
-  font-family:'Pixelify Sans', monospace; font-weight:700; text-transform:uppercase;
+  font-family:'Fredoka', sans-serif; font-weight:700; text-transform:uppercase;
   font-size: clamp(34px, 5vw, 52px); text-align:center; margin-bottom:36px;
   letter-spacing:0.01em;
   color:#e1ff51;
