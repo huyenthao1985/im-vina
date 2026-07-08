@@ -160,6 +160,18 @@ export function LoginGate({ lang, setLang }: LoginGateProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
+  // FIX (bg-parallax): tọa độ chuột (đã chuẩn hoá -1..1) để dịch nhẹ ảnh nền
+  // theo hướng ngược chiều con trỏ, tạo cảm giác chiều sâu 3D giả lập —
+  // nhẹ, không cần WebGL/Three.js vì nền chỉ là 1 ảnh raster tĩnh.
+  const [mouseX, setMouseX] = useState(0);
+  const [mouseY, setMouseY] = useState(0);
+  function handleBodyMouseMove(e: React.MouseEvent) {
+    const x = (e.clientX / window.innerWidth) * 2 - 1;
+    const y = (e.clientY / window.innerHeight) * 2 - 1;
+    setMouseX(x);
+    setMouseY(y);
+  }
+
   // FIX (remember-me): chỉ lưu EMAIL (không lưu mật khẩu vì lý do bảo mật)
   // vào localStorage nếu người dùng tick "Nhớ tôi", để lần sau mở lại tự
   // điền sẵn email, đỡ phải gõ lại.
@@ -223,7 +235,7 @@ export function LoginGate({ lang, setLang }: LoginGateProps) {
   }
 
   return (
-    <div className={`imv-body ${lampOn ? 'imv-is-on' : ''}`}>
+    <div className={`imv-body ${lampOn ? 'imv-is-on' : ''}`} onMouseMove={handleBodyMouseMove}>
       <style>{IMV_CSS}</style>
 
       <div
@@ -233,10 +245,11 @@ export function LoginGate({ lang, setLang }: LoginGateProps) {
             ? `linear-gradient(rgba(40,22,4,0.14), rgba(20,10,2,0.18)), url(${loginBg})`
             : `linear-gradient(rgba(8,9,14,0.24), rgba(8,9,14,0.3)), url(${loginBg})`,
           backgroundSize: 'cover',
-          backgroundPosition: 'center 40%',
+          backgroundPosition: `calc(50% + ${mouseX * -1.4}%) calc(40% + ${mouseY * -1.2}%)`,
           backgroundRepeat: 'no-repeat',
         }}
       />
+      <div className="imv-bg-sheen" />
       <div className="imv-bg-overlay" />
       <div className="imv-spotlight" />
 
@@ -443,10 +456,35 @@ const IMV_CSS = `
     radial-gradient(circle at 30% 20%, #3a3550 0%, #14141c 55%, #0b0b10 100%);
   background-size: cover;
   filter: saturate(1) brightness(1.25);
-  transition: filter 1.1s cubic-bezier(.4,0,.2,1);
+  transform-origin: center center;
+  animation: imvBgDrift 22s ease-in-out infinite alternate;
+  transition: filter 1.1s cubic-bezier(.4,0,.2,1), background-position 0.6s ease-out;
+  will-change: transform, background-position;
   z-index:0;
 }
 .imv-is-on .imv-bg-photo{ filter: saturate(1.4) brightness(1.42) contrast(1.05); }
+@keyframes imvBgDrift{
+  0%   { transform: scale(1) translate3d(0,0,0); }
+  50%  { transform: scale(1.07) translate3d(-0.6%, -0.8%, 0); }
+  100% { transform: scale(1.03) translate3d(0.5%, 0.4%, 0); }
+}
+.imv-bg-sheen{
+  position:fixed; inset:-10%; z-index:0; pointer-events:none;
+  background: linear-gradient(115deg,
+    transparent 30%, rgba(255,255,255,0.10) 45%,
+    rgba(255,255,255,0.16) 50%, rgba(255,255,255,0.10) 55%, transparent 70%);
+  background-size: 260% 260%;
+  mix-blend-mode: overlay;
+  animation: imvSheenSweep 9s linear infinite;
+}
+@keyframes imvSheenSweep{
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+@media (prefers-reduced-motion: reduce){
+  .imv-bg-photo{ animation:none; }
+  .imv-bg-sheen{ animation:none; opacity:0.4; }
+}
 .imv-bg-overlay{
   position:fixed; inset:0; background: rgba(10,12,18,0.16);
   transition: background 1.1s cubic-bezier(.4,0,.2,1); z-index:1;
