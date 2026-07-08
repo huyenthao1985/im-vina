@@ -1,11 +1,22 @@
 import React from 'react';
 
+interface SidebarProfile {
+  full_name: string;
+  email: string;
+  role: 'user' | 'editor' | 'admin' | null;
+}
+
 interface SidebarProps {
   activeViewId: string;
   onSelectView: (id: string) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
   lang: 'vi' | 'en' | 'ko';
+  // FIX (user-info-in-sidebar): thông tin người đăng nhập + hành động, hiển
+  // thị cố định ở chân Sidebar thay vì nổi rời trong App.tsx.
+  profile: SidebarProfile;
+  onSignOut: () => void;
+  onOpenAdmin: () => void;
 }
 
 const ITEMS = [
@@ -38,9 +49,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   collapsed,
   onToggleCollapse,
   lang,
+  profile,
+  onSignOut,
+  onOpenAdmin,
 }) => {
   return (
-    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+    <aside
+      className={`sidebar ${collapsed ? 'collapsed' : ''}`}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+    >
       <div className="sidebar-header">
         <div className="sidebar-logo">
           <span style={{ fontSize: '18px' }}>📊</span>
@@ -55,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      <ul className="sidebar-menu">
+      <ul className="sidebar-menu" style={{ flex: 1, overflowY: 'auto' }}>
         {ITEMS.map((item) => {
           const isActive = activeViewId === item.id || (item.id === 'manpower' && activeViewId === 'production_per_capita');
           const label = item.name[lang];
@@ -73,6 +90,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
       </ul>
+
+      {/* FIX (user-info-in-sidebar): chân Sidebar — thông tin người đăng nhập
+          + nút Quản trị (chỉ admin) + Đăng xuất. Thay thế cho overlay nổi cũ
+          trong App.tsx. Ở trạng thái collapsed chỉ hiện avatar viết tắt +
+          icon đăng xuất để không phá layout thu gọn. */}
+      <div style={{
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+        padding: collapsed ? '10px 8px' : '12px',
+        display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0,
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          padding: collapsed ? '4px' : '6px 8px',
+          borderRadius: '10px', background: 'rgba(255,255,255,0.06)',
+        }}>
+          <div style={{
+            width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0,
+            background: 'var(--primary, #6366f1)', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontWeight: 700, fontSize: '12px', textTransform: 'uppercase',
+          }}>
+            {(profile.full_name || profile.email || '?').charAt(0)}
+          </div>
+          {!collapsed && (
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25, minWidth: 0 }}>
+              <span style={{
+                fontSize: '13px', fontWeight: 700, color: '#fff',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {profile.full_name || profile.email}
+              </span>
+              <span style={{
+                fontSize: '11px', color: 'rgba(255,255,255,0.6)',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {profile.email} · {
+                  profile.role === 'admin' ? (lang === 'vi' ? 'Quản trị viên' : lang === 'en' ? 'Admin' : '관리자')
+                  : profile.role === 'editor' ? (lang === 'vi' ? 'Biên tập viên' : lang === 'en' ? 'Editor' : '편집자')
+                  : (lang === 'vi' ? 'Người dùng' : lang === 'en' ? 'User' : '사용자')
+                }
+              </span>
+            </div>
+          )}
+        </div>
+
+        {profile.role === 'admin' && (
+          <button
+            onClick={onOpenAdmin}
+            style={{
+              padding: '7px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 600,
+              fontSize: '13px', cursor: 'pointer', textAlign: collapsed ? 'center' : 'left',
+            }}
+            title={lang === 'vi' ? 'Quản trị' : lang === 'en' ? 'Admin' : '관리자'}
+          >
+            {collapsed ? '⚙️' : (lang === 'vi' ? '⚙️ Quản trị' : lang === 'en' ? '⚙️ Admin' : '⚙️ 관리자')}
+          </button>
+        )}
+        <button
+          onClick={onSignOut}
+          style={{
+            padding: '7px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 600,
+            fontSize: '13px', cursor: 'pointer', textAlign: collapsed ? 'center' : 'left',
+          }}
+          title={lang === 'vi' ? 'Đăng xuất' : lang === 'en' ? 'Sign out' : '로그아웃'}
+        >
+          {collapsed ? '🚪' : (lang === 'vi' ? 'Đăng xuất' : lang === 'en' ? 'Sign out' : '로그아웃')}
+        </button>
+      </div>
     </aside>
   );
 };

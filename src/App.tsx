@@ -4,6 +4,11 @@ import type {
   DataRow, ColumnMapping, FilterState, KPIData, ThemeMode, ScreenState
 } from './types';
 import { supabase } from './lib/supabase';
+import { useAuthGate, canAccessTab } from './lib/auth';
+import { LoginGate } from './components/LoginGate';
+import { PendingApproval } from './components/PendingApproval';
+import { AccessDenied } from './components/AccessDenied';
+import { AdminUsersPanel } from './components/AdminUsersPanel';
 import {
   detectColumns, toNumber, getDateBounds, resetChannelColors, parseRowToDate
 } from './utils';
@@ -210,6 +215,15 @@ function countActiveFilters(filters: FilterState): number {
 }
 
 export default function App() {
+  // FIX (login-gate): toàn bộ trạng thái đăng nhập/phân quyền quản lý qua
+  // useAuthGate() (dùng CHUNG client `supabase` đã có sẵn, không tạo client
+  // thứ 2). Đây là hook đầu tiên, gọi KHÔNG điều kiện như mọi hook khác của
+  // component — việc "chặn" hiển thị dashboard khi chưa đăng nhập chỉ xảy ra
+  // ở JSX bên trong return(), KHÔNG return sớm trước các hook khác bên dưới
+  // (tránh vi phạm Rules of Hooks — thứ tự hook phải cố định mỗi lần render).
+  const { loading: authLoading, session, profile, signOut } = useAuthGate();
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [lang, setLang] = useState<'vi' | 'en' | 'ko'>('vi');
@@ -1042,8 +1056,33 @@ export default function App() {
   // ── Auto-switch: đã chuyển sang parseSheet (chỉ khi upload tay).
   //    KHÔNG còn auto-switch khi Supabase load → trang luôn mở ở Mục 1. ──
 
+  // FIX (login-gate): 3 điều kiện chặn TRƯỚC khi vào dashboard thật.
+  // Đặt SAU mọi hook khác (useMemo/useState/useEffect ở trên) nhưng TRƯỚC
+  // JSX chính — các hook phía trên vẫn luôn chạy đều đặn mỗi render (không
+  // bị bỏ qua), chỉ có phần HIỂN THỊ là rẽ nhánh ở đây.
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="spinner" style={{
+          width: '36px', height: '36px', borderRadius: '50%',
+          border: '3px solid var(--border-soft, #e5e7eb)', borderTopColor: 'var(--primary, #6366f1)',
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+  if (!session) {
+    return <LoginGate lang={lang} setLang={setLang} theme={theme} />;
+  }
+  if (!profile?.role) {
+    return <PendingApproval profile={profile} onSignOut={signOut} lang={lang} />;
+  }
+
   return (
     <>
+      {showAdminPanel && <AdminUsersPanel lang={lang} onClose={() => setShowAdminPanel(false)} />}
+
       <div className="bg-aura" />
 
       {/* EPCC (sync-progress-visibility) — banner cố định, luôn nổi trên
@@ -1075,6 +1114,9 @@ export default function App() {
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             lang={lang}
+            profile={profile}
+            onSignOut={signOut}
+            onOpenAdmin={() => setShowAdminPanel(true)}
           />
           
           <main
@@ -1161,25 +1203,33 @@ export default function App() {
 
             {/* ── MENU 3: Manpower Dashboard (có Tab 2 Per Capita bên trong) ── */}
             {activeViewId === 'manpower' && (
-              <ManpowerDashboard
-                rows={manpowerRows}
-                theme={theme}
-                lang={lang}
-                onToggleTheme={toggleTheme}
-                setLang={setLang}
-                onFileSelected={handleFileSelected}
-              />
+              canAccessTab('manpower', profile.role) ? (
+                <ManpowerDashboard
+                  rows={manpowerRows}
+                  theme={theme}
+                  lang={lang}
+                  onToggleTheme={toggleTheme}
+                  setLang={setLang}
+                  onFileSelected={handleFileSelected}
+                />
+              ) : (
+                <AccessDenied lang={lang} />
+              )
             )}
 
             {(activeViewId === 'target_actual') && (
-              <TargetActualDashboard
-                rows={targetActualRows}
-                theme={theme}
-                onToggleTheme={toggleTheme}
-                lang={lang}
-                setLang={setLang}
-                onFileSelected={handleFileSelected}
-              />
+              canAccessTab('target_actual', profile.role) ? (
+                <TargetActualDashboard
+                  rows={targetActualRows}
+                  theme={theme}
+                  onToggleTheme={toggleTheme}
+                  lang={lang}
+                  setLang={setLang}
+                  onFileSelected={handleFileSelected}
+                />
+              ) : (
+                <AccessDenied lang={lang} />
+              )
             )}
 
             {activeViewId === 'placeholder' && (
@@ -1234,9 +1284,9 @@ export default function App() {
                     <NeonButton className="btn btn-ghost btn-sm" onClick={handleReset}>
                       {"\u2190"} Tải file khác
                     </NeonButton>
-                    <button className="theme-toggle" onClick={toggleTheme}>
+                    <NeonButton className="theme-toggle" onClick={toggleTheme}>
                       {theme === 'dark' ? '☀️' : '🌙'}
-                    </button>
+                    </NeonButton>
                   </div>
                 </header>
 
