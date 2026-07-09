@@ -6,7 +6,7 @@ import { usePagination } from '../hooks/usePagination';
 import { chartTheme, getChartLayout } from './chartTheme';
 import { NeonButton } from './NeonButton';
 
-const PAGE_SIZES = [10, 25, 50, 100];
+const PAGE_SIZES = [10, 25, 31, 50, 100];
 
 /**
  * Returns the ISO week-of-month label ('W1'–'W4') for a given date.
@@ -777,6 +777,19 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
 
   // 2. State values
   const [activeTab, setActiveTab] = useState<'summary' | 'merged'>('summary');
+  // FIX (EPCC bottom=0): thay vì maxHeight cố định '62vh' (luôn để hở một
+  // khoảng trắng cố định phía dưới bảng, bất kể cửa sổ cao/thấp), đo TRỰC
+  // TIẾP vị trí thật của khung cuộn so với đáy viewport bằng
+  // getBoundingClientRect(), rồi set maxHeight = phần còn lại tới đáy màn
+  // hình (trừ 1 khoảng đệm nhỏ để không dính sát viền dưới cùng của trình
+  // duyệt). Cách này KHÔNG phụ thuộc cấu trúc/height của DOM cha (App.tsx,
+  // Sidebar...) — chỉ dựa vào vị trí thực tế của chính element, nên không
+  // lặp lại lỗi "khoảng trắng thừa" từng gặp khi ép flex:1/100dvh trước đây.
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const paginationBarRef = useRef<HTMLDivElement | null>(null);
+  const [tableScrollMaxHeight, setTableScrollMaxHeight] = useState<number>(
+    typeof window !== 'undefined' ? Math.max(240, window.innerHeight * 0.62) : 480
+  );
   const [selectedDateStart, setSelectedDateStart] = useState<string>('');
   const [selectedDateEnd, setSelectedDateEnd] = useState<string>('');
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
@@ -1172,6 +1185,48 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     return rows;
   }, [filteredRecords, viewMode, lang, sortField, sortAsc]);
 
+  // FIX (EPCC bottom=0): thay vì maxHeight cố định '62vh' (luôn để hở một
+  // khoảng trắng cố định phía dưới bảng, bất kể cửa sổ cao/thấp), đo TRỰC
+  // TIẾP vị trí thật của khung cuộn so với đáy viewport bằng
+  // getBoundingClientRect(), rồi set maxHeight = phần còn lại tới đáy màn
+  // hình (trừ chiều cao thanh phân trang + 1 khoảng đệm nhỏ để không dính
+  // sát viền dưới cùng của trình duyệt). Cách này KHÔNG phụ thuộc cấu
+  // trúc/height của DOM cha (App.tsx, Sidebar...) — chỉ dựa vào vị trí
+  // thực tế của chính element, nên không lặp lại lỗi "khoảng trắng thừa"
+  // từng gặp khi ép flex:1/100dvh trước đây.
+  useEffect(() => {
+    const recalcTableScrollHeight = () => {
+      const el = tableScrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      // Trừ luôn chiều cao thật của thanh phân trang (nằm NGAY DƯỚI khung
+      // cuộn, cùng bên trong panel) — nếu không trừ, panel (bảng+phân
+      // trang) sẽ tràn xuống dưới đáy màn hình thêm ~chiều cao thanh đó.
+      const paginationHeight = paginationBarRef.current?.getBoundingClientRect().height ?? 44;
+      const BOTTOM_GAP = 12; // đệm nhỏ để không dính sát mép dưới cửa sổ
+      const available = window.innerHeight - top - paginationHeight - BOTTOM_GAP;
+      setTableScrollMaxHeight(Math.max(200, available));
+    };
+    recalcTableScrollHeight();
+    window.addEventListener('resize', recalcTableScrollHeight);
+    // Tính lại khi chuyển sang tab 'merged' (lúc element vừa mount/hiện ra)
+    const raf = requestAnimationFrame(recalcTableScrollHeight);
+    return () => {
+      window.removeEventListener('resize', recalcTableScrollHeight);
+      cancelAnimationFrame(raf);
+    };
+  }, [activeTab, bottomTableRows.length]);
+
+  // FIX (EPCC-fit-31-days-per-page): tính lại font-size/padding dọc của
+  // TỪNG Ô sao cho đúng (pageSize + 1 dòng TỔNG) luôn vừa khít chiều cao
+  // khung cuộn (tableScrollMaxHeight) — KHÔNG cần cuộn thêm bên trong, dù
+  // đang ở trang 1, 2, 3... nào. Đo theadHeight THẬT (ref) thay vì đoán
+  // cứng, nên vẫn đúng cả khi nội dung header (select lọc, sort icon...)
+  // thay đổi chiều cao.
+  const theadRef = useRef<HTMLTableSectionElement | null>(null);
+  const [rowFontSize, setRowFontSize] = useState<number>(14);
+  const [rowPaddingY, setRowPaddingY] = useState<number>(10);
+
   const processedRows = bottomTableRows;
 
   const {
@@ -1182,7 +1237,52 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     totalPages,
     pagedData: pagedRows,
     pageNums,
-  } = usePagination(processedRows, 25);
+  } = usePagination(processedRows, 31);
+
+  // FIX (EPCC-fit-31-days-per-page): đo chiều cao THẬT của thead (2 dòng
+  // tiêu đề sticky, kể cả select lọc bên trong) rồi chia phần chiều cao
+  // còn lại của khung cuộn (tableScrollMaxHeight) cho đúng (pageSize + 1)
+  // dòng — dùng pageSize CỐ ĐỊNH (không phải pagedRows.length thực tế của
+  // trang hiện tại) làm mẫu số, để chiều cao mỗi dòng GIỐNG HỆT nhau dù
+  // đang ở trang 1, 2, 3... (kể cả trang cuối có ít dòng hơn 31 vẫn không
+  // bị kéo giãn cao hơn các trang khác). fontSize/padding dọc được scale
+  // theo tỉ lệ so với kích thước gốc (14px/10px, ứng với hàng ~39-41px)
+  // và clamp trong khoảng đọc được — nếu màn hình quá thấp khiến giá trị
+  // chạm mức tối thiểu, overflow-y: auto của table-scroll vẫn đảm nhận
+  // việc cuộn bên trong (không vỡ layout).
+  useEffect(() => {
+    const BASE_FONT = 14, BASE_PADDING = 10;
+    const BASE_ROW_HEIGHT = BASE_FONT * 1.3 + BASE_PADDING * 2 + 1; // ≈ 39.2px
+    const MIN_FONT = 10, MAX_FONT = 16;
+    const MIN_PAD = 3, MAX_PAD = 14;
+    // FIX (EPCC-increase-table-font-27pct): chữ trong bảng cần lớn hơn ~25-30%
+    // so với trước. Vì thuật toán fit-vừa-khung tự bù trừ theo tỉ lệ
+    // BASE_FONT/BASE_ROW_HEIGHT (đổi BASE_FONT không đổi kết quả cuối), ta
+    // nhân thêm FONT_BOOST sau khi tính "scale" như cũ, và nới trần
+    // MIN/MAX_FONT, MIN/MAX_PAD theo đúng hệ số này để mức tăng không bị
+    // clamp che mất. Nếu khung quá thấp, table-scroll vẫn overflow-y: auto.
+    const FONT_BOOST = 1.28; // +28%, nằm giữa khoảng 25-30% yêu cầu
+
+    const recalcRowSize = () => {
+      const theadEl = theadRef.current;
+      if (!theadEl) return;
+      const theadHeight = theadEl.getBoundingClientRect().height;
+      const targetRowCount = pageSize + 1; // +1 cho dòng TỔNG
+      const availableForRows = tableScrollMaxHeight - theadHeight;
+      const rawRowHeight = availableForRows / targetRowCount;
+      const scale = rawRowHeight / BASE_ROW_HEIGHT;
+
+      const nextFont = Math.min(MAX_FONT * FONT_BOOST, Math.max(MIN_FONT * FONT_BOOST, BASE_FONT * scale * FONT_BOOST));
+      const nextPad = Math.min(MAX_PAD * FONT_BOOST, Math.max(MIN_PAD * FONT_BOOST, BASE_PADDING * scale * FONT_BOOST));
+      setRowFontSize(nextFont);
+      setRowPaddingY(nextPad);
+    };
+
+    recalcRowSize();
+    // thead vừa mount/đổi trang/đổi tab cần 1 frame để có kích thước thật
+    const raf = requestAnimationFrame(recalcRowSize);
+    return () => cancelAnimationFrame(raf);
+  }, [pageSize, tableScrollMaxHeight, activeTab, safePage]);
 
   // Reset page to 1 whenever filters change
   useEffect(() => {
@@ -1954,7 +2054,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           border: 1px solid var(--border);
           color: var(--tbl-head-color);
           border-radius: var(--radius-xs);
-          font-size: 13px;
+          font-size: 16.5px; /* EPCC-increase-table-font-27pct: 13px -> 16.5px (+27%) */
           padding: 4px 6px;
           outline: none;
           cursor: pointer;
@@ -1969,7 +2069,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         .second-dashboard .sort-header {
           cursor: pointer;
           user-select: none;
-          font-size: 13px;
+          font-size: 16.5px; /* EPCC-increase-table-font-27pct: 13px -> 16.5px (+27%) */
           font-weight: 600;
           color: var(--tbl-head-color);
           letter-spacing: 0.01em;
@@ -2515,57 +2615,58 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
               {lang === 'vi' ? 'Không có dữ liệu phù hợp.' : 'No matching data.'}
             </div>
           ) : (
-            <div className="table-container merged-fill-table-container" style={{ display: 'flex', flexDirection: 'column', paddingTop: '12px' }}>
-              {/* FIX: đệm trên (12px) đặt ở table-container (KHÔNG cuộn)
-                  thay vì bên trong table-scroll — trước đây đặt padding-top
-                  ngay trong vùng cuộn khiến dòng dữ liệu đã cuộn qua bị lộ
-                  ra phía TRÊN thead dính (sticky), đè lên nhãn cột khi kéo
-                  lên. Giờ thead dính sát tuyệt đối mép trên của vùng cuộn,
-                  không còn khe hở để dòng cũ lộ ra. */}
-              <div className="table-scroll" style={{ overflowY: 'auto', overflowX: 'auto', maxHeight: '62vh', padding: '0 15px 15px 15px' }}>
-                <table className="stat-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
+            <div className="table-container merged-fill-table-container" style={{ display: 'flex', flexDirection: 'column', paddingTop: '0px' }}>
+              {/* FIX (EPCC top=0/bottom=0): bỏ hẳn đệm trên (trước là 12px)
+                  và đệm dưới (trước là 15px) quanh vùng bảng để bảng "kéo
+                  sát" mép trên (ngay dưới toolbar) và mép dưới (ngay trên
+                  thanh phân trang) — tăng tối đa số dòng hiển thị được
+                  trong cùng maxHeight: 62vh. Padding trái/phải (15px) vẫn
+                  giữ nguyên để nội dung không dính sát viền ngang. thead
+                  vẫn sticky top:0 nên không có khe hở lộ dòng cũ khi cuộn. */}
+              <div ref={tableScrollRef} className="table-scroll" style={{ overflowY: 'auto', overflowX: 'auto', maxHeight: `${tableScrollMaxHeight}px`, padding: '0 15px 0 15px' }}>
+                <table className="stat-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, marginTop: 0 }}>
+                  <thead ref={theadRef} style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                     {/* Group header row */}
                     <tr style={{ background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 20 }}>
                       <th colSpan={3} style={{ borderBottom: 'none', background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 20 }}></th>
-                      <th colSpan={3} style={{ textAlign: 'center', background: isLightMode ? 'rgba(46, 125, 140, 0.95)' : 'rgba(46, 125, 140, 0.85)', color: '#ffffff', fontWeight: '800', fontSize: '13px', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '10px 14px', textShadow: isLightMode ? '0 1px 2px rgba(0,0,0,0.4)' : 'none', position: 'sticky', top: 0, zIndex: 20 }}>
+                      <th colSpan={3} style={{ textAlign: 'center', background: isLightMode ? 'rgba(46, 125, 140, 0.95)' : 'rgba(46, 125, 140, 0.85)', color: '#ffffff', fontWeight: '800', fontSize: '16.5px', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '10px 14px', textShadow: isLightMode ? '0 1px 2px rgba(0,0,0,0.4)' : 'none', position: 'sticky', top: 0, zIndex: 20 }}>
                         {lang === 'vi' ? 'SẢN LƯỢNG (QTY)' : lang === 'ko' ? '출하량 (QTY)' : 'VOLUME (QTY)'}
                       </th>
-                      <th colSpan={3} style={{ textAlign: 'center', background: isLightMode ? 'rgba(29, 78, 216, 0.95)' : 'rgba(29, 78, 216, 0.85)', color: '#ffffff', fontWeight: '800', fontSize: '13px', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '10px 14px', textShadow: isLightMode ? '0 1px 2px rgba(0,0,0,0.4)' : 'none', position: 'sticky', top: 0, zIndex: 20 }}>
+                      <th colSpan={3} style={{ textAlign: 'center', background: isLightMode ? 'rgba(29, 78, 216, 0.95)' : 'rgba(29, 78, 216, 0.85)', color: '#ffffff', fontWeight: '800', fontSize: '16.5px', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '10px 14px', textShadow: isLightMode ? '0 1px 2px rgba(0,0,0,0.4)' : 'none', position: 'sticky', top: 0, zIndex: 20 }}>
                         {lang === 'vi' ? 'DOANH SỐ (AMT $)' : lang === 'ko' ? '매출액 (AMT $)' : 'SALES (AMT $)'}
                       </th>
                     </tr>
                     {/* Column header row with sort + filter */}
                     <tr style={{ background: 'var(--surface)', position: 'sticky', top: '43px', zIndex: 20 }}>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'left', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'left', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <span className="sort-header" onClick={() => { setSortField('model'); setSortAsc(sortField === 'model' ? !sortAsc : true); }}>
                             MODEL {sortField === 'model' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                           </span>
-                          <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="header-filter-select" style={{ fontSize: '13px' }}>
+                          <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="header-filter-select" style={{ fontSize: '16.5px' }}>
                             <option value="">{lang === 'vi' ? 'Tất cả Model' : 'All Models'}</option>
                             {models.map(m => <option key={m} value={m}>{m}</option>)}
                           </select>
                         </div>
                       </th>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'left', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'left', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <span className="sort-header" onClick={() => { setSortField('customer'); setSortAsc(sortField === 'customer' ? !sortAsc : true); }}>
                             {lang === 'vi' ? 'KHÁCH HÀNG' : 'CUSTOMER'} {sortField === 'customer' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                           </span>
-                          <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="header-filter-select" style={{ fontSize: '13px' }}>
+                          <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="header-filter-select" style={{ fontSize: '16.5px' }}>
                             <option value="">{lang === 'vi' ? 'Tất cả khách' : 'All Customers'}</option>
                             {customers.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </div>
                       </th>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'center', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'center', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
                           <span className="sort-header" onClick={() => { setSortField('date'); setSortAsc(sortField === 'date' ? !sortAsc : true); }}>
                             {viewMode === 'week' ? (lang === 'vi' ? 'TUẦN' : 'WEEK') : viewMode === 'month' ? (lang === 'vi' ? 'THÁNG' : 'MONTH') : (lang === 'vi' ? 'NGÀY' : 'DATE')} {sortField === 'date' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                           </span>
                           {viewMode === 'week' ? (
-                            <select value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)} className="header-filter-select" style={{ width: '110px', fontSize: '13px' }}>
+                            <select value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)} className="header-filter-select" style={{ width: '110px', fontSize: '16.5px' }}>
                               <option value="">{lang === 'vi' ? 'Tất cả tuần' : 'All Weeks'}</option>
                               <option value="W1">{lang === 'vi' ? 'Tuần 1' : 'Week 1'}</option>
                               <option value="W2">{lang === 'vi' ? 'Tuần 2' : 'Week 2'}</option>
@@ -2574,67 +2675,67 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                               {hasW5 && <option value="W5">{lang === 'vi' ? 'Tuần 5' : 'Week 5'}</option>}
                             </select>
                           ) : (
-                            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="header-filter-select" style={{ width: '110px', fontSize: '13px' }}>
+                            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="header-filter-select" style={{ width: '110px', fontSize: '16.5px' }}>
                               <option value="">{lang === 'vi' ? 'Tất cả tháng' : 'All Months'}</option>
                               {monthsList.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                           )}
                         </div>
                       </th>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
                           <span className="sort-header" onClick={() => { setSortField('qtyTarget'); setSortAsc(sortField === 'qtyTarget' ? !sortAsc : true); }}>
                             QTY TARGET {sortField === 'qtyTarget' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                           </span>
-                          <select value={qtyTargetFilter} onChange={e => setQtyTargetFilter(e.target.value)} className="header-filter-select" style={{ width: '100px', fontSize: '13px' }}>
+                          <select value={qtyTargetFilter} onChange={e => setQtyTargetFilter(e.target.value)} className="header-filter-select" style={{ width: '100px', fontSize: '16.5px' }}>
                             <option value="all">{lang === 'vi' ? 'Tất cả' : 'All'}</option>
                             <option value="greater_than_zero">{lang === 'vi' ? 'Có (> 0)' : 'Has (> 0)'}</option>
                             <option value="equal_to_zero">{lang === 'vi' ? 'Bằng 0' : 'Equals 0'}</option>
                           </select>
                         </div>
                       </th>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
                           <span className="sort-header" onClick={() => { setSortField('qtyActual'); setSortAsc(sortField === 'qtyActual' ? !sortAsc : true); }}>
                             QTY ACTUAL {sortField === 'qtyActual' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                           </span>
-                          <select value={qtyActualFilter} onChange={e => setQtyActualFilter(e.target.value)} className="header-filter-select" style={{ width: '100px', fontSize: '13px' }}>
+                          <select value={qtyActualFilter} onChange={e => setQtyActualFilter(e.target.value)} className="header-filter-select" style={{ width: '100px', fontSize: '16.5px' }}>
                             <option value="all">{lang === 'vi' ? 'Tất cả' : 'All'}</option>
                             <option value="greater_than_zero">{lang === 'vi' ? 'Có (> 0)' : 'Has (> 0)'}</option>
                             <option value="equal_to_zero">{lang === 'vi' ? 'Bằng 0' : 'Equals 0'}</option>
                           </select>
                         </div>
                       </th>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <span className="sort-header" onClick={() => { setSortField('qtyRatio'); setSortAsc(sortField === 'qtyRatio' ? !sortAsc : true); }}>
                           {lang === 'vi' ? 'TỈ LỆ QTY' : 'QTY %'} {sortField === 'qtyRatio' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                         </span>
                       </th>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
                           <span className="sort-header" onClick={() => { setSortField('amtTarget'); setSortAsc(sortField === 'amtTarget' ? !sortAsc : true); }}>
                             AMT TARGET {sortField === 'amtTarget' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                           </span>
-                          <select value={amtTargetFilter} onChange={e => setAmtTargetFilter(e.target.value)} className="header-filter-select" style={{ width: '100px', fontSize: '13px' }}>
+                          <select value={amtTargetFilter} onChange={e => setAmtTargetFilter(e.target.value)} className="header-filter-select" style={{ width: '100px', fontSize: '16.5px' }}>
                             <option value="all">{lang === 'vi' ? 'Tất cả' : 'All'}</option>
                             <option value="greater_than_zero">{lang === 'vi' ? 'Có (> 0)' : 'Has (> 0)'}</option>
                             <option value="equal_to_zero">{lang === 'vi' ? 'Bằng 0' : 'Equals 0'}</option>
                           </select>
                         </div>
                       </th>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
                           <span className="sort-header" onClick={() => { setSortField('amtActual'); setSortAsc(sortField === 'amtActual' ? !sortAsc : true); }}>
                             AMT ACTUAL {sortField === 'amtActual' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                           </span>
-                          <select value={amtActualFilter} onChange={e => setAmtActualFilter(e.target.value)} className="header-filter-select" style={{ width: '100px', fontSize: '13px' }}>
+                          <select value={amtActualFilter} onChange={e => setAmtActualFilter(e.target.value)} className="header-filter-select" style={{ width: '100px', fontSize: '16.5px' }}>
                             <option value="all">{lang === 'vi' ? 'Tất cả' : 'All'}</option>
                             <option value="greater_than_zero">{lang === 'vi' ? 'Có (> 0)' : 'Has (> 0)'}</option>
                             <option value="equal_to_zero">{lang === 'vi' ? 'Bằng 0' : 'Equals 0'}</option>
                           </select>
                         </div>
                       </th>
-                      <th style={{ fontSize: '13px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
+                      <th style={{ fontSize: '16.5px', fontWeight: 600, padding: '10px 12px', textAlign: 'right', color: 'var(--tbl-head-color)', position: 'sticky', top: '43px', zIndex: 20, background: 'var(--surface)' }}>
                         <span className="sort-header" onClick={() => { setSortField('amtRatio'); setSortAsc(sortField === 'amtRatio' ? !sortAsc : true); }}>
                           {lang === 'vi' ? 'TỈ LỆ AMT' : 'AMT %'} {sortField === 'amtRatio' ? (sortAsc ? '🔼' : '🔽') : '↕️'}
                         </span>
@@ -2644,9 +2745,9 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                   <tbody>
                     {pagedRows.map((row, index) => (
                       <tr key={index} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ fontSize: '14px', padding: '10px 12px', color: 'var(--tbl-model-color)', fontWeight: 600, textAlign: 'left' }}>{row.model}</td>
-                        <td style={{ fontSize: '14px', padding: '10px 12px', color: 'var(--tbl-cell-color)', fontWeight: 600, textAlign: 'left' }}>{row.customer}</td>
-                        <td style={{ fontSize: '14px', padding: '10px 12px', color: 'var(--tbl-date-color)', fontWeight: 500, textAlign: 'center' }}>{row.period}</td>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, color: 'var(--tbl-model-color)', fontWeight: 600, textAlign: 'left' }}>{row.model}</td>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, color: 'var(--tbl-cell-color)', fontWeight: 600, textAlign: 'left' }}>{row.customer}</td>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, color: 'var(--tbl-date-color)', fontWeight: 500, textAlign: 'center' }}>{row.period}</td>
                         {/* FIX (EPCC-merged-table-blank-space v2): tham chiếu
                             bảng "Toàn bộ Cơ sở Dữ liệu từ Excel" — bảng đó
                             LUÔN hiển thị giá trị thật (kể cả 0, vd "0 K")
@@ -2655,43 +2756,43 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                             màu nhạt (--tbl-nil-color) để phân biệt trực quan
                             khi giá trị = 0, không còn ô trống gây hiểu nhầm
                             là thiếu dữ liệu. */}
-                        <td style={{ fontSize: '14px', padding: '10px 12px', color: row.qtyTarget > 0 ? 'var(--tbl-num-color)' : 'var(--tbl-nil-color)', textAlign: 'right' }}>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, color: row.qtyTarget > 0 ? 'var(--tbl-num-color)' : 'var(--tbl-nil-color)', textAlign: 'right' }}>
                           {Math.round(row.qtyTarget).toLocaleString('vi-VN')}
                         </td>
-                        <td style={{ fontSize: '14px', padding: '10px 12px', color: row.qtyActual > 0 ? 'var(--green)' : 'var(--tbl-nil-color)', fontWeight: row.qtyActual > 0 ? 600 : 400, textAlign: 'right' }}>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, color: row.qtyActual > 0 ? 'var(--green)' : 'var(--tbl-nil-color)', fontWeight: row.qtyActual > 0 ? 600 : 400, textAlign: 'right' }}>
                           {Math.round(row.qtyActual).toLocaleString('vi-VN')}
                         </td>
-                        <td style={{ fontSize: '14px', padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: row.qtyTarget > 0 ? (row.qtyRatio < 100 ? 'red' : 'green') : 'var(--tbl-nil-color)' }}>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, textAlign: 'right', fontWeight: 700, color: row.qtyTarget > 0 ? (row.qtyRatio < 100 ? 'red' : 'green') : 'var(--tbl-nil-color)' }}>
                           {row.qtyTarget > 0 ? `${row.qtyRatio.toFixed(1)}%` : '0.0%'}
                         </td>
-                        <td style={{ fontSize: '14px', padding: '10px 12px', color: row.amtTarget > 0 ? 'var(--tbl-num-color)' : 'var(--tbl-nil-color)', textAlign: 'right' }}>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, color: row.amtTarget > 0 ? 'var(--tbl-num-color)' : 'var(--tbl-nil-color)', textAlign: 'right' }}>
                           {'$' + Math.round(row.amtTarget).toLocaleString('vi-VN')}
                         </td>
-                        <td style={{ fontSize: '14px', padding: '10px 12px', color: row.amtActual > 0 ? 'var(--purple-light)' : 'var(--tbl-nil-color)', fontWeight: row.amtActual > 0 ? 600 : 400, textAlign: 'right' }}>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, color: row.amtActual > 0 ? 'var(--purple-light)' : 'var(--tbl-nil-color)', fontWeight: row.amtActual > 0 ? 600 : 400, textAlign: 'right' }}>
                           {'$' + Math.round(row.amtActual).toLocaleString('vi-VN')}
                         </td>
-                        <td style={{ fontSize: '14px', padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: row.amtTarget > 0 ? (row.amtRatio < 100 ? 'red' : 'green') : 'var(--tbl-nil-color)' }}>
+                        <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, textAlign: 'right', fontWeight: 700, color: row.amtTarget > 0 ? (row.amtRatio < 100 ? 'red' : 'green') : 'var(--tbl-nil-color)' }}>
                           {row.amtTarget > 0 ? `${row.amtRatio.toFixed(1)}%` : '0.0%'}
                         </td>
                       </tr>
                     ))}
                     <tr className="total-row">
-                      <td className="text-left" colSpan={3} style={{ fontWeight: 800 }}>
+                      <td className="text-left" colSpan={3} style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, fontWeight: 800 }}>
                         {lang === 'vi' ? 'TỔNG' : lang === 'ko' ? '합계' : 'TOTAL'}
                       </td>
-                      <td style={{ textAlign: 'right' }}>{Math.round(tableTotals.qtyTarget).toLocaleString('vi-VN')}</td>
-                      <td style={{ textAlign: 'right' }}>{Math.round(tableTotals.qtyActual).toLocaleString('vi-VN')}</td>
-                      <td style={{ textAlign: 'right', color: '#3b82f6', fontWeight: 800 }}>{tableTotals.qtyRatio.toFixed(1)}%</td>
-                      <td style={{ textAlign: 'right' }}>${Math.round(tableTotals.amtTarget).toLocaleString('vi-VN')}</td>
-                      <td style={{ textAlign: 'right' }}>${Math.round(tableTotals.amtActual).toLocaleString('vi-VN')}</td>
-                      <td style={{ textAlign: 'right', color: '#3b82f6', fontWeight: 800 }}>{tableTotals.amtRatio.toFixed(1)}%</td>
+                      <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, textAlign: 'right' }}>{Math.round(tableTotals.qtyTarget).toLocaleString('vi-VN')}</td>
+                      <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, textAlign: 'right' }}>{Math.round(tableTotals.qtyActual).toLocaleString('vi-VN')}</td>
+                      <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, textAlign: 'right', color: '#3b82f6', fontWeight: 800 }}>{tableTotals.qtyRatio.toFixed(1)}%</td>
+                      <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, textAlign: 'right' }}>${Math.round(tableTotals.amtTarget).toLocaleString('vi-VN')}</td>
+                      <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, textAlign: 'right' }}>${Math.round(tableTotals.amtActual).toLocaleString('vi-VN')}</td>
+                      <td style={{ fontSize: `${rowFontSize}px`, padding: `${rowPaddingY}px 12px`, textAlign: 'right', color: '#3b82f6', fontWeight: 800 }}>{tableTotals.amtRatio.toFixed(1)}%</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
               {/* Pagination bar */}
-              <div className="pagination-bar" style={{ padding: '10px 15px', background: 'var(--surface)', borderTop: '1px solid var(--border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', flexShrink: 0 }}>
+              <div ref={paginationBarRef} className="pagination-bar" style={{ padding: '10px 15px', background: 'var(--surface)', borderTop: '1px solid var(--border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', flexShrink: 0 }}>
                 <div className="pagination-info">
                   {lang === 'vi' 
                     ? `Hiển thị ${processedRows.length > 0 ? (safePage - 1) * pageSize + 1 : 0}-${Math.min(safePage * pageSize, processedRows.length)} / ${processedRows.length} dòng`
