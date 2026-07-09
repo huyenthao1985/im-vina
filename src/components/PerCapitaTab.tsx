@@ -97,7 +97,11 @@ function getModelColor(model: string, idx: number) {
 
 // ─── i18n ─────────────────────────────────────────────────────────────────────
 const T = {
-  title:        { vi: '인당 생산수 & 생산 현황 (근무인력 기준)', en: 'Per Capita Output & Production (Headcount Based)', ko: '인당 생산수 & 생산 현황 (근무인력 기준)' },
+  // FIX (EPCC-title-i18n, áp dụng đồng bộ với ManpowerDashboard.tsx): field
+  // `vi` trước đây bị dán NHẦM nguyên văn tiếng Hàn (không có phần tiếng Việt
+  // nào) — cùng lỗi đã sửa ở tiêu đề ManpowerDashboard. Sửa lại đúng tiếng
+  // Việt, giữ nguyên `en`/`ko` (2 field đó vốn đã đúng ngôn ngữ).
+  title:        { vi: 'SẢN LƯỢNG ĐẦU NGƯỜI & TÌNH HÌNH SẢN XUẤT (THEO NHÂN LỰC)', en: 'Per Capita Output & Production (Headcount Based)', ko: '인당 생산수 & 생산 현황 (근무인력 기준)' },
   subtitle:     { vi: 'Ước lượng từ dữ liệu nhân lực (DAY 50.7% / NIGHT 49.3%)', en: 'Estimated from manpower data (DAY 50.7% / NIGHT 49.3%)', ko: '근무인원 기준 추정 (DAY 50.7% / NIGHT 49.3%)' },
   chart1Title:  { vi: '인당생산수 - Sản lượng theo đầu người', en: 'Per Capita Output', ko: '인당생산수' },
   chart2Title:  { vi: '인력 유실 비용 - Chi phí hao hụt nhân lực', en: 'Labor Loss Cost', ko: '인력 유실 비용' },
@@ -105,7 +109,7 @@ const T = {
   dayLossCost:   { vi: 'DAY 인력 유실 비용', en: 'DAY Labor Loss Cost', ko: 'DAY 인력 유실 비용' },
   nightLossCost: { vi: 'NIGHT 인력 유실 비용', en: 'NIGHT Labor Loss Cost', ko: 'NIGHT 인력 유실 비용' },
   ttlLossCost:   { vi: 'TTL 인력 유실 비용', en: 'TTL Labor Loss Cost', ko: 'TTL 인력 유실 비용' },
-  chart3Title:  { vi: '근무 인력 현황 - Tình hình nhân lực đi làm', en: 'Manpower Trend', ko: '근무 인력 현황' },
+  chart3Title:  { vi: 'Tình hình nhân lực đi làm', en: 'Manpower Trend', ko: '근무 인력 현황' },
   dayPc:        { vi: 'DAY 인당생산수', en: 'DAY Per Capita', ko: 'DAY 인당생산수' },
   nightPc:      { vi: 'NIGHT 인당생산수', en: 'NIGHT Per Capita', ko: 'NIGHT 인당생산수' },
   ttlPc:        { vi: 'TTL 인당생산수', en: 'TTL Per Capita', ko: 'TTL 인당생산수' },
@@ -1548,7 +1552,10 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   const textColor = isDark ? '#e2e8f0' : '#1e293b';
   const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
   // FIX(toolbar-chuan-hoa): đồng bộ y hệt màu label với TargetActualDashboard (ảnh 3)
-  const filterLabelColor = theme === 'light' ? 'var(--text-0)' : 'var(--text-2)';
+  // FIX (EPCC-vanilla-toolbar): thanh filter đổi nền sang "Vanilla"
+  // (#FFF4D6, cố định, không đổi theo theme) theo ảnh tham chiếu — nên màu
+  // chữ nhãn cũng cố định luôn (cam đậm) thay vì đổi theo theme như trước.
+  const filterLabelColor = '#B5540C';
 
   // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
   // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
@@ -1578,16 +1585,8 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   const [modelFilter, setModelFilter] = useState<string>('all');
   const [dateError, setDateError] = useState<string | null>(null);
 
-  // Clock (giống ManpowerDashboard)
-  const [currentTime, setCurrentTime] = useState<Date>(new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const formatClock = (d: Date) => {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
-  };
+  // FIX: đồng hồ realtime đã bị bỏ khỏi Mục 3 sheet 2 theo yêu cầu — không
+  // còn cần state/interval/formatter riêng cho clock ở đây nữa.
 
   // ── Date handlers (giống ManpowerDashboard) ────────────────────────────────
   const handleDateFromChange = (val: string) => {
@@ -1768,13 +1767,18 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           (ảnh 3) — layout 2 dòng (dòng nhãn + dòng control), đồng hồ dạng text
           thường, input ngày cao 38px, CustomSelect cho Model.
          ══════════════════════════════════════════════════════════════════════ */}
-      <div className="topbar-dash" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+      <div className="topbar-dash" style={{
+        display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px',
+        background: 'linear-gradient(135deg, #FFFBEF 0%, #FFF4D6 55%, #FFEBBE 100%)',
+        borderRadius: '14px', padding: '14px 16px',
+        border: '1px solid rgba(0,0,0,0.06)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+      }}>
         {/* Dòng 1 (labels) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          {/* Cụm trái dòng 1: Đồng hồ */}
-          <div style={{ width: '170px', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: '13px', color: filterLabelColor, fontWeight: '700', whiteSpace: 'nowrap' }}>
-            {formatClock(currentTime)}
-          </div>
+          {/* Cụm trái dòng 1: đồng hồ đã bị bỏ theo yêu cầu — giữ spacer
+              trống cùng bề rộng để không lệch layout các cột nhãn bên phải. */}
+          <div style={{ width: '170px', flexShrink: 0 }} />
           {/* Cụm giữa dòng 1: Labels */}
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
             <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
@@ -1841,10 +1845,13 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                       flex: 1,
                       padding: '6px 0', fontSize: '13px', fontWeight: 600,
                       borderRadius: mode === 'day' ? '6px 0 0 6px' : mode === 'year' ? '0 6px 6px 0' : '0',
-                      border: '1px solid var(--border)',
-                      borderRight: mode !== 'year' ? 'none' : '1px solid var(--border)',
-                      background: isActive ? '#2e7d8c' : 'var(--surface-2)',
-                      color: isActive ? '#ffffff' : 'var(--text-2)',
+                      // FIX (EPCC-vanilla-toolbar-contrast): màu cố định,
+                      // không phụ thuộc theme — tránh chữ mờ/biến mất khi
+                      // đổi theme trên nền Vanilla.
+                      border: '1px solid rgba(0,0,0,0.18)',
+                      borderRight: mode !== 'year' ? 'none' : '1px solid rgba(0,0,0,0.18)',
+                      background: isActive ? '#2e7d8c' : 'rgba(255,255,255,0.55)',
+                      color: isActive ? '#ffffff' : '#7A5A2E',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
                       height: '100%',
@@ -1978,49 +1985,6 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
               </span>
             </div>
             <div id={ids.current.c1} style={{ height: '270px' }} />
-          </div>
-
-          {/* Chart 2: 인력 유실 비용 (Labor Loss Cost) — EPCC (chart2-loss-cost) */}
-          <div className="panel">
-            <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0 }}>{t('chart2Title', lang)}</h3>
-              <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
-                {t('chart2Subtitle', lang)}
-              </span>
-              {!hasChart2Data && (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '6px',
-                  fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic',
-                  padding: '5px 12px', borderRadius: '6px',
-                  background: 'var(--surface-2)', border: '1px dashed var(--border)',
-                }}>
-                  ⚠️ {lang === 'vi'
-                    ? 'Chưa nhận diện được dữ liệu Chi phí hao hụt nhân lực. Kiểm tra cột Type trong Excel có chứa "DAY/NIGHT/TTL 인력 유실 비용" hoặc "hao hụt nhân lực" không, rồi tải lại.'
-                    : lang === 'ko'
-                    ? '인력 유실 비용 데이터를 찾을 수 없습니다. Excel의 Type 열에 "DAY/NIGHT/TTL 인력 유실 비용"이 포함되어 있는지 확인 후 다시 업로드하세요.'
-                    : 'No labor loss cost data recognized. Check that the Type column in Excel contains "DAY/NIGHT/TTL Labor Loss Cost", then re-upload.'}
-                </span>
-              )}
-            </div>
-            <div id={ids.current.c2} style={{ height: '270px' }} />
-          </div>
-
-          {/* Chart 3: 근무 인력 현황 */}
-          <div className="panel">
-            <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '근무 인력 현황 - Tình hình nhân lực đi làm' : lang === 'ko' ? '근무 인력 현황' : 'Manpower Trend'}</h3>
-              {data.ttlStandard && (
-                <span style={{
-                  fontSize: '13px', padding: '2px 8px', borderRadius: '4px',
-                  background: 'var(--rose-soft)', color: 'var(--rose)',
-                  border: '1px dashed var(--rose)',
-                  display: 'inline-flex', alignItems: 'center',
-                }}>
-                  {lang === 'vi' ? 'TTL 기준인력 Standard AVG' : lang === 'ko' ? 'TTL 기준인력 Standard AVG' : 'TTL Standard AVG'}: {fmt1(r1(data.ttlStandard))} {lang === 'vi' ? 'người' : lang === 'ko' ? '명' : 'prs'}
-                </span>
-              )}
-            </div>
-            <div id={ids.current.c3} style={{ height: '270px' }} />
           </div>
 
           {/* ════ Chart: Sản xuất theo ca DAY / NIGHT / TTL ════════════════════════ */}
@@ -2172,6 +2136,49 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
               <div id={ids.current.c5} style={{ minHeight: '450px' }} />
             </div>
 
+          </div>
+
+          {/* Chart 2: 인력 유실 비용 (Labor Loss Cost) — EPCC (chart2-loss-cost) */}
+          <div className="panel">
+            <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <h3 style={{ margin: 0 }}>{t('chart2Title', lang)}</h3>
+              <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
+                {t('chart2Subtitle', lang)}
+              </span>
+              {!hasChart2Data && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  fontSize: '12px', color: 'var(--text-3)', fontStyle: 'italic',
+                  padding: '5px 12px', borderRadius: '6px',
+                  background: 'var(--surface-2)', border: '1px dashed var(--border)',
+                }}>
+                  ⚠️ {lang === 'vi'
+                    ? 'Chưa nhận diện được dữ liệu Chi phí hao hụt nhân lực. Kiểm tra cột Type trong Excel có chứa "DAY/NIGHT/TTL 인력 유실 비용" hoặc "hao hụt nhân lực" không, rồi tải lại.'
+                    : lang === 'ko'
+                    ? '인력 유실 비용 데이터를 찾을 수 없습니다. Excel의 Type 열에 "DAY/NIGHT/TTL 인력 유실 비용"이 포함되어 있는지 확인 후 다시 업로드하세요.'
+                    : 'No labor loss cost data recognized. Check that the Type column in Excel contains "DAY/NIGHT/TTL Labor Loss Cost", then re-upload.'}
+                </span>
+              )}
+            </div>
+            <div id={ids.current.c2} style={{ height: '270px' }} />
+          </div>
+
+          {/* Chart 3: 근무 인력 현황 */}
+          <div className="panel">
+            <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <h3 style={{ margin: 0 }}>{t('chart3Title', lang)}</h3>
+              {data.ttlStandard && (
+                <span style={{
+                  fontSize: '13px', padding: '2px 8px', borderRadius: '4px',
+                  background: 'var(--rose-soft)', color: 'var(--rose)',
+                  border: '1px dashed var(--rose)',
+                  display: 'inline-flex', alignItems: 'center',
+                }}>
+                  {lang === 'vi' ? 'TTL 기준인력 Standard AVG' : lang === 'ko' ? 'TTL 기준인력 Standard AVG' : 'TTL Standard AVG'}: {fmt1(r1(data.ttlStandard))} {lang === 'vi' ? 'người' : lang === 'ko' ? '명' : 'prs'}
+                </span>
+              )}
+            </div>
+            <div id={ids.current.c3} style={{ height: '270px' }} />
           </div>
 
         </div>

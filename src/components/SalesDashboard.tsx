@@ -3,7 +3,6 @@ import * as XLSX from 'xlsx';
 import type { DataRow, ColumnMapping, FilterState } from '../types';
 import { translations } from '../translations';
 import { CustomSelect } from './CustomSelect';
-import { GlobalHeaderControls } from './GlobalHeaderControls';
 import { NeonButton } from './NeonButton';
 
 interface SalesDashboardProps {
@@ -28,6 +27,11 @@ declare global {
     XLSX?: any;
   }
 }
+
+// FIX (EPCC-vanilla-toolbar): màu chữ nhãn cố định (không đổi theo theme)
+// dùng riêng cho thanh filter nền "Vanilla" (#FFF4D6) — cam đậm để đủ tương
+// phản trên nền vàng nhạt, tương tự ảnh tham chiếu "Vanilla / HEX #FFF4D6".
+const VANILLA_LABEL_COLOR = '#B5540C';
 
 export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   rows,
@@ -1264,39 +1268,46 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
 
   return (
     <div className="sales-dashboard" style={{ position: 'relative', zIndex: 1 }}>
-      {/* Header ngang hàng với GlobalHeaderControls */}
+      {/* Header ngang hàng — Lang+Theme đã chuyển vào Sidebar (dùng chung
+          cho Mục 1-4), không lặp lại riêng ở đây nữa. */}
       <div className="dashboard-header-grid">
-        <div className="dashboard-header-left" />
+        <div className="dashboard-header-left" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <span aria-hidden="true">🕐</span>
+          {formattedTime}
+        </div>
         <h1 className="dashboard-header-title">
           {t.mainTitleDash}
         </h1>
-        <div className="dashboard-header-right">
-          <GlobalHeaderControls 
-            lang={lang} 
-            setLang={_setLang} 
-            isDark={theme === 'dark'} 
-            onToggleTheme={_onToggleTheme} 
-          />
-        </div>
+        <div className="dashboard-header-right" />
       </div>
 
       <div className="dash-container">
-        {/* Filter bar exactly matching reference layout */}
-        <div className="topbar-dash" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+        {/* Filter bar exactly matching reference layout
+            FIX (EPCC-vanilla-toolbar): nền thanh filter đổi từ tông tối
+            (topbar-dash mặc định) sang "Vanilla" (#FFF4D6) theo ảnh tham
+            chiếu — áp dụng cho Mục 1/2/3. Các nút ĐANG ĐƯỢC CHỌN (Tháng/Quý/
+            Năm...) vẫn giữ nguyên màu xanh/teal hiện có để phân biệt rõ lựa
+            chọn hiện tại, không đổi theo nền vanilla này. */}
+        <div className="topbar-dash" style={{
+          display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px',
+          background: 'linear-gradient(135deg, #FFFBEF 0%, #FFF4D6 55%, #FFEBBE 100%)',
+          borderRadius: '14px', padding: '14px 16px',
+          border: '1px solid rgba(0,0,0,0.06)',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+        }}>
           {/* Dòng 1 (labels) */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-            {/* Cụm trái dòng 1: Đồng hồ */}
-            <div style={{ width: '170px', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: '13px', color: 'var(--text-2)', fontWeight: '700', whiteSpace: 'nowrap' }}>
-              {formattedTime}
-            </div>
+            {/* Cụm trái dòng 1: đồng hồ đã chuyển vào Sidebar — giữ spacer
+                trống cùng bề rộng để không lệch layout các cột nhãn bên phải. */}
+            <div style={{ width: '170px', flexShrink: 0 }} />
             {/* Cụm giữa dòng 1: Labels */}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
-              <span style={{ width: '90px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.fromYear}</span>
-              <span style={{ width: '90px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.toYear}</span>
-              <span style={{ width: '110px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.partner}</span>
-              <span style={{ width: '110px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.colModel}</span>
-              <span style={{ width: '180px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{lang === 'vi' ? 'XEM THEO' : lang === 'ko' ? '보기 방식' : 'VIEW BY'}</span>
-              <span style={{ width: '140px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: 'var(--text-2)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{lang === 'vi' ? 'CHI TIẾT' : lang === 'ko' ? '상세 선택' : 'DETAIL'}</span>
+              <span style={{ width: '90px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: VANILLA_LABEL_COLOR, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.fromYear}</span>
+              <span style={{ width: '90px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: VANILLA_LABEL_COLOR, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.toYear}</span>
+              <span style={{ width: '110px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: VANILLA_LABEL_COLOR, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.partner}</span>
+              <span style={{ width: '110px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: VANILLA_LABEL_COLOR, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.colModel}</span>
+              <span style={{ width: '180px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: VANILLA_LABEL_COLOR, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{lang === 'vi' ? 'XEM THEO' : lang === 'ko' ? '보기 방식' : 'VIEW BY'}</span>
+              <span style={{ width: '140px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: VANILLA_LABEL_COLOR, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{lang === 'vi' ? 'CHI TIẾT' : lang === 'ko' ? '상세 선택' : 'DETAIL'}</span>
               {activeFilterCount > 0 && <span style={{ width: '130px', flexShrink: 0 }}></span>}
               {activeFilterCount > 0 && <span style={{ width: '60px', flexShrink: 0 }}></span>}
             </div>
@@ -1353,10 +1364,17 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                       fontSize: '13px',
                       fontWeight: 600,
                       borderRadius: mode === 'month' ? '6px 0 0 6px' : mode === 'year' ? '0 6px 6px 0' : '0',
-                      border: '1px solid var(--border)',
-                      borderRight: mode !== 'year' ? 'none' : '1px solid var(--border)',
-                      background: viewMode === mode ? '#2e7d8c' : 'var(--bg-card)',
-                      color: viewMode === mode ? '#ffffff' : 'var(--text)',
+                      // FIX (EPCC-vanilla-toolbar-contrast): nút KHÔNG active
+                      // trước dùng var(--border)/var(--bg-card)/var(--text) —
+                      // các biến này đổi theo theme và có lúc gần trùng màu
+                      // nền Vanilla khiến chữ gần như biến mất (VD "Tuần",
+                      // "Quý" mờ hẳn khi đổi theme). Chuyển sang màu CỐ ĐỊNH,
+                      // không phụ thuộc theme, đảm bảo luôn đọc được trên nền
+                      // Vanilla ở cả Light lẫn Dark.
+                      border: '1px solid rgba(0,0,0,0.18)',
+                      borderRight: mode !== 'year' ? 'none' : '1px solid rgba(0,0,0,0.18)',
+                      background: viewMode === mode ? '#2e7d8c' : 'rgba(255,255,255,0.55)',
+                      color: viewMode === mode ? '#ffffff' : '#7A5A2E',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
                       height: '100%',

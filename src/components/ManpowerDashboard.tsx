@@ -3,7 +3,6 @@ import * as XLSX from 'xlsx';
 import type { DataRow } from '../types';
 import { parseToDate } from '../utils';
 import { PerCapitaTab } from './PerCapitaTab';
-import { GlobalHeaderControls } from './GlobalHeaderControls';
 import { CustomSelect } from './CustomSelect';
 import { NeonButton } from './NeonButton';
 
@@ -29,7 +28,11 @@ const MODEL_COLORS: Record<string, string> = {
 
 // ─── i18n ─────────────────────────────────────────────────────────────────────
 const T = {
-  title:      { vi: '근무 인력 현황 (Manpower Dashboard)', en: 'Manpower Status Dashboard', ko: '근무 인력 현황' },
+  // FIX (EPCC-title-i18n): trước đây field `vi` bị dán NHẦM nguyên văn tiếng
+  // Hàn "근무 인력 현황 (Manpower Dashboard)" thay vì tiếng Việt — lỗi copy-paste
+  // giữa 3 field. Sửa lại đúng nội dung + đúng ngôn ngữ cho cả VI/EN/KO theo
+  // yêu cầu: "TÌNH HÌNH NHÂN LỰC VÀ SẢN LƯỢNG ĐẦU NGƯỜI".
+  title:      { vi: 'TÌNH HÌNH NHÂN LỰC VÀ SẢN LƯỢNG ĐẦU NGƯỜI', en: 'Manpower Status & Production Per Capita', ko: '인력 현황 및 인당 생산수' },
   subtitle:   { vi: 'Phân tích nhân lực theo Model & Thời gian', en: 'Manpower by Model & Period', ko: '모델별 인력 현황 분석' },
   kpiTtlAvg: { vi: 'Tổng nhân lực TB', en: 'Total Manpower Avg', ko: '총 인원 평균' },
   kpiPeak:   { vi: 'Giai đoạn cao điểm', en: 'Peak Period', ko: '최고 기간' },
@@ -856,9 +859,10 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   // Clock state
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
-  // FIX(toolbar-chuan-hoa): màu label đồng bộ với toolbar chuẩn (PerCapitaTab /
-  // TargetActualDashboard) — tự đổi theo Light/Dark mode.
-  const filterLabelColor = theme === 'light' ? 'var(--text-0)' : 'var(--text-2)';
+  // FIX (EPCC-vanilla-toolbar): thanh filter đổi nền sang "Vanilla"
+  // (#FFF4D6, cố định, không đổi theo theme) theo ảnh tham chiếu — nên màu
+  // chữ nhãn cũng cố định luôn (cam đậm) thay vì đổi theo theme như trước.
+  const filterLabelColor = '#B5540C';
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -989,51 +993,68 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   return (
     <div className="sales-dashboard" style={{ padding: '0 24px 24px', boxSizing: 'border-box' }}>
       
-      {/* Header ngang hàng với GlobalHeaderControls */}
+      {/* Header ngang hàng — Lang+Theme đã chuyển vào Sidebar (dùng chung
+          cho Mục 1-4), không lặp lại riêng ở đây nữa. */}
       <div className="dashboard-header-grid stretched">
-        <div className="dashboard-header-left" />
+        <div className="dashboard-header-left" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <span aria-hidden="true">🕐</span>
+          {formatClock(currentTime)}
+        </div>
         <div className="dashboard-header-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '20px' }}>👷</span>
           <h1 className="dashboard-header-title" style={{ border: 'none', padding: 0 }}>
             {t('title', lang)}
           </h1>
         </div>
-        <div className="dashboard-header-right">
-          <GlobalHeaderControls 
-            lang={lang} 
-            setLang={setLang} 
-            isDark={theme === 'dark'} 
-            onToggleTheme={onToggleTheme} 
-          />
-        </div>
+        <div className="dashboard-header-right" />
       </div>
 
 
-        {/* ── Tab Navigation ── */}
-        <div style={{ display: 'flex', gap: '0px', marginTop: '12px', borderBottom: '2px solid var(--border-soft)' }}>
+        {/* ── Tab Navigation ──
+            FIX (EPCC-neon-lime-tabbar): tab ĐANG ACTIVE trước dùng nền xanh lá
+            #00AE72 + chữ trắng. Theo ảnh tham chiếu "Neon Lime" (nền
+            #C8FF3D, chữ navy đậm), đổi sang bộ màu neon lime này cho CẢ 2
+            sheet (Tình hình nhân lực / Sản lượng theo đầu người) vì dùng
+            chung 1 thanh tab. Nền neon lime rất sáng nên tự đủ tương phản ở
+            CẢ light lẫn dark theme mà không cần đổi màu nền theo theme — chỉ
+            viền/bóng đổ được chỉnh nhẹ theo `theme` để tab nổi khối rõ ràng
+            trên cả nền trắng (light) lẫn nền tối (dark). */}
+        <div style={{
+          display: 'flex', gap: '6px', marginTop: '12px',
+          borderBottom: '2px solid var(--border-soft)', paddingBottom: '4px',
+        }}>
           {([
             { id: 'manpower', label: lang === 'vi' ? '👷 근무 인력 현황 - Tình hình nhân lực' : lang === 'ko' ? '👷 근무 인력 현황' : '👷 Manpower Status' },
             { id: 'percapita', label: lang === 'vi' ? '📐 인당 생산수 현황 - Sản lượng theo đầu người' : lang === 'ko' ? '📐 인당 생산수 현황' : '📐 Per Capita Output' },
-          ] as const).map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                padding: '8px 20px',
-                fontSize: '13px',
-                fontWeight: activeTab === tab.id ? 700 : 500,
-                border: 'none',
-                borderBottom: activeTab === tab.id ? '2px solid #2e7d8c' : '2px solid transparent',
-                background: 'transparent',
-                color: activeTab === tab.id ? '#2e7d8c' : 'var(--text-3)',
-                cursor: 'pointer',
-                marginBottom: '-2px',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ] as const).map(tab => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  padding: '8px 20px',
+                  fontSize: '13px',
+                  fontWeight: isActive ? 800 : 500,
+                  border: isActive
+                    ? (theme === 'light' ? '1px solid rgba(0,0,0,0.12)' : '1px solid rgba(0,0,0,0.18)')
+                    : 'none',
+                  borderRadius: '8px',
+                  background: isActive ? '#C8FF3D' : 'transparent',
+                  boxShadow: isActive
+                    ? (theme === 'light'
+                        ? '0 2px 6px rgba(0,0,0,0.14)'
+                        : '0 2px 8px rgba(200,255,61,0.35), inset 0 1px 1px rgba(255,255,255,0.5)')
+                    : 'none',
+                  color: isActive ? '#1E1B4B' : 'var(--text-3)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* ── Toolbar — chỉ hiển thị khi ở tab Manpower ──────────────────────
@@ -1043,13 +1064,18 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
             (không bo viền/pill), input ngày cao 38px, CustomSelect cho Model,
             control cao 38px đồng nhất. Áp dụng cùng chuẩn đã dùng ở PerCapitaTab. */}
         {activeTab === 'manpower' && (
-        <div className="topbar-dash" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', marginBottom: '16px' }}>
+        <div className="topbar-dash" style={{
+          display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', marginBottom: '16px',
+          background: 'linear-gradient(135deg, #FFFBEF 0%, #FFF4D6 55%, #FFEBBE 100%)',
+          borderRadius: '14px', padding: '14px 16px',
+          border: '1px solid rgba(0,0,0,0.06)',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+        }}>
           {/* Dòng 1 (labels) */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-            {/* Cụm trái dòng 1: Đồng hồ */}
-            <div style={{ width: '170px', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: '13px', color: filterLabelColor, fontWeight: '700', whiteSpace: 'nowrap' }}>
-              {formatClock(currentTime)}
-            </div>
+            {/* Cụm trái dòng 1: đồng hồ đã chuyển vào Sidebar — giữ spacer
+                trống cùng bề rộng để không lệch layout các cột nhãn bên phải. */}
+            <div style={{ width: '170px', flexShrink: 0 }} />
             {/* Cụm giữa dòng 1: Labels */}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
               <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
@@ -1113,10 +1139,13 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                       fontSize: '13px',
                       fontWeight: 600,
                       borderRadius: mode === 'day' ? '6px 0 0 6px' : mode === 'year' ? '0 6px 6px 0' : '0',
-                      border: '1px solid var(--border)',
-                      borderRight: mode !== 'year' ? 'none' : '1px solid var(--border)',
-                      background: granularity === mode ? '#2e7d8c' : 'var(--surface-2)',
-                      color: granularity === mode ? '#ffffff' : 'var(--text-2)',
+                      // FIX (EPCC-vanilla-toolbar-contrast): màu cố định,
+                      // không phụ thuộc theme — tránh chữ mờ/biến mất khi
+                      // đổi theme trên nền Vanilla.
+                      border: '1px solid rgba(0,0,0,0.18)',
+                      borderRight: mode !== 'year' ? 'none' : '1px solid rgba(0,0,0,0.18)',
+                      background: granularity === mode ? '#2e7d8c' : 'rgba(255,255,255,0.55)',
+                      color: granularity === mode ? '#ffffff' : '#7A5A2E',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
                       height: '100%',

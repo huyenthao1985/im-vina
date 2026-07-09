@@ -3,7 +3,6 @@ import type { DataRow } from '../types';
 import { translations } from '../translations';
 import { CustomSelect } from './CustomSelect';
 import { usePagination } from '../hooks/usePagination';
-import { GlobalHeaderControls } from './GlobalHeaderControls';
 import { chartTheme, getChartLayout } from './chartTheme';
 import { NeonButton } from './NeonButton';
 
@@ -915,8 +914,22 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     return [...new Set(normalizedRows.map(r => r.customer).filter(Boolean))].sort();
   }, [normalizedRows]);
 
+  // Models are ordered by total shipped quantity (QTY ACTUAL) descending, so the
+  // most-shipped model appears first in the dropdown. Models that have never had
+  // any plan (QTY TARGET always 0) are hidden from the list since there's nothing
+  // to track for them.
   const models = useMemo(() => {
-    return [...new Set(normalizedRows.map(r => r.model).filter(Boolean))].sort();
+    const statsByModel: Record<string, { qtyActual: number; qtyTarget: number }> = {};
+    normalizedRows.forEach(r => {
+      if (!r.model) return;
+      if (!statsByModel[r.model]) statsByModel[r.model] = { qtyActual: 0, qtyTarget: 0 };
+      statsByModel[r.model].qtyActual += r.qtyActual;
+      statsByModel[r.model].qtyTarget += r.qtyTarget;
+    });
+
+    return Object.keys(statsByModel)
+      .filter(m => statsByModel[m].qtyTarget > 0) // hide models with no plan at all
+      .sort((a, b) => statsByModel[b].qtyActual - statsByModel[a].qtyActual);
   }, [normalizedRows]);
 
   const monthsList = useMemo(() => {
@@ -1137,7 +1150,19 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         return sortAsc ? (valA ?? 0) - (valB ?? 0) : (valB ?? 0) - (valA ?? 0);
       });
     } else {
+      // Default order (no column header sort active): rank models by their total
+      // shipped quantity (QTY ACTUAL) across the whole filtered range, highest first,
+      // so models with the most output float to the top on every page, and models
+      // with zero output sink to the bottom.
+      const totalQtyActualByModel: Record<string, number> = {};
+      rows.forEach(r => {
+        totalQtyActualByModel[r.model] = (totalQtyActualByModel[r.model] || 0) + r.qtyActual;
+      });
+
       rows.sort((a, b) => {
+        const totalA = totalQtyActualByModel[a.model] || 0;
+        const totalB = totalQtyActualByModel[b.model] || 0;
+        if (totalA !== totalB) return totalB - totalA; // highest shipped-qty model first
         if (a.model !== b.model) return a.model.localeCompare(b.model);
         if (a.customer !== b.customer) return a.customer.localeCompare(b.customer);
         return String(a.sortKeyDate).localeCompare(String(b.sortKeyDate));
@@ -1755,8 +1780,11 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     return { qtyTarget, qtyActual, qtyRate, amtTarget, amtActual, amtRate };
   }, [filteredRecords]);
 
-  // Màu label filter: đậm trong light mode, mờ nhẹ trong dark mode
-  const filterLabelColor = theme === 'light' ? 'var(--text-0)' : 'var(--text-2)';
+  // FIX (EPCC-vanilla-toolbar): thanh filter đổi nền sang "Vanilla"
+  // (#FFF4D6, cố định, không đổi theo theme) theo ảnh tham chiếu — nên màu
+  // chữ nhãn cũng cố định luôn (cam đậm) thay vì đổi theo theme như trước,
+  // để luôn đủ tương phản trên nền vàng nhạt ở CẢ light lẫn dark theme.
+  const filterLabelColor = '#B5540C';
 
   return (
     <div 
@@ -1764,61 +1792,24 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       style={{ 
         position: 'relative', 
         zIndex: 1,
-        ...(activeTab === 'merged' ? {
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          minHeight: 0,
-          overflow: 'hidden',
-          boxSizing: 'border-box'
-        } : {})
       }}
     >
       <style>{`
         /* ═══════════════════════════════════════════════════════════════
-           FIX: bảng "DOANH SỐ & SẢN LƯỢNG" bị cắt cụt, chỉ hiện vài dòng
-           rồi để trống khoảng lớn phía dưới thay vì giãn hết màn hình.
+           FIX (EPCC-merged-table-blank-space v2): bảng "DOANH SỐ & SẢN
+           LƯỢNG" từng bị khoảng trắng lớn ở dưới do ép panel/bảng
+           flex:1 fill hết 100dvh dựa vào giả định cấu trúc DOM cha
+           (.app-content/.app-layout) — cách này DỄ VỠ vì phụ thuộc tên
+           class của cha (có thể đổi bất cứ lúc nào khi sửa App.tsx/
+           Sidebar, như đã xảy ra) và trình duyệt phải hỗ trợ :has().
 
-           NGUYÊN NHÂN GỐC: div gốc của component này trước đây ép cứng
-           height:'100vh' + overflow:'hidden', với giả định nó luôn nằm
-           SÁT MÉP TRÊN của viewport. Nhưng thực tế nó được render bên
-           trong <main class="app-content"> (App.tsx), nằm dưới sidebar/
-           header khác — nên khối 100vh này bị lố xuống dưới màn hình
-           thật, khiến flex:1 của bảng tính toán trên một tổng chiều cao
-           sai, và phần dòng dữ liệu phía dưới bị hụt/cắt.
-
-           Ngoài ra, class ".panel" dùng chung toàn app (định nghĩa ở
-           file CSS khác, không có trong 2 file được cung cấp) có khả
-           năng đang set height/max-height CỐ ĐỊNH cho mọi panel — bản
-           vá cũ (.second-dashboard.second-dashboard .merged-fill-panel)
-           không đủ vì nó không chắc thắng thứ tự nạp stylesheet.
-
-           CÁCH XỬ LÝ: 
-           1) Đổi height:'100vh' → '100%' trên div gốc (không tự ý giả
-              định vị trí trong viewport nữa, chỉ giãn theo chiều cao
-              THẬT của cha .app-content/.app-layout).
-           2) Ép chính .app-content/.app-layout (cha thật sự) giãn đủ
-              100dvh + overflow hidden CHỈ khi đang hiển thị tab merged
-              của dashboard này (dùng :has() để không ảnh hưởng các
-              Mục/tab khác dùng chung .app-content).
-           3) Ép .panel dùng chung thắng tuyệt đối bằng selector có độ
-              đặc hiệu cao hơn + để rule này SAU CÙNG trong stylesheet.
+           THAM CHIẾU: bảng "Toàn bộ Cơ sở Dữ liệu từ Excel" (ảnh mẫu)
+           không dùng chiêu ép 100dvh này — nó chỉ cho khu vực cuộn của
+           bảng một CHIỀU CAO CỐ ĐỊNH/hợp lý (vd theo vh) với overflow-y
+           riêng, độc lập hoàn toàn với DOM cha. Panel/table-container
+           vẫn có height TỰ NHIÊN theo nội dung — không còn khoảng trắng
+           thừa vì không còn ép chiều cao vượt quá nội dung thật.
            ═══════════════════════════════════════════════════════════════ */
-        .app-content:has(> .second-dashboard),
-        .app-layout:has(> .app-content > .second-dashboard) {
-          height: 100dvh !important;
-          max-height: 100dvh !important;
-          overflow: hidden !important;
-          display: flex !important;
-          flex-direction: column !important;
-        }
-        .app-content:has(> .second-dashboard) {
-          flex: 1 1 auto !important;
-        }
-        .app-content:has(> .second-dashboard) > .second-dashboard {
-          flex: 1 1 auto !important;
-          min-height: 0 !important;
-        }
         .second-dashboard .hero {
           padding: 16px 20px 4px !important;
         }
@@ -1858,33 +1849,13 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           gap: 20px;
           margin-bottom: 24px;
         }
-        /* Ép buộc panel chứa bảng "DOANH SỐ & SẢN LƯỢNG" luôn giãn hết chiều cao còn lại,
-           bất kể có class .panel dùng chung nào khác trong app định nghĩa height/max-height cố định.
-           Selector lặp 3 lớp class (thay vì 2) để tăng độ đặc hiệu hơn MỌI biến thể của
-           .panel dùng chung (kể cả .panel có thêm class phụ, hoặc .panel!important cũ),
-           và vì đây là rule NẠP SAU CÙNG trong DOM khi tab merged mở, nó luôn thắng khi
-           độ đặc hiệu ngang nhau. */
+        /* Panel bảng "DOANH SỐ & SẢN LƯỢNG": height TỰ NHIÊN theo nội
+           dung (giống mọi panel bình thường khác trong app, kể cả bảng
+           tham chiếu "Toàn bộ Cơ sở Dữ liệu") — không ép flex:1/100dvh. */
         .second-dashboard.second-dashboard.second-dashboard .merged-fill-panel,
         div.panel.merged-fill-panel {
-          flex: 1 1 0% !important;
           height: auto !important;
           max-height: none !important;
-          min-height: 0 !important;
-          display: flex !important;
-          flex-direction: column !important;
-        }
-        .second-dashboard.second-dashboard.second-dashboard .merged-fill-table-container,
-        div.table-container.merged-fill-table-container {
-          flex: 1 1 0% !important;
-          height: auto !important;
-          max-height: none !important;
-          min-height: 0 !important;
-        }
-        /* Chốt chặn cuối: mọi .panel là con trực tiếp của .second-dashboard (tab merged)
-           không được phép bị giới hạn chiều cao bởi rule .panel dùng chung ở nơi khác. */
-        .second-dashboard > .merged-fill-panel.panel {
-          max-height: none !important;
-          height: auto !important;
         }
         .second-dashboard .chart-panel {
           padding: 0 !important;
@@ -2055,9 +2026,13 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         }
       `}</style>
 
-      {/* Header ngang hàng với GlobalHeaderControls */}
+      {/* Header ngang hàng — Lang+Theme đã chuyển vào Sidebar (dùng chung
+          cho Mục 1-4), không lặp lại riêng ở đây nữa. */}
       <div className="dashboard-header-grid">
-        <div className="dashboard-header-left" />
+        <div className="dashboard-header-left" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <span aria-hidden="true">🕐</span>
+          {formattedTime}
+        </div>
         <h1 className="dashboard-header-title">
           {formatReportTitle(
             t.dash2Title,
@@ -2066,14 +2041,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             lang
           )}
         </h1>
-        <div className="dashboard-header-right">
-          <GlobalHeaderControls 
-            lang={lang} 
-            setLang={_setLang} 
-            isDark={theme === 'dark'} 
-            onToggleTheme={_onToggleTheme} 
-          />
-        </div>
+        <div className="dashboard-header-right" />
       </div>
 
       {/* Tabs */}
@@ -2086,14 +2054,22 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         </button>
       </div>
 
-      {/* Filter and Cloud bar */}
-      <div className="topbar-dash" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+      {/* Filter and Cloud bar
+          FIX (EPCC-vanilla-toolbar): nền đổi sang "Vanilla" (#FFF4D6) theo
+          ảnh tham chiếu — nút ĐANG ĐƯỢC CHỌN (Ngày/Tuần/Tháng...) vẫn giữ
+          nguyên màu xanh/teal để phân biệt rõ lựa chọn hiện tại. */}
+      <div className="topbar-dash" style={{
+        display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px',
+        background: 'linear-gradient(135deg, #FFFBEF 0%, #FFF4D6 55%, #FFEBBE 100%)',
+        borderRadius: '14px', padding: '14px 16px',
+        border: '1px solid rgba(0,0,0,0.06)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+      }}>
         {/* Dòng 1 (labels) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          {/* Cụm trái dòng 1: Đồng hồ */}
-          <div style={{ width: '170px', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: '13px', color: filterLabelColor, fontWeight: '700', whiteSpace: 'nowrap' }}>
-            {formattedTime}
-          </div>
+          {/* Cụm trái dòng 1: đồng hồ đã chuyển vào Sidebar — giữ spacer
+              trống cùng bề rộng để không lệch layout các cột nhãn bên phải. */}
+          <div style={{ width: '170px', flexShrink: 0 }} />
           {/* Cụm giữa dòng 1: Labels */}
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
             <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.startDate}</span>
@@ -2104,11 +2080,13 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             {viewMode === 'week' && <span style={{ width: '160px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{lang === 'vi' ? 'TUẦN' : lang === 'ko' ? '주차' : 'WEEK'}</span>}
             {showReset && <span style={{ width: '60px', flexShrink: 0 }}></span>}
           </div>
-          {/* Cụm phải dòng 1: Spacers matching Dòng 2 */}
+          {/* Cụm phải dòng 1: Spacer khớp ĐÚNG với Dòng 2 (chỉ có 1 nút Tải
+              Excel rộng 120px) — trước đây có 3 spacer (120+120+38) trong
+              khi Dòng 2 chỉ có 1 nút, khiến cụm giữa (label) và cụm giữa
+              (control) co giãn khác nhau → 2 dòng lệch nhau, không đối xứng
+              như toolbar chuẩn ở Mục 1 (SalesDashboard). */}
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
             <div style={{ width: '120px' }}></div>
-            <div style={{ width: '120px' }}></div>
-            <div style={{ width: '38px' }}></div>
           </div>
         </div>
 
@@ -2161,10 +2139,13 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                     fontSize: '13px',
                     fontWeight: 600,
                     borderRadius: mode === 'day' ? '6px 0 0 6px' : mode === 'month' ? '0 6px 6px 0' : '0',
-                    border: '1px solid var(--border)',
-                    borderRight: mode !== 'month' ? 'none' : '1px solid var(--border)',
-                    background: viewMode === mode ? '#2e7d8c' : 'var(--bg-card)',
-                    color: viewMode === mode ? '#ffffff' : 'var(--text)',
+                    // FIX (EPCC-vanilla-toolbar-contrast): màu cố định,
+                    // không phụ thuộc theme — tránh chữ mờ/biến mất khi đổi
+                    // theme trên nền Vanilla (xem SalesDashboard.tsx cùng fix).
+                    border: '1px solid rgba(0,0,0,0.18)',
+                    borderRight: mode !== 'month' ? 'none' : '1px solid rgba(0,0,0,0.18)',
+                    background: viewMode === mode ? '#2e7d8c' : 'rgba(255,255,255,0.55)',
+                    color: viewMode === mode ? '#ffffff' : '#7A5A2E',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     height: '100%',
@@ -2515,30 +2496,33 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         </>
       )}
 
-      {/* Table details for active tabs */}
+      {/* Table details for active tabs
+          FIX (EPCC-merged-table-blank-space v2): panel/table-container
+          KHÔNG còn dùng flex:1 để "xin" chiều cao còn lại của cha (cách
+          này gây khoảng trắng thừa khi tổng chiều cao cha không đúng như
+          giả định). Panel giờ có height TỰ NHIÊN theo nội dung, chỉ khu
+          vực table-scroll bên trong có max-height cố định (giống bảng
+          tham chiếu "Toàn bộ Cơ sở Dữ liệu từ Excel") để tự cuộn khi
+          nhiều dòng, không phụ thuộc DOM cha. */}
       {activeTab === 'merged' && (
-        <div className="panel merged-fill-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div className="card-header-styled blue-style" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>
-              {formatReportTitle(
-                lang === 'vi' ? 'Chi tiết Sản lượng & Doanh số bán hàng' : 'Sales Volume & Value Details',
-                selectedDateStart ? parseYYYYMMDD(selectedDateStart) : dateBounds.min,
-                selectedDateEnd ? parseYYYYMMDD(selectedDateEnd) : dateBounds.max,
-                lang
-              )}
-            </span>
-            <span style={{ fontSize: '12px', opacity: 0.8, fontWeight: 400 }}>
-              {bottomTableRows.length} {lang === 'vi' ? 'dòng' : lang === 'ko' ? '행' : 'rows'}
-            </span>
-          </div>
+        <div className="panel merged-fill-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+          {/* FIX: bỏ thanh tiêu đề xanh "Chi tiết Sản lượng & Doanh số bán
+              hàng..." theo yêu cầu — kéo bảng lên sát ngay dưới toolbar,
+              không còn dòng thừa chiếm chỗ phía trên bảng. */}
 
           {bottomTableRows.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontSize: '14px', fontWeight: '500' }}>
               {lang === 'vi' ? 'Không có dữ liệu phù hợp.' : 'No matching data.'}
             </div>
           ) : (
-            <div className="table-container merged-fill-table-container" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <div className="table-scroll" style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, minHeight: 0, padding: '0 15px 15px 15px' }}>
+            <div className="table-container merged-fill-table-container" style={{ display: 'flex', flexDirection: 'column', paddingTop: '12px' }}>
+              {/* FIX: đệm trên (12px) đặt ở table-container (KHÔNG cuộn)
+                  thay vì bên trong table-scroll — trước đây đặt padding-top
+                  ngay trong vùng cuộn khiến dòng dữ liệu đã cuộn qua bị lộ
+                  ra phía TRÊN thead dính (sticky), đè lên nhãn cột khi kéo
+                  lên. Giờ thead dính sát tuyệt đối mép trên của vùng cuộn,
+                  không còn khe hở để dòng cũ lộ ra. */}
+              <div className="table-scroll" style={{ overflowY: 'auto', overflowX: 'auto', maxHeight: '62vh', padding: '0 15px 15px 15px' }}>
                 <table className="stat-table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                     {/* Group header row */}
@@ -2663,23 +2647,31 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                         <td style={{ fontSize: '14px', padding: '10px 12px', color: 'var(--tbl-model-color)', fontWeight: 600, textAlign: 'left' }}>{row.model}</td>
                         <td style={{ fontSize: '14px', padding: '10px 12px', color: 'var(--tbl-cell-color)', fontWeight: 600, textAlign: 'left' }}>{row.customer}</td>
                         <td style={{ fontSize: '14px', padding: '10px 12px', color: 'var(--tbl-date-color)', fontWeight: 500, textAlign: 'center' }}>{row.period}</td>
+                        {/* FIX (EPCC-merged-table-blank-space v2): tham chiếu
+                            bảng "Toàn bộ Cơ sở Dữ liệu từ Excel" — bảng đó
+                            LUÔN hiển thị giá trị thật (kể cả 0, vd "0 K")
+                            thay vì dấu "-". Áp dụng cùng cách cho bảng này:
+                            bỏ điều kiện ẩn giá trị 0 thành "-", chỉ còn dùng
+                            màu nhạt (--tbl-nil-color) để phân biệt trực quan
+                            khi giá trị = 0, không còn ô trống gây hiểu nhầm
+                            là thiếu dữ liệu. */}
                         <td style={{ fontSize: '14px', padding: '10px 12px', color: row.qtyTarget > 0 ? 'var(--tbl-num-color)' : 'var(--tbl-nil-color)', textAlign: 'right' }}>
-                          {row.qtyTarget > 0 ? Math.round(row.qtyTarget).toLocaleString('vi-VN') : '-'}
+                          {Math.round(row.qtyTarget).toLocaleString('vi-VN')}
                         </td>
                         <td style={{ fontSize: '14px', padding: '10px 12px', color: row.qtyActual > 0 ? 'var(--green)' : 'var(--tbl-nil-color)', fontWeight: row.qtyActual > 0 ? 600 : 400, textAlign: 'right' }}>
-                          {row.qtyActual > 0 ? Math.round(row.qtyActual).toLocaleString('vi-VN') : '-'}
+                          {Math.round(row.qtyActual).toLocaleString('vi-VN')}
                         </td>
                         <td style={{ fontSize: '14px', padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: row.qtyTarget > 0 ? (row.qtyRatio < 100 ? 'red' : 'green') : 'var(--tbl-nil-color)' }}>
-                          {row.qtyTarget > 0 ? `${row.qtyRatio.toFixed(1)}%` : '-'}
+                          {row.qtyTarget > 0 ? `${row.qtyRatio.toFixed(1)}%` : '0.0%'}
                         </td>
                         <td style={{ fontSize: '14px', padding: '10px 12px', color: row.amtTarget > 0 ? 'var(--tbl-num-color)' : 'var(--tbl-nil-color)', textAlign: 'right' }}>
-                          {row.amtTarget > 0 ? '$' + Math.round(row.amtTarget).toLocaleString('vi-VN') : '-'}
+                          {'$' + Math.round(row.amtTarget).toLocaleString('vi-VN')}
                         </td>
                         <td style={{ fontSize: '14px', padding: '10px 12px', color: row.amtActual > 0 ? 'var(--purple-light)' : 'var(--tbl-nil-color)', fontWeight: row.amtActual > 0 ? 600 : 400, textAlign: 'right' }}>
-                          {row.amtActual > 0 ? '$' + Math.round(row.amtActual).toLocaleString('vi-VN') : '-'}
+                          {'$' + Math.round(row.amtActual).toLocaleString('vi-VN')}
                         </td>
                         <td style={{ fontSize: '14px', padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: row.amtTarget > 0 ? (row.amtRatio < 100 ? 'red' : 'green') : 'var(--tbl-nil-color)' }}>
-                          {row.amtTarget > 0 ? `${row.amtRatio.toFixed(1)}%` : '-'}
+                          {row.amtTarget > 0 ? `${row.amtRatio.toFixed(1)}%` : '0.0%'}
                         </td>
                       </tr>
                     ))}

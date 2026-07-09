@@ -20,7 +20,9 @@ import { DetailTable } from './components/DetailTable';
 import { TargetActualDashboard } from './components/TargetActualDashboard';
 import { SalesDashboard } from './components/SalesDashboard';
 import { Sidebar } from './components/Sidebar';
-import { GlobalHeaderControls } from './components/GlobalHeaderControls';
+// FIX (sidebar-utility-widgets): GlobalHeaderControls không còn được mount
+// trực tiếp trong App.tsx nữa — Sidebar tự vẽ khối Lang+Theme riêng bằng
+// <select>/<button> đơn giản, đồng bộ màu khung sidebar-glass-card.
 // ── Manpower + Per Capita tabs (Tab 2 nằm trong ManpowerDashboard) ──────────
 import { ManpowerDashboard } from './components/ManpowerDashboard';
 // ─────────────────────────────────────────────────────
@@ -1114,6 +1116,9 @@ export default function App() {
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             lang={lang}
+            setLang={setLang}
+            theme={theme as 'dark' | 'light'}
+            onToggleTheme={toggleTheme}
             profile={profile}
             onSignOut={signOut}
             onOpenAdmin={() => setShowAdminPanel(true)}
@@ -1157,27 +1162,9 @@ export default function App() {
               layout bình thường (static/relative mặc định) như mọi phần tử
               khác. Nó chỉ hiện ở đầu trang và CUỘN ĐI CÙNG nội dung, không
               bao giờ còn nằm "nổi" trên bất cứ thứ gì nữa. */}
-          {activeViewId === 'placeholder' && (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                padding: '6px 20px',
-                boxSizing: 'border-box',
-                background: 'var(--surface, #fff)',
-                borderBottom: '1px solid var(--border-soft, #e5e7eb)',
-              }}
-            >
-              <GlobalHeaderControls
-                lang={lang}
-                setLang={setLang}
-                isDark={theme === 'dark'}
-                onToggleTheme={toggleTheme}
-              />
-            </div>
-          )}
+          {/* FIX (sidebar-utility-widgets): khối Lang+Theme rời trước đây chỉ
+              hiện riêng cho Mục 4 (placeholder) đã ĐƯỢC GỘP vào Sidebar (hiển
+              thị chung cho toàn bộ Mục 1-4), nên bỏ hẳn khối lặp lại này. */}
 
             {/* ── MENU 1: Sales Dashboard ──
                 Chỉ render khi user chủ động chọn 'overview' (Mục 1).
