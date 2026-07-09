@@ -1075,7 +1075,12 @@ function resolveChart4Info(data: PCTabData, displayLabels: string[]) {
   if (!latestLabel && displayLabels.length > 0) latestLabel = displayLabels[displayLabels.length - 1];
 
   // Model có nhân lực > 0 tại latestLabel (nền tảng của trục X / cột)
-  const headcountModels = models.filter(m => (data.byModelLabel[m]?.[latestLabel] ?? 0) > 0);
+  // FIX (chart4-max-10-models, EPCC): sắp theo nhân lực GIẢM DẦN trước khi giới
+  // hạn, để nếu quá 10 model thì giữ lại 10 model có nhân lực LỚN NHẤT (thông
+  // tin quan trọng nhất của chart), thay vì cắt theo thứ tự activeModels tùy ý.
+  const headcountModels = models
+    .filter(m => (data.byModelLabel[m]?.[latestLabel] ?? 0) > 0)
+    .sort((a, b) => (data.byModelLabel[b]?.[latestLabel] ?? 0) - (data.byModelLabel[a]?.[latestLabel] ?? 0));
 
   // Số line YÊU CẦU — quét TẤT CẢ label (mọi tầng: ngày/tuần/tháng/năm, giảm dần
   // theo thời gian) để tìm giai đoạn gần nhất có dữ liệu Line TTL, độc lập với
@@ -1094,17 +1099,19 @@ function resolveChart4Info(data: PCTabData, displayLabels: string[]) {
     ? models.filter(m => (data.lineTtlByModelLabel[m]?.[lineLabel] ?? 0) > 0)
     : [];
 
-  // FIX: union — model có Line nhưng thiếu nhân lực vẫn phải xuất hiện trên trục X
-  // (cột nhân lực = 0) để đường Line không bị "mất điểm" một cách vô lý.
-  // Giữ nguyên thứ tự headcountModels trước, model chỉ-có-Line (không có nhân lực)
-  // xếp sau cùng theo alphabet. indexOf trả -1 cho model không có nhân lực nên
-  // phải map về Infinity, tránh bị "-1" đẩy nhầm lên đầu danh sách.
+  // FIX (chart4-max-10-models, EPCC): giới hạn tối đa 10 model hiển thị trên
+  // trục X, giống giới hạn 10 giai đoạn của Chart 5 (Spider). Ưu tiên giữ
+  // headcountModels (đã sort giảm dần theo nhân lực) trước — model đông nhân
+  // lực nhất không bao giờ bị cắt; model chỉ-có-Line-không-nhân-lực lấp các chỗ
+  // trống còn lại nếu có. Nếu tổng số model < 10 thì mảng tự ngắn hơn — bar/label
+  // dư KHÔNG được vẽ (ẩn hẳn), không có cột trống hay placeholder.
   const modelsWithData = Array.from(new Set([...headcountModels, ...lineModels]))
     .sort((a, b) => {
       const ia = headcountModels.indexOf(a); const ib = headcountModels.indexOf(b);
       const ra = ia === -1 ? Infinity : ia; const rb = ib === -1 ? Infinity : ib;
       return ra - rb || a.localeCompare(b);
-    });
+    })
+    .slice(0, 10);
 
   const hasLineData = lineLabel !== '' && modelsWithData.some(m => (data.lineTtlByModelLabel[m]?.[lineLabel] ?? 0) > 0);
 
@@ -1115,15 +1122,26 @@ function resolveChart4Info(data: PCTabData, displayLabels: string[]) {
  * Chart 4: Phân bố nhân lực theo Model — Giai đoạn gần nhất
  * Bar chart: X = activeModels, Y = headcount tại label mới nhất có dữ liệu
  * + Line chart (trục y phụ): số line YÊU CẦU theo Model tại cùng giai đoạn (Type = 'TTL LINE Q'TY')
+ * Tối đa 10 model trên trục X (ưu tiên model nhân lực lớn nhất — xem
+ * resolveChart4Info); nếu ít hơn 10 model có dữ liệu thì tự ẩn, không có cột
+ * trống/placeholder.
  */
 function buildChart4(
   data: PCTabData,
   displayLabels: string[],
   textColor: string,
   gridColor: string,
-  lang: 'vi'|'en'|'ko'
+  lang: 'vi'|'en'|'ko',
+  isDark: boolean
 ) {
   const { latestLabel, modelsWithData, lineLabel, hasLineData } = resolveChart4Info(data, displayLabels);
+
+  // FIX (chart4-line-color-theme, EPCC): màu #facc15 (vàng nhạt) trước đây cố
+  // định cho mọi theme — trên nền sáng (light mode) độ tương phản quá thấp,
+  // khó đọc điểm/nhãn số. Đổi sang màu vàng cam đậm hơn cho light mode
+  // (#b45309, cùng tông nhưng tối hơn nhiều để đủ tương phản trên nền trắng),
+  // giữ nguyên #facc15 sáng cho dark mode (đã rõ trên nền tối).
+  const lineAccent = isDark ? '#facc15' : '#b45309';
 
   const yVals = modelsWithData.map(m => r1(data.byModelLabel[m]?.[latestLabel] ?? 0));
   const colors = modelsWithData.map((m, i) => getModelColor(m, i));
@@ -1163,11 +1181,11 @@ function buildChart4(
       mode: 'lines+markers+text',
       name: (lang === 'vi' ? "Số line yêu cầu (TTL LINE Q'TY)" : lang === 'ko' ? "요구 라인 수 (TTL LINE Q'TY)" : "Required Lines (TTL LINE Q'TY)") + linePeriodSuffix,
       yaxis: 'y2',
-      line: { color: '#facc15', width: 2, shape: 'spline', smoothing: 1 },
-      marker: { color: '#facc15', size: 9, symbol: 'diamond' },
+      line: { color: lineAccent, width: 2, shape: 'spline', smoothing: 1 },
+      marker: { color: lineAccent, size: 9, symbol: 'diamond' },
       text: lineTtlVals.map(v => v != null && v > 0 ? fmt1(r1(v)) : ''),
       textposition: 'top center',
-      textfont: { size: 12, color: '#facc15', family: 'Arial Black, Arial, sans-serif' },
+      textfont: { size: 12, color: lineAccent, family: 'Arial Black, Arial, sans-serif' },
       cliponaxis: false,
       customdata,
       hovertemplate:
@@ -1202,8 +1220,8 @@ function buildChart4(
       overlaying: 'y',
       side: 'right',
       showgrid: false,
-      tickfont: { size: 12, color: '#facc15' },
-      title: { text: lang === 'vi' ? 'Số line yêu cầu' : lang === 'ko' ? '요구 라인 수' : 'Required Lines', font: { size: 13, color: '#facc15' } },
+      tickfont: { size: 12, color: lineAccent },
+      title: { text: lang === 'vi' ? 'Số line yêu cầu' : lang === 'ko' ? '요구 라인 수' : 'Required Lines', font: { size: 13, color: lineAccent } },
       range: [0, lineMax > 0 ? lineMax * 1.4 : 10],
     };
   }
@@ -1214,7 +1232,9 @@ function buildChart4(
 /**
  * Chart 5: Phân bố Model theo Giai đoạn (Spider / Radar)
  * Mỗi trace = 1 time label (giai đoạn), mỗi axis = 1 model
- * Chọn tối đa 6 giai đoạn gần nhất có dữ liệu để chart không quá rối
+ * Chọn tối đa 10 giai đoạn gần nhất có dữ liệu để chart không quá rối
+ * Nguồn dữ liệu (EPCC spider-data-source): ttlPCByModelLabel (đúng, số hàng
+ * trăm) → fallback pcByModelLabel → fallback byModelLabel (manpower)
  */
 function buildChart5(
   data: PCTabData,
@@ -1228,18 +1248,32 @@ function buildChart5(
     return { traces: [], layout: {} };
   }
 
-  // Use pcByModelLabel if available, otherwise fallback to byModelLabel (manpower)
+  // FIX (spider-data-source, EPCC): trước đây luôn ưu tiên pcByModelLabel — map
+  // "gom nhặt" (fallback) MỌI type chỉ cần chứa chữ 인당생산수, kể cả các dòng
+  // KHÔNG PHẢI giá trị sản lượng thật (dòng target/tỉ lệ...) → ra số lẻ nhỏ
+  // 0.x-2.x sai. Nguồn ĐÚNG là ttlPCByModelLabel (lấy riêng từ type
+  // 'ttl 인당생산수', cùng nguồn với KPI "avgTtl"), luôn ra số tự nhiên hàng
+  // trăm, cùng bậc với DEFAULT_TARGET_PC = 160. Thứ tự ưu tiên mới:
+  // ttlPCByModelLabel → pcByModelLabel → byModelLabel (manpower, fallback cuối).
+  const hasTtlPcData = Object.keys(data.ttlPCByModelLabel || {}).length > 0;
   const hasPcData = Object.keys(data.pcByModelLabel || {}).length > 0;
-  const activeDataMap = hasPcData ? data.pcByModelLabel : data.byModelLabel;
+  const activeDataMap = hasTtlPcData
+    ? data.ttlPCByModelLabel
+    : hasPcData
+    ? data.pcByModelLabel
+    : data.byModelLabel;
 
-  // Lọc các label có ít nhất 1 model có dữ liệu, lấy tối đa 6 label cuối
+  // Lọc các label có ít nhất 1 model có dữ liệu, lấy tối đa 10 label cuối
+  // (nâng từ 6 → 10 theo yêu cầu; model/trục không bị giới hạn số lượng)
   const labelsWithData = displayLabels.filter(lbl =>
     models.some(m => (activeDataMap[m]?.[lbl] ?? 0) > 0)
   );
-  const selectedLabels = labelsWithData.slice(-6);
+  const selectedLabels = labelsWithData.slice(-10);
 
+  // Mở rộng bảng màu từ 6 → 10 màu để không lặp màu khi hiển thị đủ 10 giai đoạn
   const radarColors = [
     '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4',
+    '#ec4899','#84cc16','#14b8a6','#f43f5e',
   ];
 
   // Chỉ giữ models có ít nhất 1 giá trị > 0 trong các selectedLabels
@@ -1252,12 +1286,15 @@ function buildChart5(
   const modelsClosed = [...modelsWithData, modelsWithData[0]];
 
   const traces: any[] = selectedLabels.map((lbl, i) => {
-    const rVals = modelsClosed.map(m => r1(activeDataMap[m]?.[lbl] ?? 0));
+    // FIX (spider-integer-format, EPCC): dữ liệu ttlPCByModelLabel là số tự
+    // nhiên hàng trăm (sp/người) — làm tròn nguyên (Math.round) thay vì giữ 1
+    // số thập phân (r1/fmt1, vốn hợp lý hơn cho map pcByModelLabel số lẻ cũ).
+    const rVals = modelsClosed.map(m => Math.round(activeDataMap[m]?.[lbl] ?? 0));
     // FIX(spider-labels): hiển thị giá trị từng điểm theo đúng màu của trace để
     // đọc số trực tiếp trên biểu đồ, không cần hover. Điểm cuối bị lặp lại
     // (đóng vòng radar) nên bỏ trống label để tránh chồng số lên chính nó.
     const textVals = rVals.map((v, idx) =>
-      idx === rVals.length - 1 ? '' : (v > 0 ? fmt1(v) : '')
+      idx === rVals.length - 1 ? '' : (v > 0 ? v.toLocaleString('vi-VN') : '')
     );
     return {
       type: 'scatterpolar',
@@ -1737,7 +1774,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
         }
 
         // Chart 7 + Chart 8 (cũ: Chart 4 + Chart 5)
-        const ch4 = buildChart4(data, labels, textColor, gridColor, lang);
+        const ch4 = buildChart4(data, labels, textColor, gridColor, lang, isDark);
         window.Plotly.react(ids.current.c4, ch4.traces, ch4.layout, { displayModeBar: false, responsive: true });
 
         const ch5 = buildChart5(data, labels, textColor, gridColor, lang);
@@ -2100,7 +2137,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                     : 'Headcount by Model — Latest Period'}
                 </h3>
                 {chart4Info.hasLineData ? (
-                  <span style={{ fontSize: '12px', color: '#facc15', display: 'inline-flex', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: isDark ? '#facc15' : '#b45309', display: 'inline-flex', alignItems: 'center' }}>
                     {lang === 'vi' ? "● Kèm số line yêu cầu (TTL LINE Q'TY)" : lang === 'ko' ? "● 요구 라인 수 포함 (TTL LINE Q'TY)" : "● Incl. required lines (TTL LINE Q'TY)"}
                     {chart4Info.lineLabel && chart4Info.lineLabel !== chart4Info.latestLabel
                       ? ` [${chart4Info.lineLabel}]`
@@ -2130,7 +2167,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                     : 'Model Distribution by Period (Spider)'}
                 </h3>
                 <span style={{ fontSize: '11px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
-                  {lang === 'vi' ? 'Tối đa 6 giai đoạn gần nhất' : lang === 'ko' ? '최근 6기간' : 'Up to last 6 periods'}
+                  {lang === 'vi' ? 'Tối đa 10 giai đoạn gần nhất' : lang === 'ko' ? '최근 10기간' : 'Up to last 10 periods'}
                 </span>
               </div>
               <div id={ids.current.c5} style={{ minHeight: '450px' }} />
