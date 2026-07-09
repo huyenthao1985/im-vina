@@ -1784,7 +1784,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   // (#FFF4D6, cố định, không đổi theo theme) theo ảnh tham chiếu — nên màu
   // chữ nhãn cũng cố định luôn (cam đậm) thay vì đổi theo theme như trước,
   // để luôn đủ tương phản trên nền vàng nhạt ở CẢ light lẫn dark theme.
-  const filterLabelColor = '#B5540C';
+  const filterLabelColor = '#C0EF6A';
 
   return (
     <div 
@@ -1822,11 +1822,11 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
         }
         .second-dashboard .tab-container {
           display: flex;
-          gap: 12px;
-          margin-bottom: 14px;
+          gap: 10px;
+          margin-bottom: 8px;
         }
         .second-dashboard .tab-btn {
-          padding: 10px 20px;
+          padding: 8px 18px;
           border-radius: 8px;
           font-weight: 700;
           font-size: 14px;
@@ -2059,10 +2059,10 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           ảnh tham chiếu — nút ĐANG ĐƯỢC CHỌN (Ngày/Tuần/Tháng...) vẫn giữ
           nguyên màu xanh/teal để phân biệt rõ lựa chọn hiện tại. */}
       <div className="topbar-dash" style={{
-        display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px',
-        background: 'linear-gradient(135deg, #FFFBEF 0%, #FFF4D6 55%, #FFEBBE 100%)',
-        borderRadius: '14px', padding: '14px 16px',
-        border: '1px solid rgba(0,0,0,0.06)',
+        display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px',
+        background: '#2F3A1D',
+        borderRadius: '14px', padding: '10px 14px',
+        border: '1px solid rgba(0,0,0,0.18)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
       }}>
         {/* Dòng 1 (labels) */}
@@ -2248,7 +2248,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       {activeTab === 'summary' && (
         <>
           {/* Top 4 statistics cards */}
-          <div className="kpi-grid" style={{ marginBottom: '22px' }}>
+          <div className="kpi-grid" style={{ marginBottom: '12px' }}>
             <div className="kpi-card" style={{ borderLeft: '4px solid #2e7d8c', background: 'linear-gradient(135deg, rgba(46,125,140,0.1) 0%, rgba(30,41,59,0.4) 100%)' }}>
               <div className="kpi-card-header" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="#2e7d8c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px', flexShrink: 0 }}>

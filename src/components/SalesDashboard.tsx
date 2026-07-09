@@ -31,7 +31,7 @@ declare global {
 // FIX (EPCC-vanilla-toolbar): màu chữ nhãn cố định (không đổi theo theme)
 // dùng riêng cho thanh filter nền "Vanilla" (#FFF4D6) — cam đậm để đủ tương
 // phản trên nền vàng nhạt, tương tự ảnh tham chiếu "Vanilla / HEX #FFF4D6".
-const VANILLA_LABEL_COLOR = '#B5540C';
+const VANILLA_LABEL_COLOR = '#C0EF6A';
 
 export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   rows,
@@ -1289,10 +1289,10 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
             Năm...) vẫn giữ nguyên màu xanh/teal hiện có để phân biệt rõ lựa
             chọn hiện tại, không đổi theo nền vanilla này. */}
         <div className="topbar-dash" style={{
-          display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px',
-          background: 'linear-gradient(135deg, #FFFBEF 0%, #FFF4D6 55%, #FFEBBE 100%)',
-          borderRadius: '14px', padding: '14px 16px',
-          border: '1px solid rgba(0,0,0,0.06)',
+          display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px',
+          background: '#2F3A1D',
+          borderRadius: '14px', padding: '10px 14px',
+          border: '1px solid rgba(0,0,0,0.18)',
           boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
         }}>
           {/* Dòng 1 (labels) */}
@@ -1475,7 +1475,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
           display: 'flex',
           flexDirection: 'row',
           gap: '12px',
-          marginBottom: '16px',
+          marginBottom: '10px',
           flexWrap: 'nowrap',
           alignItems: 'stretch'
         }}>

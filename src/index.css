@@ -769,7 +769,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
-  padding: 8px 12px;
+  padding: 7px 10px;
   position: relative;
   overflow: hidden;
   transition: all var(--transition);
@@ -1360,8 +1360,23 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 /* ==================== SALES DASHBOARD ==================== */
+/* FIX (EPCC-topbar-padding-unify): chuẩn hoá padding gốc dùng chung cho CẢ
+   4 Mục (Sales/TargetActual/Manpower/Mục 4 — đều render qua class
+   .sales-dashboard). Trước đây padding: 24px đều 4 cạnh khiến Mục 1/2/4 bị
+   dư một khoảng trắng phía TRÊN thanh header (header không nằm sát mép
+   trên), trong khi Mục 3 (Manpower) tự override inline top:0 nên đúng
+   chuẩn (ảnh tham chiếu). Lấy Mục 3 làm chuẩn: top = 0 (thanh header sát
+   mép trên), trái/phải = 24px đều nhau, dưới = 24px. Bỏ luôn override lặp
+   lại ở từng file (ManpowerDashboard) vì giờ CSS gốc đã đúng chuẩn — chỉ
+   sửa 1 chỗ áp dụng cho cả 4 Mục, tránh lệch nhau về sau.
+   Padding ngang dùng clamp() để tự co giãn theo bề rộng khả dụng (khi thu
+   nhỏ/phóng to trình duyệt hoặc mở rộng sidebar làm hẹp vùng nội dung) —
+   tối đa 24px (chuẩn desktop), tối thiểu 12px ở màn rất hẹp, không bao giờ
+   vỡ layout/tràn ngang. */
 .sales-dashboard {
-  padding: 24px;
+  padding: 0 clamp(12px, 2.4vw, 24px) clamp(12px, 2.4vw, 24px);
+  box-sizing: border-box;
+  width: 100%;
   animation: fadeIn 0.4s ease;
   max-width: 1600px;
   margin: 0 auto;
@@ -1792,17 +1807,20 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 /* Custom Dashboard Topbar Styles */
+/* FIX (EPCC-compact-topblocks): giảm padding/margin mặc định của thanh
+   filter (topbar-dash) — bản cũ 14px 20px / margin-bottom 22px làm thanh
+   filter cao/rộng hơn cần thiết. */
 .topbar-dash {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
-  padding: 14px 20px;
-  margin-bottom: 22px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
   box-shadow: var(--shadow-sm);
   animation: fadeUp 0.6s ease 0.05s both;
   width: 100%;
@@ -1890,9 +1908,9 @@ tbody tr:last-child td { border-bottom: none; }
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 13px;
-  color: var(--purple);
-  background: var(--purple-soft);
-  border: 1px solid transparent;
+  color: #ffffff;
+  background: #AF4A92;
+  border: 1px solid #AF4A92;
   padding: 9px 16px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1900,11 +1918,14 @@ tbody tr:last-child td { border-bottom: none; }
   transition: all 0.15s ease;
 }
 [data-theme="light"] .btn-outline {
-  background: #f1e9fe;
+  background: #AF4A92;
+  border-color: #AF4A92;
+  color: #ffffff;
 }
 .btn-outline:hover {
-  background: var(--purple);
-  color: #fff;
+  background: #9A3F80;
+  border-color: #9A3F80;
+  color: #ffffff;
 }
 
 /* Vietnamese Dashboard Layout Rows */
@@ -2315,6 +2336,18 @@ select {
   width: 100%;
   height: 38px;
   box-sizing: border-box;
+  /* FIX (EPCC-csel-trigger-native-override): <button> vẫn giữ style mặc định
+     của hệ điều hành/trình duyệt (ví dụ nền xám ButtonFace ~#C2C2C2) ở một số
+     trình duyệt/theme hệ thống, đè lên background/color đã set ở trên — nhất
+     là khi color-scheme đổi giữa Dark/Light. appearance:none bỏ hẳn "vỏ" nút
+     mặc định của OS, color-scheme:normal + forced-color-adjust:none đảm bảo
+     màu nền/màu chữ tự định nghĩa luôn được giữ, không bị hệ thống ghi đè làm
+     chữ/số biến mất khi chuyển theme. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color-scheme: normal;
+  forced-color-adjust: none;
 }
 
 /* Custom class for date inputs in filter bar */
@@ -2387,6 +2420,7 @@ select {
   animation: cselFadeIn 0.14s ease;
   /* Prevent native option override */
   color-scheme: unset;
+  forced-color-adjust: none;
 }
 @keyframes cselFadeIn {
   from { opacity: 0; transform: translateY(-4px); }
@@ -2849,22 +2883,37 @@ select {
   color: var(--text-0);
 }
 
-/* ── 31. Centered Header Grid for Dashboards ── */
+/* ── 31. Centered Header Grid for Dashboards ──
+   FIX (EPCC-header-rounded-match-filterbar): trước đây thanh header chỉ có
+   border-bottom (dạng vạch chia, góc vuông), khác với thanh filter bên dưới
+   (bo góc 14px, có viền + đổ bóng đầy đủ). Đổi header sang cùng kiểu "thẻ bo
+   góc" như thanh filter để đồng bộ toàn bộ 4 Mục. */
+/* FIX (EPCC-compact-topblocks): padding/margin thu gọn hơn bản cũ (12px 20px
+   / margin-bottom 12px) để thanh header không chiếm quá nhiều chiều cao —
+   đồng bộ cho cả 4 Mục vì dùng chung class này. */
 .dashboard-header-grid {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border-soft);
+  padding: 8px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 14px;
+  margin-bottom: 8px;
   width: 100%;
   box-sizing: border-box;
   background: var(--surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   position: relative;
 }
 
+/* FIX (EPCC-header-stretched-misalign): ".stretched" trước đây kéo header
+   rộng hơn container (margin âm 2 bên) để tràn viền — khiến thanh header
+   (Mục 3/4) rộng hơn và lệch so với thanh filter ngay bên dưới nó (thanh
+   filter KHÔNG tràn viền). Bỏ hẳn phần kéo giãn này để header luôn cùng
+   chiều rộng và thẳng hàng với thanh filter, ở mọi Mục. */
 .dashboard-header-grid.stretched {
-  margin: 0 -24px 12px;
-  width: calc(100% + 48px);
+  margin: 0 0 12px;
+  width: 100%;
 }
 
 .dashboard-header-title {
@@ -2882,6 +2931,34 @@ select {
 
 .dashboard-header-right {
   justify-self: end;
+}
+
+/* FIX (EPCC-sales-header-gray): riêng thanh tiêu đề trên cùng của màn "Tổng
+   quan Sản xuất – Xuất hàng – Doanh số" (SalesDashboard, root class
+   .sales-dashboard) đổi sang nền xám cố định #C2C2C2 theo yêu cầu — scope
+   bằng .sales-dashboard để KHÔNG ảnh hưởng thanh tiêu đề của Manpower/
+   TargetActual (đang dùng chung class .dashboard-header-grid).
+   !important cần thiết vì .dashboard-header-grid gốc dùng var(--surface)
+   đổi theo theme, nếu không !important thì theme sẽ ghi đè lại. Màu chữ
+   cũng cố định (không dùng var(--text-0)/var(--text-2) nữa) để luôn tương
+   phản tốt với nền xám #C2C2C2 ở cả Dark lẫn Light theme. */
+.sales-dashboard .dashboard-header-grid {
+  background: #2F3A1D !important;
+}
+.sales-dashboard .dashboard-header-grid .dashboard-header-left,
+.sales-dashboard .dashboard-header-grid .dashboard-header-title {
+  color: #C0EF6A !important;
+}
+
+/* Mục 2 (TargetActualDashboard, class second-dashboard) also uses Olive Ink —
+   kept as an explicit override too so it stays correct even if the shared
+   rule above ever changes again for Mục 1/3/4 only. */
+.sales-dashboard.second-dashboard .dashboard-header-grid {
+  background: #2F3A1D !important;
+}
+.sales-dashboard.second-dashboard .dashboard-header-grid .dashboard-header-left,
+.sales-dashboard.second-dashboard .dashboard-header-grid .dashboard-header-title {
+  color: #C0EF6A !important;
 }
 
 @media (max-width: 768px) {

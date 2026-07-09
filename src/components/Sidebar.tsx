@@ -200,6 +200,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             border: 1px solid rgb(220,216,0);
             color: #1a1a1a !important;
           }
+          /* FIX (EPCC-sidebar-item-teal-shades): mỗi Mục 1-4 dùng 1 sắc độ
+             teal riêng theo bảng tham chiếu, thay vì cùng 1 màu teal như
+             trước. Chỉ đổi background — border/box-shadow/chữ giữ nguyên
+             theo các rule .sidebar-glass-card ở trên (không khai báo lại). */
+          .sidebar .sidebar-item[data-idx="1"] { background: #008489 !important; }
+          .sidebar .sidebar-item[data-idx="2"] { background: #009298 !important; }
+          .sidebar .sidebar-item[data-idx="3"] { background: #00A6AD !important; }
+          .sidebar .sidebar-item[data-idx="4"] { background: #00B2BF !important; }
           /* FIX (toggle-btn-3d): nút mũi tên giờ là hình tròn nổi khối (gradient
              xanh dương + inset highlight/shadow để tạo cảm giác 3D), đặt
              position:absolute lệch sang phải (-16px) để "tràn" ra khỏi mép
@@ -299,6 +307,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <li
               key={item.id}
+              data-idx={item.index}
               className={`sidebar-item sidebar-glass-card ${isActive ? 'active' : ''}`}
               onClick={() => onSelectView(item.id)}
               title={collapsed ? `${item.index}. ${label}` : undefined}

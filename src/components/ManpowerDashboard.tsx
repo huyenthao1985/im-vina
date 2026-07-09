@@ -862,7 +862,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   // FIX (EPCC-vanilla-toolbar): thanh filter đổi nền sang "Vanilla"
   // (#FFF4D6, cố định, không đổi theo theme) theo ảnh tham chiếu — nên màu
   // chữ nhãn cũng cố định luôn (cam đậm) thay vì đổi theo theme như trước.
-  const filterLabelColor = '#B5540C';
+  const filterLabelColor = '#C0EF6A';
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -991,7 +991,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   };
 
   return (
-    <div className="sales-dashboard" style={{ padding: '0 24px 24px', boxSizing: 'border-box' }}>
+    <div className="sales-dashboard">
       
       {/* Header ngang hàng — Lang+Theme đã chuyển vào Sidebar (dùng chung
           cho Mục 1-4), không lặp lại riêng ở đây nữa. */}
@@ -1020,7 +1020,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
             viền/bóng đổ được chỉnh nhẹ theo `theme` để tab nổi khối rõ ràng
             trên cả nền trắng (light) lẫn nền tối (dark). */}
         <div style={{
-          display: 'flex', gap: '6px', marginTop: '12px',
+          display: 'flex', gap: '6px', marginTop: '8px',
           borderBottom: '2px solid var(--border-soft)', paddingBottom: '4px',
         }}>
           {([
@@ -1033,7 +1033,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 style={{
-                  padding: '8px 20px',
+                  padding: '7px 16px',
                   fontSize: '13px',
                   fontWeight: isActive ? 800 : 500,
                   border: isActive
@@ -1065,10 +1065,10 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
             control cao 38px đồng nhất. Áp dụng cùng chuẩn đã dùng ở PerCapitaTab. */}
         {activeTab === 'manpower' && (
         <div className="topbar-dash" style={{
-          display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', marginBottom: '16px',
-          background: 'linear-gradient(135deg, #FFFBEF 0%, #FFF4D6 55%, #FFEBBE 100%)',
-          borderRadius: '14px', padding: '14px 16px',
-          border: '1px solid rgba(0,0,0,0.06)',
+          display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', marginBottom: '10px',
+          background: '#2F3A1D',
+          borderRadius: '14px', padding: '10px 14px',
+          border: '1px solid rgba(0,0,0,0.18)',
           boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
         }}>
           {/* Dòng 1 (labels) */}
@@ -1178,7 +1178,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
               <NeonButton
                 className="btn btn-outline btn-sm"
                 onClick={() => fileInputRef.current?.click()}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--text-1)', background: 'transparent', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
                   <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
@@ -1227,7 +1227,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
         <div className="dash-container" style={{ animation: 'fadeUp 0.5s ease both' }}>
 
           {/* ── KPI Row ── */}
-          <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '14px', marginBottom: '20px' }}>
+          <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '12px' }}>
 
             <div className="kpi-card" style={{ '--kpi-bg': 'var(--purple-soft)' } as any}>
               <div className="kpi-card-header">

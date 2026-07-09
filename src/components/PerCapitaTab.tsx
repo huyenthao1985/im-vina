@@ -1555,7 +1555,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   // FIX (EPCC-vanilla-toolbar): thanh filter đổi nền sang "Vanilla"
   // (#FFF4D6, cố định, không đổi theo theme) theo ảnh tham chiếu — nên màu
   // chữ nhãn cũng cố định luôn (cam đậm) thay vì đổi theo theme như trước.
-  const filterLabelColor = '#B5540C';
+  const filterLabelColor = '#C0EF6A';
 
   // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
   // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
@@ -1768,10 +1768,10 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           thường, input ngày cao 38px, CustomSelect cho Model.
          ══════════════════════════════════════════════════════════════════════ */}
       <div className="topbar-dash" style={{
-        display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px',
-        background: 'linear-gradient(135deg, #FFFBEF 0%, #FFF4D6 55%, #FFEBBE 100%)',
-        borderRadius: '14px', padding: '14px 16px',
-        border: '1px solid rgba(0,0,0,0.06)',
+        display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px',
+        background: '#2F3A1D',
+        borderRadius: '14px', padding: '10px 14px',
+        border: '1px solid rgba(0,0,0,0.18)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
       }}>
         {/* Dòng 1 (labels) */}
@@ -1919,7 +1919,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
       {hasData && (
         <div
           className="kpi-grid"
-          style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '18px' }}
+          style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '12px' }}
         >
           {[
             {
