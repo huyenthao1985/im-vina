@@ -80,6 +80,47 @@ function t(key: keyof typeof T, lang: 'vi'|'en'|'ko'): string {
   return (T[key] as any)[lang] ?? (T[key] as any)['vi'];
 }
 
+/* EPCC (panel-header-bg-match-percapitatab) — NGUỒN MÀU DUY NHẤT cho 3 khung
+   panel-head bên dưới (UPPH, Nhân lực hàng ngày, Bảng tổng hợp nhân lực),
+   lấy NGUYÊN theo đúng thứ tự từ PANEL_THEME[1..3] trong PerCapitaTab.tsx
+   (3 khung khoanh đỏ trong ảnh mẫu: cyan → cam → cam-đỏ). Kích thước giữ
+   đúng chuẩn panelHeadStyle của PerCapitaTab: viền trái 4px, bo góc
+   8px 8px 0 0, padding 10px 14px, margin 0. Mọi panel-head trong file này
+   chỉ đọc màu từ mảng này — KHÔNG viết mã hex nền rời rạc lần 2 nơi khác. */
+const MP_PANEL_THEME = [
+  { accent: '#06b6d4', bgLight: '#a8e5f0', bgDark: 'rgba(6,182,212,0.14)' },   // Panel 1 — UPPH (cyan)
+  { accent: '#f59e0b', bgLight: '#fcddaa', bgDark: 'rgba(255,255,255,0.05)' }, // Panel 2 — Nhân lực hàng ngày (cam)
+  { accent: '#f97316', bgLight: '#fdcead', bgDark: 'rgba(249,115,22,0.14)' },  // Panel 3 — Bảng tổng hợp (cam-đỏ)
+] as const;
+
+function mpPanelHeadStyle(i: number, isDark: boolean): React.CSSProperties {
+  const c = MP_PANEL_THEME[i];
+  return {
+    background: isDark ? c.bgDark : c.bgLight,
+    borderLeft: `4px solid ${c.accent}`,
+    borderRadius: '8px 8px 0 0',
+    padding: '10px 14px',
+    margin: 0,
+  };
+}
+
+/* EPCC (upph-legend-merge-to-header) — tham chiếu ĐÚNG pattern PCLegendItem +
+   header-legend-merge của PerCapitaTab.tsx (Chart 3: 근무 인력 현황). Theo ảnh
+   góp ý: 2 dòng legend riêng của khối DAY/NIGHT (Actual + Đạt tỷ lệ (%), phần
+   bị gạch chéo đỏ) bị xoá hoàn toàn khỏi trong biểu đồ; legend của khối TTL
+   (phần khoanh đỏ + mũi tên "Move") được "di chuyển" lên panel-head — tức gộp
+   thành 1 legend DUY NHẤT dùng chung cho cả 3 khối (màu Target/Actual/Đạt tỷ
+   lệ giống hệt nhau ở DAY/NIGHT/TTL nên không cần lặp lại 3 lần). Mỗi khối
+   trong canvas chỉ còn lại đúng 1 dòng tiêu đề (DAY/NIGHT/TTL), không kèm ô
+   màu/label nữa → giải phóng chiều cao cho margin.t nhỏ lại, biểu đồ phóng to. */
+const MPLegendItem: React.FC<{ type: 'bar' | 'line'; color: string; label: string }> = ({ type, color, label }) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+    {type === 'bar' && <span style={{ width: '9px', height: '9px', borderRadius: '2px', background: color, flexShrink: 0 }} />}
+    {type === 'line' && <span style={{ width: '12px', height: 0, borderTop: `2.5px solid ${color}`, flexShrink: 0 }} />}
+    {label}
+  </span>
+);
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function round1(n: number | null | undefined): number {
   if (n == null || isNaN(n as number)) return 0;
@@ -607,16 +648,38 @@ function buildUpphChart(
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     font: { family: 'Inter, sans-serif', color: chartTextColor, size: 13 },
-    // EPCC (upph-match-reference) — tăng margin.t để có chỗ cho tiêu đề +
-    // legend riêng của từng khối (annotation), tắt hẳn legend chung ở cuối
-    // chart (showlegend:false + không set 'legend') vì hình tham chiếu KHÔNG
-    // có 1 legend dùng chung — mỗi khối tự có legend nhỏ ngay dưới tiêu đề.
-    // EPCC (upph-size-up-20pct) — tăng margin.t để chứa tiêu đề/legend đã to hơn 20%
-    margin: { l: 18, r: 18, t: 66, b: 42 },
+    // EPCC (upph-legend-merge-to-header) — legend màu (Target/Actual/Đạt tỷ lệ)
+    // đã dời hẳn ra HTML panel-head (MPLegendItem, dùng chung cho cả 3 khối,
+    // xem JSX chỗ render panel UPPH) giống pattern header-legend-merge của
+    // PerCapitaTab Chart 3. Annotation trong canvas giờ chỉ còn 1 dòng tiêu đề
+    // ngắn (DAY/NIGHT/TTL).
+    // FIX (upph-title-clipped): margin.t=30 trước đây KHÔNG đủ chỗ chứa
+    // annotation tiêu đề đặt ở y=1.10 (paper) → chữ DAY/NGHT/TTL bị cắt mất,
+    // để lại khoảng trắng trống phía trên biểu đồ (đúng lỗi trong ảnh góp ý —
+    // "để lại đề mục như ghi chú"). Tăng lại margin.t lên mức đủ (30 → 46) và
+    // hạ annotation xuống y=1.08 để tiêu đề luôn nằm trọn trong margin, đồng
+    // thời vẫn thấp hơn hẳn margin gốc 66 để biểu đồ còn to hơn bản cũ.
+    margin: { l: 18, r: 18, t: 46, b: 42 },
     showlegend: false,
     hovermode: 'x unified',
     annotations: [] as any[],
   };
+
+  // FIX (upph-uneven-height): trước đây mỗi khối DAY/NIGHT/TTL tự tính barMax
+  // riêng theo maxVal của CHÍNH khối đó → trục Y mỗi khối 1 range khác nhau
+  // (VD DAY/TTL đỉnh 18, NIGHT đỉnh 20) khiến cột ở 3 khối cao thấp không đều
+  // nhau dù khung vẽ vật lý bằng nhau — đúng lỗi "chiều cao 3 biểu đồ chênh
+  // lệch" trong ảnh góp ý. Sửa: gộp TẤT CẢ Target/Actual của cả 3 khối lại,
+  // tính 1 barMax DUY NHẤT dùng chung cho mọi trục Y cột → cả 3 khối cùng 1
+  // tỷ lệ, chiều cao cột hiển thị nhất quán, dễ so sánh trực quan giữa các ca.
+  const globalMaxVal = Math.max(
+    ...shifts.flatMap(s => labels.flatMap(l => {
+      const cell = data.byShift[s][l];
+      return [cell?.target ?? 0, cell?.actual ?? 0];
+    })),
+    0
+  );
+  const globalBarMax = globalMaxVal > 0 ? round1(globalMaxVal) * 1.3 : 10;
 
   activeShifts.forEach((shift, i) => {
     // suffix trục theo Plotly convention: khối đầu dùng x/y, khối 2 dùng x2/y2 (bar)
@@ -675,25 +738,18 @@ function buildUpphChart(
       });
     }
 
-    // Tiêu đề nhỏ (DAY / NIGHT / TTL) kết hợp với Legend màu thành 1 dòng duy nhất để thu gọn tối đa không gian đứng
-    const combinedText = `<b>${shiftLabel[shift].toUpperCase()}</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ` +
-      `<span style="color:${UPPH_PLAN_COLOR}">■</span> ${t('upphTarget', lang)} &nbsp;&nbsp;&nbsp; ` +
-      `<span style="color:${UPPH_ACTUAL_COLOR}">■</span> ${t('upphActual', lang)} &nbsp;&nbsp;&nbsp; ` +
-      `<span style="color:${UPPH_RATE_COLOR}">─◆─</span> ${t('upphRate', lang)}`;
-
+    // EPCC (upph-legend-merge-to-header) — legend màu (Target/Actual/Đạt tỷ lệ)
+    // của từng khối DAY/NIGHT (phần bị gạch chéo đỏ trong ảnh góp ý) bị XOÁ
+    // HOÀN TOÀN khỏi đây; legend của khối TTL (phần khoanh đỏ) được "di
+    // chuyển" (Move) lên panel-head 1 lần duy nhất, dùng chung cho cả 3 khối
+    // — xem MPLegendItem trong JSX. Annotation trong canvas giờ chỉ còn tiêu
+    // đề ngắn gọn DAY/NIGHT/TTL để tối đa hoá diện tích vẽ cột/line.
     layout.annotations.push({
-      text: combinedText,
-      x: (domStart + domEnd) / 2, y: 1.15, xref: 'paper', yref: 'paper',
+      text: `<b>${shiftLabel[shift].toUpperCase()}</b>`,
+      x: (domStart + domEnd) / 2, y: 1.08, xref: 'paper', yref: 'paper',
       xanchor: 'center', yanchor: 'middle', showarrow: false,
-      font: { size: 17, color: chartTextColor },
+      font: { size: 14, color: chartTextColor },
     });
-
-    const maxVal = Math.max(
-      ...planVals.filter((v): v is number => v !== null),
-      ...actualVals.filter((v): v is number => v !== null),
-      0
-    );
-    const barMax = maxVal > 0 ? maxVal * 1.45 : 10;
 
     layout[xKey.replace('x', 'xaxis')] = {
       domain: [domStart, domEnd], anchor: yBarKey,
@@ -701,7 +757,7 @@ function buildUpphChart(
     };
     layout[yBarKey.replace('y', 'yaxis')] = {
       anchor: xKey, gridcolor: chartGridColor, tickfont: { size: 10 },
-      range: [0, barMax],
+      range: [0, globalBarMax],
       title: i === 0 ? { text: t('upphUnit', lang), font: { size: 11 } } : undefined,
     };
     layout[yRateKey.replace('y', 'yaxis')] = {
@@ -843,12 +899,18 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   // ──────────────────────────────────────────────────────────────────────────
 
   // ── Tab state: 'manpower' | 'percapita' ──────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'manpower' | 'percapita'>('manpower');
+  // FIX (EPCC-swap-sheet1-sheet2): swap vai trò 2 sheet theo yêu cầu — sheet
+  // "인당 생산수 현황 - Sản lượng theo đầu người" (percapita) trở thành sheet 1
+  // (vị trí đầu tiên + mở mặc định), sheet "근무 인력 현황 - Tình hình nhân lực"
+  // (manpower) trở thành sheet 2 (vị trí sau, không còn mở mặc định).
+  const [activeTab, setActiveTab] = useState<'manpower' | 'percapita'>('percapita');
 
   // Toolbar & Filter States
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
-  const [granularity, setGranularity] = useState<'day' | 'week' | 'month' | 'year'>('month');
+  // FIX (EPCC-default-view-by-day): mặc định khi mở dashboard phải là "Ngày"
+  // (day) theo yêu cầu, không còn mặc định "Tháng" (month) như trước.
+  const [granularity, setGranularity] = useState<'day' | 'week' | 'month' | 'year'>('day');
   const [modelFilter, setModelFilter] = useState<string>('all');
 
   // Error States
@@ -990,42 +1052,123 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
     e.target.value = '';
   };
 
+  // FIX (EPCC-unify-kpi-icon-size-muc3-theo-muc2): mục 2 (TargetActualDashboard,
+  // thẻ chuẩn) dùng SVG line-icon phẳng 16x16px, KHÔNG có khung tròn nền màu.
+  // className="kpi-card-icon" (badge tròn ~26x26px chứa emoji) trước đây dùng ở
+  // đây khiến hàng header (icon+label) cao hơn chuẩn ~8-10px, kéo theo tổng
+  // chiều cao card bị lệch so với mục 2. Thay bằng SVG line-icon 16x16 giống
+  // hệt mục 2 để chiều cao khớp hoàn toàn.
+  const renderKpiIcon = (key: string, color: string) => {
+    const common = {
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: color,
+      strokeWidth: 2.5,
+      strokeLinecap: 'round' as const,
+      strokeLinejoin: 'round' as const,
+      style: { width: '16px', height: '16px', flexShrink: 0 }
+    };
+    switch (key) {
+      case 'users':
+        return (
+          <svg {...common}>
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+        );
+      case 'trending-up':
+        return (
+          <svg {...common}>
+            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+            <polyline points="17 6 23 6 23 12" />
+          </svg>
+        );
+      case 'factory':
+        return (
+          <svg {...common}>
+            <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4l-6 5Z" />
+            <path d="M17 18h1" />
+            <path d="M12 18h1" />
+            <path d="M7 18h1" />
+          </svg>
+        );
+      case 'arrow-up':
+        return (
+          <svg {...common}>
+            <line x1="12" y1="19" x2="12" y2="5" />
+            <polyline points="5 12 12 5 19 12" />
+          </svg>
+        );
+      case 'arrow-down':
+        return (
+          <svg {...common}>
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <polyline points="19 12 12 19 5 12" />
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="sales-dashboard">
       
       {/* Header ngang hàng — Lang+Theme đã chuyển vào Sidebar (dùng chung
-          cho Mục 1-4), không lặp lại riêng ở đây nữa. */}
-      <div className="dashboard-header-grid stretched">
+          cho Mục 1-4), không lặp lại riêng ở đây nữa.
+          FIX (EPCC-copy-spacing-from-muc2): bỏ modifier "stretched" — mục 2
+          (TargetActualDashboard) dùng đúng className="dashboard-header-grid"
+          (không stretched), margin-bottom mặc định 8px. ".stretched" trước đây
+          đổi margin-bottom thành 12px, khiến khoảng cách header→tab ở mục 3
+          rộng hơn mục 2. Bỏ "stretched" để 2 mục có khoảng cách giống hệt nhau.
+          FIX (EPCC-fix-box1-height-muc3-theo-muc2): mục 2 chỉ có DUY NHẤT 1
+          thẻ <h1 className="dashboard-header-title"> chứa text thuần, không
+          icon. Trước đây ở đây bọc thêm 1 div ngoài dùng CHUNG className
+          "dashboard-header-title" (double-class) + icon emoji tách riêng
+          fontSize cứng 20px — to hơn cỡ chữ mặc định của h1, khiến hàng
+          header (box 1) cao hơn/rộng khác mục 2. Gộp lại thành đúng 1 thẻ h1
+          duy nhất, icon nằm ngay trong h1 để kế thừa đúng font-size mặc định
+          của class chuẩn — chiều cao box 1 khớp hệt mục 2. */}
+      <div className="dashboard-header-grid">
         <div className="dashboard-header-left" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>
           <span aria-hidden="true">🕐</span>
           {formatClock(currentTime)}
         </div>
-        <div className="dashboard-header-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '20px' }}>👷</span>
-          <h1 className="dashboard-header-title" style={{ border: 'none', padding: 0 }}>
-            {t('title', lang)}
-          </h1>
-        </div>
+        <h1 className="dashboard-header-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          <span aria-hidden="true">👷</span>
+          {t('title', lang)}
+        </h1>
         <div className="dashboard-header-right" />
       </div>
 
 
         {/* ── Tab Navigation ──
-            FIX (EPCC-neon-lime-tabbar): tab ĐANG ACTIVE trước dùng nền xanh lá
-            #00AE72 + chữ trắng. Theo ảnh tham chiếu "Neon Lime" (nền
-            #C8FF3D, chữ navy đậm), đổi sang bộ màu neon lime này cho CẢ 2
-            sheet (Tình hình nhân lực / Sản lượng theo đầu người) vì dùng
-            chung 1 thanh tab. Nền neon lime rất sáng nên tự đủ tương phản ở
-            CẢ light lẫn dark theme mà không cần đổi màu nền theo theme — chỉ
-            viền/bóng đổ được chỉnh nhẹ theo `theme` để tab nổi khối rõ ràng
-            trên cả nền trắng (light) lẫn nền tối (dark). */}
+            FIX (EPCC-copy-tab-size-from-muc2): copy đúng kích thước + màu sắc
+            box tab từ mục 2 (TargetActualDashboard, class .tab-btn/.tab-btn.active)
+            sang đây — thay cho bộ "Neon Lime" (#C8FF3D) trước đó — để 2 mục
+            đồng nhất kiểu tab: padding 8px 18px, border-radius 8px, font-size
+            14px, font-weight 700, border 1px solid var(--border), nền
+            rgba(30,41,59,0.2) khi inactive / gradient xanh dương #1d4ed8→#3b82f6
+            + chữ trắng khi active. Nhãn chuyển sang CHỮ HOA (textTransform:
+            'uppercase') theo yêu cầu.
+            FIX (EPCC-copy-spacing-from-muc2): copy đúng gap/margin của
+            .tab-container mục 2 (display:flex, gap:10px, margin-bottom:8px) —
+            bỏ marginTop/borderBottom/paddingBottom cũ (vốn không tồn tại ở
+            mục 2) để khoảng cách header→tab→toolbar ở mục 3 giống hệt mục 2. */}
         <div style={{
-          display: 'flex', gap: '6px', marginTop: '8px',
-          borderBottom: '2px solid var(--border-soft)', paddingBottom: '4px',
+          display: 'flex', gap: '10px', marginBottom: '8px',
         }}>
           {([
-            { id: 'manpower', label: lang === 'vi' ? '👷 근무 인력 현황 - Tình hình nhân lực' : lang === 'ko' ? '👷 근무 인력 현황' : '👷 Manpower Status' },
-            { id: 'percapita', label: lang === 'vi' ? '📐 인당 생산수 현황 - Sản lượng theo đầu người' : lang === 'ko' ? '📐 인당 생산수 현황' : '📐 Per Capita Output' },
+            // FIX (EPCC-swap-sheet1-sheet2): swap thứ tự hiển thị — percapita
+            // lên vị trí đầu (sheet 1 mới), manpower xuống sau (sheet 2 mới).
+            // FIX (EPCC-remove-mixed-korean-label): trước đây label 'vi' bị
+            // ghép chung tiếng Hàn + tiếng Việt (vd '근무 인력 현황 - Tình hình
+            // nhân lực') do lỗi copy-paste — giờ mỗi ngôn ngữ (vi/en/ko) chỉ
+            // hiển thị ĐÚNG ngôn ngữ đó, không ghép thêm ngôn ngữ khác.
+            { id: 'percapita', label: lang === 'vi' ? '📐 Sản lượng theo đầu người' : lang === 'ko' ? '📐 인당 생산수 현황' : '📐 Per Capita Output' },
+            { id: 'manpower', label: lang === 'vi' ? '👷 Tình hình nhân lực' : lang === 'ko' ? '👷 근무 인력 현황' : '👷 Manpower Status' },
           ] as const).map(tab => {
             const isActive = activeTab === tab.id;
             return (
@@ -1033,22 +1176,19 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 style={{
-                  padding: '7px 16px',
-                  fontSize: '13px',
-                  fontWeight: isActive ? 800 : 500,
-                  border: isActive
-                    ? (theme === 'light' ? '1px solid rgba(0,0,0,0.12)' : '1px solid rgba(0,0,0,0.18)')
-                    : 'none',
+                  padding: '8px 18px',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  border: isActive ? '1px solid #3b82f6' : '1px solid var(--border)',
                   borderRadius: '8px',
-                  background: isActive ? '#C8FF3D' : 'transparent',
-                  boxShadow: isActive
-                    ? (theme === 'light'
-                        ? '0 2px 6px rgba(0,0,0,0.14)'
-                        : '0 2px 8px rgba(200,255,61,0.35), inset 0 1px 1px rgba(255,255,255,0.5)')
-                    : 'none',
-                  color: isActive ? '#1E1B4B' : 'var(--text-3)',
+                  background: isActive
+                    ? 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)'
+                    : 'rgba(30, 41, 59, 0.2)',
+                  boxShadow: isActive ? '0 4px 12px rgba(59, 130, 246, 0.35)' : 'none',
+                  color: isActive ? '#ffffff' : 'var(--text-2)',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'all 0.2s ease',
+                  textTransform: 'uppercase',
                 }}
               >
                 {tab.label}
@@ -1062,10 +1202,14 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
             với toolbar chuẩn tham chiếu ở TargetActualDashboard.tsx (ảnh 2) —
             layout 2 dòng (dòng nhãn + dòng control), đồng hồ dạng text thường
             (không bo viền/pill), input ngày cao 38px, CustomSelect cho Model,
-            control cao 38px đồng nhất. Áp dụng cùng chuẩn đã dùng ở PerCapitaTab. */}
+            control cao 38px đồng nhất. Áp dụng cùng chuẩn đã dùng ở PerCapitaTab.
+            FIX (EPCC-copy-spacing-from-muc2): bỏ marginTop: '8px' thừa — mục 2
+            không set marginTop cho topbar-dash, khoảng cách tab→toolbar chỉ
+            đến từ margin-bottom:8px của tab-container phía trên. Giữ marginTop
+            ở đây sẽ cộng dồn thành khoảng cách rộng hơn mục 2. */}
         {activeTab === 'manpower' && (
         <div className="topbar-dash" style={{
-          display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', marginBottom: '10px',
+          display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px',
           background: '#2F3A1D',
           borderRadius: '14px', padding: '10px 14px',
           border: '1px solid rgba(0,0,0,0.18)',
@@ -1074,10 +1218,14 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
           {/* Dòng 1 (labels) */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             {/* Cụm trái dòng 1: đồng hồ đã chuyển vào Sidebar — giữ spacer
-                trống cùng bề rộng để không lệch layout các cột nhãn bên phải. */}
-            <div style={{ width: '170px', flexShrink: 0 }} />
+                trống cùng bề rộng để không lệch layout các cột nhãn bên phải.
+                FIX (EPCC-align-muc3-sheet2-voi-sheet1): đồng bộ bề rộng
+                340px với cột trái của PerCapitaTab (sheet 1, đã nới rộng để
+                chứa dòng DAY/NIGHT/경영목표) để ô "NGÀY BẮT ĐẦU" của 2 sheet
+                thẳng hàng nhau theo phương ngang — lấy sheet 1 làm chuẩn. */}
+            <div style={{ width: '340px', flexShrink: 0 }} />
             {/* Cụm giữa dòng 1: Labels */}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 8px' }}>
               <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                 {lang === 'vi' ? 'NGÀY BẮT ĐẦU' : lang === 'ko' ? '시작일' : 'START DATE'}
               </span>
@@ -1099,10 +1247,11 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
 
           {/* Dòng 2 (values/controls) */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-            {/* Cụm trái dòng 2: Trống để giữ căn lề */}
-            <div style={{ width: '170px', flexShrink: 0 }}></div>
+            {/* Cụm trái dòng 2: Trống để giữ căn lề — đồng bộ 340px với
+                sheet 1 (FIX EPCC-align-muc3-sheet2-voi-sheet1). */}
+            <div style={{ width: '340px', flexShrink: 0 }}></div>
             {/* Cụm giữa dòng 2: Controls */}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 8px', alignItems: 'center' }}>
               <input
                 type="date"
                 value={dateFrom}
@@ -1227,55 +1376,67 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
         <div className="dash-container" style={{ animation: 'fadeUp 0.5s ease both' }}>
 
           {/* ── KPI Row ── */}
-          <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '12px' }}>
+          {/* FIX (EPCC-unify-kpi-typography-all-sections): copy đúng cỡ
+              chữ/spacing tường minh từ mục 2 (TargetActualDashboard —
+              .kpi-card-header: gap 6px + margin-bottom 8px; .kpi-card-label:
+              13.5px/700/var(--text-0); .kpi-card-value: weight 800/
+              var(--text-0); dòng phụ kiểu .kpi-card-target: 13.5px/700/
+              var(--text-1)) sang toàn bộ 4 card ở đây để 3 mục có tỷ lệ
+              dài/rộng/cao và cỡ chữ trên-dưới giống hệt nhau.
+              FIX (EPCC-remove-kpi-value-fontsize-override): mục 2 KHÔNG tự set
+              fontSize riêng cho .kpi-card-value (chỉ set marginBottom:0), số to
+              hoàn toàn dùng cỡ chữ mặc định của class. Trước đây ở đây tự đặt
+              fontSize:'26px' khiến số to hơn chuẩn mục 2. Bỏ hẳn fontSize
+              override để value dùng đúng cỡ chữ mặc định giống hệt mục 2. */}
+          <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '12px', width: '100%' }}>
 
-            <div className="kpi-card" style={{ '--kpi-bg': 'var(--purple-soft)' } as any}>
-              <div className="kpi-card-header">
-                <div className="kpi-card-icon" style={{ background: 'var(--purple-soft)', color: 'var(--purple)' }}>👥</div>
-                <div className="kpi-card-label">{t('kpiTtlAvg', lang)} ({latestPeriod})</div>
+            {/* FIX (EPCC-unify-kpi-colors-all-sections): copy đúng bộ màu
+                chuẩn (teal → green → purple → orange, đúng thứ tự trái→phải)
+                từ mục 3 sheet 1 (PerCapitaTab) sang đây — trước đây 4 card
+                này chỉ dùng className="kpi-card" mặc định (nền xám trơn,
+                chưa có border-left/gradient màu như các mục khác). */}
+            <div className="kpi-card" style={{ borderLeft: '4px solid #2e7d8c', background: 'linear-gradient(135deg, rgba(46,125,140,0.1) 0%, rgba(30,41,59,0.4) 100%)' }}>
+              <div className="kpi-card-header" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                {renderKpiIcon('users', '#2e7d8c')}
+                <div className="kpi-card-label" style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-0)' }}>{t('kpiTtlAvg', lang)} ({latestPeriod})</div>
               </div>
-              <div className="kpi-card-value" style={{ fontSize: '22px' }}>
+              <div className="kpi-card-value" style={{ fontWeight: 800, color: 'var(--text-0)' }}>
                 {fmt1(ttlLatest)}
-                <span style={{ fontSize: '13px', color: 'var(--text-3)', marginLeft: '4px' }}>{t('persons', lang)}</span>
+                <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-1)', marginLeft: '4px' }}>{t('persons', lang)}</span>
               </div>
             </div>
 
-            <div className="kpi-card" style={{ '--kpi-bg': 'var(--amber-soft)' } as any}>
-              <div className="kpi-card-header">
-                <div className="kpi-card-icon" style={{ background: 'var(--amber-soft)', color: 'var(--amber)' }}>📈</div>
-                <div className="kpi-card-label">{t('kpiPeak', lang)}</div>
+            <div className="kpi-card" style={{ borderLeft: '4px solid #10b981', background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, rgba(30,41,59,0.4) 100%)' }}>
+              <div className="kpi-card-header" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                {renderKpiIcon('trending-up', '#10b981')}
+                <div className="kpi-card-label" style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-0)' }}>{t('kpiPeak', lang)}</div>
               </div>
-              <div className="kpi-card-value" style={{ fontSize: '22px' }}>
+              <div className="kpi-card-value" style={{ fontWeight: 800, color: 'var(--text-0)' }}>
                 {peakPeriod.period}
-                <span style={{ fontSize: '12px', color: 'var(--text-3)', marginLeft: '6px' }}>({fmt1(peakPeriod.val)})</span>
+                <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-1)', marginLeft: '6px' }}>({fmt1(peakPeriod.val)})</span>
               </div>
             </div>
 
-            <div className="kpi-card" style={{ '--kpi-bg': 'var(--cyan-soft)' } as any}>
-              <div className="kpi-card-header">
-                <div className="kpi-card-icon" style={{ background: 'var(--cyan-soft)', color: 'var(--cyan)' }}>🏭</div>
-                <div className="kpi-card-label">{t('kpiModels', lang)}</div>
+            <div className="kpi-card" style={{ borderLeft: '4px solid #8b5cf6', background: 'linear-gradient(135deg, rgba(139,92,246,0.1) 0%, rgba(30,41,59,0.4) 100%)' }}>
+              <div className="kpi-card-header" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                {renderKpiIcon('factory', '#8b5cf6')}
+                <div className="kpi-card-label" style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-0)' }}>{t('kpiModels', lang)}</div>
               </div>
-              <div className="kpi-card-value" style={{ fontSize: '22px' }}>
+              <div className="kpi-card-value" style={{ fontWeight: 800, color: 'var(--text-0)' }}>
                 {activeModelsCount}
               </div>
             </div>
 
-            <div className="kpi-card" style={{ '--kpi-bg': deltaLatest >= 0 ? 'var(--green-soft)' : 'var(--rose-soft)' } as any}>
-              <div className="kpi-card-header">
-                <div className="kpi-card-icon" style={{
-                  background: deltaLatest >= 0 ? 'var(--green-soft)' : 'var(--rose-soft)',
-                  color: deltaLatest >= 0 ? 'var(--green)' : 'var(--rose)'
-                }}>
-                  {deltaLatest >= 0 ? '↑' : '↓'}
-                </div>
-                <div className="kpi-card-label">{t('kpiLatest', lang)} ({latestPeriod})</div>
+            <div className="kpi-card" style={{ borderLeft: '4px solid #f59e0b', background: 'linear-gradient(135deg, rgba(245,158,11,0.1) 0%, rgba(30,41,59,0.4) 100%)' }}>
+              <div className="kpi-card-header" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                {renderKpiIcon(deltaLatest >= 0 ? 'arrow-up' : 'arrow-down', '#f59e0b')}
+                <div className="kpi-card-label" style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-0)' }}>{t('kpiLatest', lang)} ({latestPeriod})</div>
               </div>
-              <div className="kpi-card-value" style={{ fontSize: '22px' }}>
+              <div className="kpi-card-value" style={{ fontWeight: 800, color: 'var(--text-0)' }}>
                 {fmt1(ttlLatest)}
                 {prevPeriod && (
                   <span style={{
-                    fontSize: '12px', marginLeft: '6px',
+                    fontSize: '13.5px', fontWeight: 700, marginLeft: '6px',
                     color: deltaLatest >= 0 ? 'var(--green)' : 'var(--rose)',
                   }}>
                     {deltaLatest >= 0 ? '+' : ''}{fmt1(deltaLatest)}
@@ -1291,20 +1452,36 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
               ngày) bên dưới — cả 2 đều vẽ byModelPeriod theo Model, chỉ khác
               granularity. Nhường toàn bộ chiều rộng hàng này cho UPPH để 3
               khối DAY/NIGHT/TTL hiển thị rõ hơn, đỡ bị bóp nhỏ. */}
-          <div style={{ marginBottom: '16px' }}>
+          <div className="mp-charts-row" style={{ marginBottom: '16px' }}>
             <div className="panel">
-              <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                <h3 style={{ margin: 0 }}>{t('chartWeek', lang)}</h3>
-                <span style={{
-                  fontSize: '11px', color: 'var(--text-3)',
-                  background: 'var(--surface-2)', padding: '2px 8px', borderRadius: '4px',
-                  border: '1px solid var(--border)'
-                }}>
-                  {t('upphSubtitle', lang)}
-                </span>
+              {/* EPCC (upph-legend-merge-to-header) — legend Target/Actual/Đạt
+                  tỷ lệ (%) trước đây lặp lại 3 lần (1 lần/khối DAY-NIGHT-TTL)
+                  nay gộp về ĐÚNG 1 chỗ duy nhất ở panel-head (đưa lên vị trí
+                  cao nhất của khung, ngang hàng tiêu đề) — khớp yêu cầu "2 ô
+                  khoanh cần di chuyển lên tab cao nhất để gọn gàng biểu đồ". */}
+              <div className="panel-head" style={{ ...mpPanelHeadStyle(0, isDark), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0 }}>{t('chartWeek', lang)}</h3>
+                  <span style={{
+                    fontSize: '11px', color: 'var(--text-3)',
+                    background: 'var(--surface-2)', padding: '2px 8px', borderRadius: '4px',
+                    border: '1px solid var(--border)'
+                  }}>
+                    {t('upphSubtitle', lang)}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <MPLegendItem type="bar" color={UPPH_PLAN_COLOR} label={t('upphTarget', lang)} />
+                  <MPLegendItem type="bar" color={UPPH_ACTUAL_COLOR} label={t('upphActual', lang)} />
+                  <MPLegendItem type="line" color={UPPH_RATE_COLOR} label={t('upphRate', lang)} />
+                </div>
               </div>
               {upphData.hasData ? (
-                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '360px' }} />
+                // FIX (upph-height-match-row2): lấy chiều cao chart-holder của
+                // hàng dưới (Nhân lực hàng ngày / Bảng tổng hợp — minHeight
+                // 300px) làm CHUẨN, áp lại cho khối UPPH này thay vì để 460px
+                // cao vượt trội — 2 hàng biểu đồ giờ đồng bộ chiều cao.
+                <div className="chart-holder" id={chartIds.current.upph} style={{ minHeight: '300px' }} />
               ) : (
                 <div style={{
                   minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1317,21 +1494,22 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
           </div>
 
           {/* ── Row 2: Daily Chart & Summary Table ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div className="mp-charts-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <div className="panel">
-              <div className="panel-head">
+              <div className="panel-head" style={mpPanelHeadStyle(1, isDark)}>
                 <h3>{t('chartDay', lang)}</h3>
               </div>
               <div className="chart-holder" id={chartIds.current.daily} style={{ minHeight: '300px' }} />
             </div>
 
             <div className="panel" style={{ overflowX: 'auto', position: 'relative' }}>
-              <div className="panel-head">
+              <div className="panel-head" style={mpPanelHeadStyle(2, isDark)}>
                 <h3>
                   {lang === 'vi' ? 'Bảng tổng hợp nhân lực' : lang === 'en' ? 'Manpower Summary Table' : '인력 현황 종합표'}
                 </h3>
               </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <div className="chart-holder" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-2)' }}>
                     <th style={{ ...thStyle, position: 'sticky', left: 0, zIndex: 3, background: 'var(--surface-2)' }}>Model</th>
@@ -1402,11 +1580,34 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
                   ── {t('standard', lang)}: TTL = <strong>{fmt1(round1(data.ttlStandard))}</strong> {t('persons', lang)}
                 </div>
               )}
+              </div>
             </div>
           </div>
 
         </div>
       ))} {/* end activeTab === 'manpower' && (!hasData ? ... : ...) */}
+
+      {/* EPCC (panel-flush-header-mp-charts-row) — cho 3 khung UPPH/Nhân lực
+          hàng ngày/Bảng tổng hợp có panel-head chạm sát top:0/left:0/right:0
+          khung .panel (đúng theo yêu cầu + mũi tên đỏ khoanh góc trong ảnh
+          mẫu). .panel là class CSS global dùng chung nhiều Mục khác (kể cả
+          SalesDashboard.tsx cũng chung className="sales-dashboard") nên
+          KHÔNG sửa CSS global; chỉ ghi đè CỤC BỘ trong phạm vi ".mp-charts-row"
+          (khác ".charts-row" của SalesDashboard, tránh đụng nhau dù chung
+          root class) bằng specificity cao. Padding bỏ khỏi .panel được dồn
+          sang .chart-holder để nội dung (chart/table) không dính sát mép. */}
+      <style>{`
+        .sales-dashboard.sales-dashboard.sales-dashboard .mp-charts-row .panel {
+          padding: 0 !important;
+        }
+        .sales-dashboard.sales-dashboard.sales-dashboard .mp-charts-row .panel-head {
+          margin: 0 !important;
+        }
+        .sales-dashboard.sales-dashboard.sales-dashboard .mp-charts-row .chart-holder {
+          box-sizing: border-box;
+          padding: 14px 16px 16px 16px !important;
+        }
+      `}</style>
     </div>
   );
 };

@@ -33,6 +33,46 @@ declare global {
 // phản trên nền vàng nhạt, tương tự ảnh tham chiếu "Vanilla / HEX #FFF4D6".
 const VANILLA_LABEL_COLOR = '#C0EF6A';
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * FIX (header-legend-merge + header-color-match-template, EPCC) — áp dụng
+ * lại đúng pattern đã dùng ở Mục 2 (TargetActualDashboard.tsx):
+ *  1. Xóa badge vàng viền (YEAR/2026/CUSTOM...) ở góc phải mỗi khung —
+ *     đây là phần người dùng khoanh đỏ + gạch chéo yêu cầu xóa.
+ *  2. Gộp legend (đang do Plotly tự vẽ RỜI bên trong chart, tạo khoảng
+ *     trắng thừa giữa tiêu đề và biểu đồ — đúng vùng người dùng khoanh đỏ
+ *     + mũi tên chỉ lên) LÊN CHUNG 1 hàng với tiêu đề trong panel-head,
+ *     tắt showlegend của Plotly để không còn lặp lại.
+ *  3. Tô nền panel-head bằng đúng 4 màu tham chiếu lấy từ
+ *     TargetActualDashboard.tsx (CHART_HEADER_THEME, thứ tự 1-4):
+ *     tím #8b5cf6 → cyan #06b6d4 → cam #f59e0b → cam-đỏ #f97316.
+ * ═══════════════════════════════════════════════════════════════════════ */
+const CHART_HEADER_THEME = [
+  { accent: '#8b5cf6', bgLight: '#d6c6fc', bgDark: 'rgba(139,92,246,0.14)' },
+  { accent: '#06b6d4', bgLight: '#a8e5f0', bgDark: 'rgba(6,182,212,0.14)' },
+  { accent: '#f59e0b', bgLight: '#fcddaa', bgDark: 'rgba(255,255,255,0.05)' },
+  { accent: '#f97316', bgLight: '#fdcead', bgDark: 'rgba(249,115,22,0.14)' },
+] as const;
+
+// PHẢI khớp nguyên văn với `targetCustomers`/`customerColors` dùng trong
+// effect vẽ chart (Chart 3 & 4) để legend header và màu cột/lát cắt luôn
+// đồng bộ dù danh sách khách hàng thay đổi theo dữ liệu.
+const CUSTOMER_LEGEND_ORDER = ['GAOXIN', 'Q-TECH', 'SEMV', 'SUNNY'] as const;
+const CUSTOMER_COLORS: Record<string, string> = {
+  'GAOXIN': '#0891b2',
+  'Q-TECH': '#e11d48',
+  'SEMV': '#059669',
+  'SUNNY': '#7c3aed'
+};
+
+const SDLegendItem: React.FC<{ type: 'bar' | 'line' | 'dot'; color: string; label: string }> = ({ type, color, label }) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', fontWeight: 500, whiteSpace: 'nowrap', textTransform: 'none' }}>
+    {type === 'bar' && <span style={{ width: '9px', height: '9px', borderRadius: '2px', background: color, flexShrink: 0 }} />}
+    {type === 'line' && <span style={{ width: '12px', height: 0, borderTop: `2px dashed ${color}`, flexShrink: 0 }} />}
+    {type === 'dot' && <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />}
+    {label}
+  </span>
+);
+
 export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   rows,
   theme,
@@ -42,6 +82,24 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
   onFileSelected
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isLightMode = theme === 'light';
+  // FIX (header-color-match-template, EPCC): style nền panel-head 4 khung
+  // Mục 1, lấy nền sáng/tối (bgLight/bgDark) + viền trái accent từ
+  // CHART_HEADER_THEME, idx = 0-3 tương ứng đúng thứ tự 4 khung.
+  const chartHeaderStyle = (idx: number): React.CSSProperties => {
+    const c = CHART_HEADER_THEME[idx % CHART_HEADER_THEME.length];
+    return {
+      background: isLightMode ? c.bgLight : c.bgDark,
+      borderLeft: `4px solid ${c.accent}`,
+      borderRadius: '8px 8px 0 0',
+      padding: '10px 14px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap' as const,
+      gap: '8px'
+    };
+  };
   // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
   // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
   // tại thời điểm effect vẽ chart chạy lần đầu. Guard cũ chỉ kiểm tra
@@ -475,6 +533,16 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
 
   const t = translations[lang];
 
+  // FIX (header-legend-merge, EPCC): label legend "Tr.trưởng ..." hiển thị
+  // trong panel-head (bên cạnh tiêu đề) — đồng bộ đúng điều kiện viewMode
+  // dùng để đặt tên growthName bên trong effect vẽ chart (year→YoY,
+  // quarter→QoQ, month→MoM).
+  const trendGrowthLegendLabel = viewMode === 'year'
+    ? (lang === 'vi' ? 'Tr.trưởng YoY' : lang === 'en' ? 'YoY Growth' : '전년 대비 증감')
+    : viewMode === 'quarter'
+      ? (lang === 'vi' ? 'Tr.trưởng QoQ' : lang === 'en' ? 'QoQ Growth' : '전분기 대비 증감')
+      : (lang === 'vi' ? 'Tr.trưởng MoM' : lang === 'en' ? 'MoM Growth' : '전월 대비 증감');
+
   const finalGrowthValue = useMemo(() => {
     if (growthTimeframe === 'year') {
       return growthData.growth === null ? 'N/A' : (growthData.growth >= 0 ? '+' : '') + growthData.growth.toFixed(1) + '%';
@@ -499,17 +567,73 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
     }
   }, [growthTimeframe, lang]);
 
-  // KPI card configuration (4 cards — conversionRatio removed)
+  // FIX (EPCC-unify-kpi-colors-all-sections): đồng nhất bộ màu KPI card với
+  // mục 2 (TargetActualDashboard) và mục 3 (PerCapitaTab) — cùng 4 màu theo
+  // đúng thứ tự trái→phải: teal #2e7d8c → green #10b981 → purple #8b5cf6 →
+  // orange #f59e0b. Trước đây dùng biến theme var(--purple)/var(--cyan)/
+  // var(--green)/var(--orange) (đổi theo theme) — nay đổi sang màu cố định
+  // giống hệt 2 mục kia để cả 3 mục nhất quán một bộ màu (không đổi theo theme).
+  // FIX (EPCC-unify-kpi-icon-size-muc1-theo-muc2): mục 2 (TargetActualDashboard,
+  // thẻ chuẩn) dùng SVG line-icon phẳng 16x16px, KHÔNG có khung tròn nền màu.
+  // Trước đây mục 1 dùng div badge tròn 26x26px chứa emoji, khiến hàng header
+  // (icon+label) cao hơn ~8-10px so với chuẩn, kéo theo tổng chiều cao card
+  // bị lệch. Thay bằng SVG line-icon 16x16 giống hệt mục 2 để chiều cao khớp.
+  const renderKpiIcon = (key: string, color: string) => {
+    const common = {
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: color,
+      strokeWidth: 2.5,
+      strokeLinecap: 'round' as const,
+      strokeLinejoin: 'round' as const,
+      style: { width: '16px', height: '16px', flexShrink: 0 }
+    };
+    switch (key) {
+      case 'trending-up':
+        return (
+          <svg {...common}>
+            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+            <polyline points="17 6 23 6 23 12" />
+          </svg>
+        );
+      case 'package':
+        return (
+          <svg {...common}>
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+            <line x1="12" y1="22.08" x2="12" y2="12" />
+          </svg>
+        );
+      case 'factory':
+        return (
+          <svg {...common}>
+            <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4l-6 5Z" />
+            <path d="M17 18h1" />
+            <path d="M12 18h1" />
+            <path d="M7 18h1" />
+          </svg>
+        );
+      case 'zap':
+        return (
+          <svg {...common}>
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
   const kpis = [
-    { label: t.totalSales, value: fmt(totalSales) + ' K$', color: 'var(--purple)', tint: 'var(--purple-soft)', icon: '📈' },
-    { label: t.totalShipment, value: fmt(totalShipment) + ' Kea', color: 'var(--cyan)', tint: 'var(--cyan-soft)', icon: '📦' },
-    { label: t.totalProduction, value: fmt(totalProduction) + ' Kea', color: 'var(--green)', tint: 'var(--green-soft)', icon: '🏭' },
+    { label: t.totalSales, value: fmt(totalSales) + ' K$', color: '#2e7d8c', tint: 'rgba(46,125,140,0.1)', icon: 'trending-up' },
+    { label: t.totalShipment, value: fmt(totalShipment) + ' Kea', color: '#10b981', tint: 'rgba(16,185,129,0.1)', icon: 'package' },
+    { label: t.totalProduction, value: fmt(totalProduction) + ' Kea', color: '#8b5cf6', tint: 'rgba(139,92,246,0.1)', icon: 'factory' },
     {
       label: finalGrowthLabel,
       value: finalGrowthValue,
-      color: 'var(--orange)',
-      tint: 'var(--amber-soft)',
-      icon: '⚡',
+      color: '#f59e0b',
+      tint: 'rgba(245,158,11,0.1)',
+      icon: 'zap',
       sub: finalGrowthSub
     }
   ];
@@ -800,8 +924,8 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { family: 'Plus Jakarta Sans, sans-serif', color: chartTextColor, size: 11 },
-        margin: { l: 54, r: 54, t: 45, b: 36 },
-        legend: { orientation: 'h', y: 1.32, x: 0.5, xanchor: 'center', font: { color: chartTextColor } },
+        margin: { l: 54, r: 54, t: 16, b: 36 },
+        showlegend: false,
         xaxis: { gridcolor: chartGridColor, tickfont: { size: 10, color: chartTextColor }, type: 'category' },
         yaxis: {
           title: { text: lang === 'vi' ? 'Xuất hàng / Doanh số' : lang === 'en' ? 'Shipment / Sales' : '출하 / 매출', font: { size: 11, color: chartTextColor } },
@@ -876,14 +1000,14 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
                 size: 11,
                 weight: 'bold'
               },
-              showlegend: true
+              showlegend: false
             }
           ];
           const layoutModelUnified = {
             paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
             font: { family: 'Plus Jakarta Sans, sans-serif', color: chartTextColor, size: 11 },
-            margin: { l: 50, r: 16, t: 10, b: 36 },
-            legend: { orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center', font: { color: chartTextColor } },
+            margin: { l: 50, r: 16, t: 16, b: 36 },
+            showlegend: false,
             xaxis: { gridcolor: chartGridColor, tickfont: { size: 10, color: chartTextColor }, type: 'category' },
             yaxis: {
               gridcolor: chartGridColor,
@@ -1003,9 +1127,9 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
       const layoutCustomerStacked = {
         paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
         font: { family: 'Plus Jakarta Sans, sans-serif', color: chartTextColor, size: 11 },
-        margin: { l: 50, r: 16, t: 10, b: 36 },
+        margin: { l: 50, r: 16, t: 16, b: 36 },
         barmode: 'stack',
-        legend: { orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center', font: { color: chartTextColor } },
+        showlegend: false,
         xaxis: { gridcolor: chartGridColor, tickfont: { size: 10, color: chartTextColor }, type: 'category' },
         yaxis: { gridcolor: chartGridColor, tickfont: { size: 10, color: chartTextColor } }
       };
@@ -1043,6 +1167,7 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
             values: donutValues,
             type: 'pie',
             hole: 0.58,
+            domain: { x: [0.06, 0.94], y: [0.06, 0.94] },
             marker: { colors: donutColors, line: { color: isDark ? '#1e293b' : '#ffffff', width: 2 } },
             textinfo: 'value',
             texttemplate: '%{value:,.0f}',
@@ -1053,15 +1178,8 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             font: { family: 'Plus Jakarta Sans, sans-serif', color: chartTextColor, size: 11 },
-            margin: { l: 5, r: 5, t: 5, b: 5 },
-            showlegend: true,
-            legend: {
-              orientation: 'v',
-              x: 0.85,
-              y: 0.5,
-              yanchor: 'middle',
-              font: { size: 10, color: chartTextColor }
-            },
+            margin: { l: 10, r: 10, t: 10, b: 10 },
+            showlegend: false,
             annotations: [
               {
                 font: { size: 34 },
@@ -1465,11 +1583,23 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
 
         {/* KPI Grid — 4 cards, compact style matching Dashboard mới */}
         {/*
-          Layout strategy:
-          - Cards 1-3: flex 1 (equal share), min-width 160px
-          - Card 4 (growth): flex 1.4 + min-width 240px so the long Vi title
-            "TĂNG TRƯỞNG DOANH SỐ (YOY)" + toggle always fits on one line.
-          - Title uses white-space:nowrap + clamp() font-size for resilience.
+          FIX (EPCC-kpi-row-fill-width): trước đây flex-basis đặt cứng theo px
+          (160px / 240px) khiến phần không gian dư ra sau khi cấp basis không
+          được chia hết theo đúng tỉ lệ flex-grow trong một số trường hợp độ
+          rộng container, để lại khoảng trống trắng bên phải hàng KPI (xem ảnh
+          khoanh đỏ). Đổi flex-basis về '0%' (co giãn thuần theo tỉ lệ grow,
+          minWidth vẫn giữ làm sàn chống co quá nhỏ) + ép container width:100%
+          để hàng KPI luôn lấp đầy hết chiều rộng, không còn ô trống phía phải.
+          FIX (quy-chuan-4-card-deu-nhau): trước đây card 4 (growth) có
+          flex-grow 1.4 + min-width 240px trong khi 3 card còn lại chỉ có
+          flex-grow 1 + min-width 160px → card 4 luôn rộng hơn hẳn 3 card
+          kia (lệch chiều dài rõ rệt, xem ảnh khoanh đỏ). Đổi cả 4 card về
+          cùng flex: '1 1 0%' + minWidth: '200px' để chia đều 100% chiều
+          rộng container, đảm bảo 4 card luôn bằng nhau về chiều dài bất kể
+          kích thước màn hình.
+          - Title vẫn dùng white-space:nowrap + textOverflow:ellipsis nên
+            nếu màn hình quá hẹp, tiêu đề dài (card 4) sẽ tự cắt gọn bằng
+            "…" thay vì đẩy card rộng ra — không còn lệch layout.
         */}
         <div style={{
           display: 'flex',
@@ -1477,45 +1607,54 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
           gap: '12px',
           marginBottom: '10px',
           flexWrap: 'nowrap',
-          alignItems: 'stretch'
+          alignItems: 'stretch',
+          width: '100%'
         }}>
           {kpis.map((c, i) => {
             const isGrowth = i === 3; // last card is the growth card
             return (
-              <div key={i} style={{
-                flex: isGrowth ? '1.4 1 240px' : '1 1 160px',
-                minWidth: isGrowth ? '240px' : '160px',
+              // FIX (EPCC-add-kpi-card-class-muc1): mục 1 trước đây là div
+              // TRẦN, không có className="kpi-card" — nên KHÔNG thừa hưởng
+              // được các hiệu ứng mặc định của class chuẩn (box-shadow/glow
+              // phía trên, transition...) mà mục 2 & mục 3 đều có (vì cả 2
+              // đều dùng className="kpi-card"). Thêm đúng className="kpi-card"
+              // ở đây — các style inline (border/background/padding/radius)
+              // vẫn override đúng phần cần custom theo màu từng card, còn
+              // phần chưa set inline (shadow, transition...) sẽ tự động lấy
+              // đúng mặc định giống hệt mục 2, đảm bảo đồng nhất hoàn toàn.
+              <div key={i} className="kpi-card" style={{
+                flex: '1 1 0%',
+                minWidth: '200px',
                 border: `1px solid ${c.tint}`,
                 borderLeft: `4px solid ${c.color}`,
-                borderRadius: '10px',
+                // FIX (EPCC-unify-kpi-size-all-sections): copy đúng kích thước
+                // (padding + border-radius) từ className="kpi-card" chuẩn mà
+                // mục 2 và mục 3 đang dùng (index.css: padding 7px 10px,
+                // border-radius var(--radius-md) = 12px) — trước đây mục 1 tự
+                // đặt padding '12px 14px' / borderRadius '10px' riêng, lệch
+                // chuẩn so với 2 mục kia.
+                borderRadius: 'var(--radius-md)',
                 background: `linear-gradient(135deg, ${c.tint} 0%, rgba(30, 41, 59, 0.4) 100%)`,
-                padding: '12px 14px',
+                padding: '7px 10px',
                 animationDelay: `${i * 0.05}s`,
                 position: 'relative',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '6px',
+                gap: '0px',
                 boxSizing: 'border-box'
               }}>
-                {/* Header row: icon + label (nowrap) + toggle */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '4px', minWidth: 0 }}>
+                {/* Header row: icon + label (nowrap) + toggle
+                    FIX (EPCC-unify-kpi-typography-all-sections): copy đúng
+                    margin-bottom: 8px (thay cho gap:6px ở card cha) + cỡ chữ
+                    label cố định 13.5px (bỏ clamp responsive) từ mục 2
+                    (TargetActualDashboard) để 3 mục có cỡ chữ trên-dưới và
+                    khoảng cách header→value giống hệt nhau. */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '4px', minWidth: 0, marginBottom: '8px' }}>
                   {/* Left: icon + label */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                    {renderKpiIcon(c.icon, c.color)}
                     <div style={{
-                      background: c.tint,
-                      color: c.color,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '26px',
-                      height: '26px',
-                      borderRadius: '50%',
-                      fontSize: '13px',
-                      flexShrink: 0
-                    }}>{c.icon}</div>
-                    <div style={{
-                      /* clamp: shrinks from 13.5px down to 11px as container narrows */
-                      fontSize: 'clamp(11px, 1.8vw, 13.5px)',
+                      fontSize: '13.5px',
                       fontWeight: '700',
                       color: 'var(--text-0)',
                       textTransform: 'uppercase',
@@ -1572,63 +1711,37 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
         <div className="charts-row row-1">
           {/* Unified Trend Chart */}
           <div className="panel">
-            <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h3 style={{ fontSize: '15px', fontWeight: '600' }}>
-                  {viewMode === 'year' 
-                    ? t.chart1Title 
-                    : viewMode === 'quarter' 
-                      ? (lang === 'vi' ? 'Xuất hàng & Doanh số theo Quý' : lang === 'en' ? 'Shipment & Sales by Quarter' : '분기별 출하 & 매출')
-                      : t.chartMonthTitle
-                  }
-                </h3>
+            <div className="panel-head" style={chartHeaderStyle(0)}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0 }}>
+                {viewMode === 'year' 
+                  ? t.chart1Title 
+                  : viewMode === 'quarter' 
+                    ? (lang === 'vi' ? 'Xuất hàng & Doanh số theo Quý' : lang === 'en' ? 'Shipment & Sales by Quarter' : '분기별 출하 & 매출')
+                    : t.chartMonthTitle
+                }
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <SDLegendItem type="bar" color="#2d7f96" label={lang === 'vi' ? 'XUẤT HÀNG (K)' : lang === 'en' ? 'SHIPMENT (K)' : '출하 (K)'} />
+                <SDLegendItem type="line" color="#00a65a" label={lang === 'vi' ? 'DOANH SỐ (K$)' : lang === 'en' ? 'SALES AMT (K$)' : '매출 (K$)'} />
+                <SDLegendItem type="line" color="#f39c12" label={trendGrowthLegendLabel} />
               </div>
-              <span style={{
-                background: '#1a1630',
-                color: '#ffff00',
-                fontWeight: 'bold',
-                fontSize: '11px',
-                padding: '3px 8px',
-                borderRadius: '4px',
-                border: '1px solid #ffff00',
-                fontFamily: 'monospace',
-                letterSpacing: '1px',
-                marginTop: '2px',
-                textTransform: 'uppercase'
-              }}>
-                {viewMode}
-              </span>
             </div>
             <div className="chart-holder" id="trendChartUnified"></div>
           </div>
 
           {/* Unified Top Models Chart */}
           <div className="panel">
-            <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h3 style={{ fontSize: '15px', fontWeight: '600' }}>
-                  {lang === 'vi' 
-                    ? `Top 10 Model theo Doanh số - ${selectedPeriodLabel}` 
-                    : lang === 'en' 
-                      ? `Top 10 Models by Sales - ${selectedPeriodLabel}` 
-                      : `매출 Top 10 모델 - ${selectedPeriodLabel}`}
-                </h3>
+            <div className="panel-head" style={chartHeaderStyle(1)}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0 }}>
+                {lang === 'vi' 
+                  ? `Top 10 Model theo Doanh số - ${selectedPeriodLabel}` 
+                  : lang === 'en' 
+                    ? `Top 10 Models by Sales - ${selectedPeriodLabel}` 
+                    : `매출 Top 10 모델 - ${selectedPeriodLabel}`}
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <SDLegendItem type="bar" color="#0891b2" label={`SALES (K$) — ${selectedPeriodLabel}`} />
               </div>
-              <span style={{
-                background: '#1a1630',
-                color: '#ffff00',
-                fontWeight: 'bold',
-                fontSize: '11px',
-                padding: '3px 8px',
-                borderRadius: '4px',
-                border: '1px solid #ffff00',
-                fontFamily: 'monospace',
-                letterSpacing: '1px',
-                marginTop: '2px',
-                textTransform: 'uppercase'
-              }}>
-                {selectedPeriod}
-              </span>
             </div>
             <div className="chart-holder" id="topModelsUnified"></div>
           </div>
@@ -1638,62 +1751,38 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
         <div className="charts-row row-2">
           {/* Customer Stacked (Left) */}
           <div className="panel">
-            <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h3 style={{ fontSize: '15px', fontWeight: '600' }}>
-                  {lang === 'vi' 
-                    ? 'Doanh số theo Khách hàng (CUSTOM)' 
-                    : lang === 'en' 
-                      ? 'Customer Sales Trend (CUSTOM)' 
-                      : '고객사별 매출 (CUSTOM)'}
-                </h3>
+            <div className="panel-head" style={chartHeaderStyle(2)}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0 }}>
+                {lang === 'vi' 
+                  ? 'Doanh số theo Khách hàng (CUSTOM)' 
+                  : lang === 'en' 
+                    ? 'Customer Sales Trend (CUSTOM)' 
+                    : '고객사별 매출 (CUSTOM)'}
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                {CUSTOMER_LEGEND_ORDER.map(c => (
+                  <SDLegendItem key={c} type="bar" color={CUSTOMER_COLORS[c]} label={c} />
+                ))}
               </div>
-              <span style={{
-                background: '#1a1630',
-                color: '#ffff00',
-                fontWeight: 'bold',
-                fontSize: '11px',
-                padding: '3px 8px',
-                borderRadius: '4px',
-                border: '1px solid #ffff00',
-                fontFamily: 'monospace',
-                letterSpacing: '1px',
-                marginTop: '2px',
-                textTransform: 'uppercase'
-              }}>
-                {viewMode} (CUSTOM)
-              </span>
             </div>
             <div className="chart-holder" id="customerSalesStackedUnified"></div>
           </div>
 
             {/* Customer Pinwheel (Right) */}
             <div className="panel">
-              <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <h3 style={{ fontSize: '15px', fontWeight: '600' }}>
-                    {lang === 'vi'
-                      ? `Tỷ trọng theo Khách hàng - ${selectedPeriodLabel}`
-                      : lang === 'en'
-                        ? `Customer Sales Share - ${selectedPeriodLabel}`
-                        : `고객사별 매출 비중 - ${selectedPeriodLabel}`}
-                  </h3>
+              <div className="panel-head" style={chartHeaderStyle(3)}>
+                <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0 }}>
+                  {lang === 'vi'
+                    ? `Tỷ trọng theo Khách hàng - ${selectedPeriodLabel}`
+                    : lang === 'en'
+                      ? `Customer Sales Share - ${selectedPeriodLabel}`
+                      : `고객사별 매출 비중 - ${selectedPeriodLabel}`}
+                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  {CUSTOMER_LEGEND_ORDER.map(c => (
+                    <SDLegendItem key={c} type="dot" color={CUSTOMER_COLORS[c]} label={c} />
+                  ))}
                 </div>
-                <span style={{
-                  background: '#1a1630',
-                  color: '#ffff00',
-                  fontWeight: 'bold',
-                  fontSize: '11px',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  border: '1px solid #ffff00',
-                  fontFamily: 'monospace',
-                  letterSpacing: '1px',
-                  marginTop: '2px',
-                  textTransform: 'uppercase'
-                }}>
-                  {selectedPeriod} (CUSTOM)
-                </span>
               </div>
               <div className="chart-holder" id="customerSalesDonutUnified"></div>
             </div>
@@ -1896,6 +1985,60 @@ export const SalesDashboard: React.FC<SalesDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* FIX (charts-full-size + header-flush-edges, EPCC):
+          1. "dòng đầu tiên (panel-head) để top=0, left=0, right=0" — panel
+             bao ngoài (class .panel, CSS global) đang có padding riêng
+             khiến thanh màu tiêu đề bị thụt vào, không chạm sát 3 cạnh
+             trên/trái/phải (đúng 3 mũi tên khoanh đỏ ở góc mỗi khung trong
+             ảnh). Fix: đưa padding của .panel về 0 (ghi đè bằng specificity
+             cao ".sales-dashboard" x3, không sửa CSS global dùng chung Mục
+             khác) để panel-head — vốn là block-level div đầu tiên trong
+             .panel — tự nhiên nằm sát top:0/left:0/right:0. Dồn phần
+             padding đã bỏ đi sang .chart-holder để nội dung biểu đồ bên
+             trong vẫn có khoảng đệm trái/phải/dưới như cũ, không bị dính
+             sát mép.
+          2. "nới rộng biểu đồ to hết mức có thể" — tăng tiếp chiều cao
+             chart-holder (520px → 640px) so với lần chỉnh trước. */}
+      <style>{`
+        .sales-dashboard.sales-dashboard.sales-dashboard .charts-row .panel {
+          height: auto !important;
+          max-height: none !important;
+          padding: 0 !important;
+          overflow: hidden;
+        }
+        .sales-dashboard.sales-dashboard.sales-dashboard .charts-row .panel-head {
+          margin: 0 !important;
+        }
+        .sales-dashboard.sales-dashboard.sales-dashboard .charts-row .chart-holder {
+          width: 100% !important;
+          height: 640px !important;
+          max-height: none !important;
+          box-sizing: border-box;
+          padding: 14px 16px 16px 16px !important;
+          margin: 0 !important;
+        }
+        @media (max-width: 1024px) {
+          .sales-dashboard.sales-dashboard.sales-dashboard .charts-row .chart-holder {
+            height: 480px !important;
+          }
+        }
+        /* FIX (donut-center, EPCC): hack cũ dùng margin-top âm để "nhích"
+           khung donut đã đẩy nó vượt ra ngoài vùng padding của
+           .chart-holder — vì .panel cha có overflow:hidden nên phần rìa
+           trên của vòng donut bị cắt/che mờ ở góc. Thay bằng flex-center
+           chuẩn: khung #customerSalesDonutUnified tự canh giữa theo cả 2
+           trục trong không gian sẵn có, kết hợp domain 6% đệm ở trace pie
+           (xem traceCustomerDonut) để vòng tròn không bao giờ chạm biên.
+           Chỉ áp dụng riêng khung donut này, không đụng 3 biểu đồ còn lại. */
+        #customerSalesDonutUnified {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          width: 100% !important;
+          height: 100% !important;
+        }
+      `}</style>
     </div>
   );
 };

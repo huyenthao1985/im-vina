@@ -38,6 +38,20 @@ const NIGHT_RATIO = 0.493;   // ca đêm / tổng
 const DEFAULT_TARGET_PC = 160; // 경영목표 인당생산수
 // const HOURS_PER_SHIFT = 8;   // 근무시간 chuẩn / ca (có thể chỉnh nếu nhà máy tính OT khác)
 
+/* EPCC (header-legend-merge, tham chiếu đúng pattern SDLegendItem trong
+   SalesDashboard.tsx) — legend trước đây do Plotly tự vẽ RỜI bên trong canvas
+   (y>1 paper coord), luôn tạo khoảng trắng thừa/đè lên nhãn số phía trên biểu
+   đồ dù chỉnh y/margin thế nào. Nay chuyển hẳn legend ra HTML, gộp chung 1
+   hàng với tiêu đề trong panel-head (bên phải), tắt showlegend của Plotly. */
+const PCLegendItem: React.FC<{ type: 'bar' | 'line' | 'dot'; color: string; label: string }> = ({ type, color, label }) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', fontWeight: 500, whiteSpace: 'nowrap' }}>
+    {type === 'bar' && <span style={{ width: '9px', height: '9px', borderRadius: '2px', background: color, flexShrink: 0 }} />}
+    {type === 'line' && <span style={{ width: '12px', height: 0, borderTop: `2px dashed ${color}`, flexShrink: 0 }} />}
+    {type === 'dot' && <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />}
+    {label}
+  </span>
+);
+
 /**
  * getWorkingUnitsForLabel — số ngày công đại diện cho 1 label trên trục X.
  * Dùng để tính 근무시간 (Work Hours) = nhân lực TB x giờ/ca x số ngày công,
@@ -95,6 +109,36 @@ function getModelColor(model: string, idx: number) {
   return p[idx % p.length];
 }
 
+/* EPCC (panel-header-bg-from-template) — NGUỒN MÀU DUY NHẤT cho nền 6 khung
+   panel-head bên dưới, lấy NGUYÊN theo đúng thứ tự 1→6 từ THEME.chartPanels
+   trong DashboardTemplate.tsx (khung màu đỏ khoanh trong ảnh mẫu). Mọi
+   panel-head trong file này chỉ được đọc màu từ mảng này — KHÔNG viết mã hex
+   nền rời rạc lần 2 ở bất kỳ panel nào khác, tránh lệch màu khi sửa sau này. */
+const PANEL_THEME = [
+  { accent: '#8b5cf6', bgLight: '#d6c6fc', bgDark: 'rgba(139,92,246,0.14)' }, // Panel 1 — tím
+  { accent: '#06b6d4', bgLight: '#a8e5f0', bgDark: 'rgba(6,182,212,0.14)' },  // Panel 2 — cyan
+  { accent: '#f59e0b', bgLight: '#fcddaa', bgDark: 'rgba(255,255,255,0.05)' }, // Panel 3 — cam
+  { accent: '#f97316', bgLight: '#fdcead', bgDark: 'rgba(249,115,22,0.14)' }, // Panel 4 — cam-đỏ
+  { accent: '#10b981', bgLight: '#abe7d3', bgDark: 'rgba(16,185,129,0.14)' }, // Panel 5 — xanh lá
+  { accent: '#3b82f6', bgLight: '#bad3fc', bgDark: 'rgba(59,130,246,0.14)' }, // Panel 6 — xanh dương
+] as const;
+
+/* EPCC (panel-flush-header-match-salesdashboard) — đồng bộ KÍCH THƯỚC phần
+   panel-head vừa tô màu ở trên với đúng chuẩn kích thước đã dùng trong
+   SalesDashboard.tsx (chartHeaderStyle): viền trái 4px, bo góc 8px 8px 0 0,
+   padding 10px 14px, margin 0 để thanh màu tiêu đề dán sát 3 cạnh trên/trái/
+   phải của khung .panel — đúng như 4 mũi tên đỏ khoanh góc trong ảnh mẫu. */
+function panelHeadStyle(i: number, isDark: boolean): React.CSSProperties {
+  const c = PANEL_THEME[i];
+  return {
+    background: isDark ? c.bgDark : c.bgLight,
+    borderLeft: `4px solid ${c.accent}`,
+    borderRadius: '8px 8px 0 0',
+    padding: '10px 14px',
+    margin: 0,
+  };
+}
+
 // ─── i18n ─────────────────────────────────────────────────────────────────────
 const T = {
   // FIX (EPCC-title-i18n, áp dụng đồng bộ với ManpowerDashboard.tsx): field
@@ -103,9 +147,7 @@ const T = {
   // Việt, giữ nguyên `en`/`ko` (2 field đó vốn đã đúng ngôn ngữ).
   title:        { vi: 'SẢN LƯỢNG ĐẦU NGƯỜI & TÌNH HÌNH SẢN XUẤT (THEO NHÂN LỰC)', en: 'Per Capita Output & Production (Headcount Based)', ko: '인당 생산수 & 생산 현황 (근무인력 기준)' },
   subtitle:     { vi: 'Ước lượng từ dữ liệu nhân lực (DAY 50.7% / NIGHT 49.3%)', en: 'Estimated from manpower data (DAY 50.7% / NIGHT 49.3%)', ko: '근무인원 기준 추정 (DAY 50.7% / NIGHT 49.3%)' },
-  chart1Title:  { vi: '인당생산수 - Sản lượng theo đầu người', en: 'Per Capita Output', ko: '인당생산수' },
-  chart2Title:  { vi: '인력 유실 비용 - Chi phí hao hụt nhân lực', en: 'Labor Loss Cost', ko: '인력 유실 비용' },
-  chart2Subtitle: { vi: 'Chi phí hao hụt nhân lực thực tế theo Ca (DAY/NIGHT/TTL 인력 유실 비용)', en: 'Actual labor loss cost by shift (DAY/NIGHT/TTL Labor Loss Cost)', ko: '교대별 실제 인력 유실 비용 (DAY/NIGHT/TTL 인력 유실 비용)' },
+  chart2Title:  { vi: 'Chi phí hao hụt nhân lực', en: 'Labor Loss Cost', ko: '인력 유실 비용' },
   dayLossCost:   { vi: 'DAY 인력 유실 비용', en: 'DAY Labor Loss Cost', ko: 'DAY 인력 유실 비용' },
   nightLossCost: { vi: 'NIGHT 인력 유실 비용', en: 'NIGHT Labor Loss Cost', ko: 'NIGHT 인력 유실 비용' },
   ttlLossCost:   { vi: 'TTL 인력 유실 비용', en: 'TTL Labor Loss Cost', ko: 'TTL 인력 유실 비용' },
@@ -829,8 +871,8 @@ function buildChart1(
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
     font: { color: textColor, size: 11 },
-    margin: { t: 44, r: 40, b: 28, l: 48 },
-    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 10 } },
+    margin: { t: 12, r: 40, b: 28, l: 48 },
+    showlegend: false,
     xaxis: { tickfont: { size: 11, color: textColor }, gridcolor: gridColor },
     yaxis: { gridcolor: gridColor, tickfont: { size: 10 }, range: yRange },
     yaxis2: {
@@ -941,8 +983,8 @@ function buildChart2(
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
     font: { color: textColor, size: 11 },
-    margin: { t: 44, r: 12, b: 28, l: 56 },
-    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 10 } },
+    margin: { t: 12, r: 12, b: 28, l: 56 },
+    showlegend: false,
     xaxis: { tickfont: { size: 11, color: textColor }, gridcolor: gridColor },
     yaxis: { gridcolor: gridColor, tickfont: { size: 10 }, range: yRange, zeroline: true, zerolinecolor: gridColor, zerolinewidth: 1.5 },
     hoverlabel: { font: { size: 10 } },
@@ -1045,8 +1087,8 @@ function buildChart3(
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
     font: { color: textColor, size: 14 },
-    margin: { t: 55, r: 15, b: 35, l: 65 },
-    legend: { orientation: 'h', x: 0, y: 1.05, xanchor: 'left', yanchor: 'bottom', font: { size: 13 } },
+    margin: { t: 18, r: 15, b: 35, l: 65 },
+    showlegend: false,
     xaxis: { tickfont: { size: 14, color: textColor }, gridcolor: gridColor },
     yaxis: { gridcolor: gridColor, tickfont: { size: 13 }, range: yRange },
     hoverlabel: { font: { size: 13 } },
@@ -1545,8 +1587,8 @@ function buildProductionChart(
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
     font: { color: textColor, size: 10 },
-    margin: { t: 36, r: 48, b: 28, l: 48 },
-    legend: { orientation: 'h', x: 0, y: 1.06, xanchor: 'left', yanchor: 'bottom', font: { size: 10 } },
+    margin: { t: 12, r: 48, b: 28, l: 48 },
+    showlegend: false,
     xaxis: { tickfont: { size: 10, color: textColor }, gridcolor: gridColor },
     yaxis: {
       gridcolor: gridColor,
@@ -1618,7 +1660,10 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   // ── Toolbar states (đồng nhất với ManpowerDashboard) ──────────────────────
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo,   setDateTo]   = useState('');
-  const [granularity, setGranularity] = useState<'day'|'week'|'month'|'year'>('month');
+  // FIX (EPCC-default-view-by-day): mặc định khi mở dashboard phải là "Ngày"
+  // (day) theo yêu cầu, đồng bộ với ManpowerDashboard (sheet còn lại), không
+  // còn mặc định "Tháng" (month) như trước.
+  const [granularity, setGranularity] = useState<'day'|'week'|'month'|'year'>('day');
   const [modelFilter, setModelFilter] = useState<string>('all');
   const [dateError, setDateError] = useState<string | null>(null);
 
@@ -1795,8 +1840,66 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   // Tất cả màu dùng var(--...) để tự thích nghi theo theme; chỉ explicit color
   // cho các element active/highlight dùng màu cố định (#2e7d8c, #fff, v.v.)
 
+  // FIX (EPCC-unify-kpi-icon-size-muc3-theo-muc2): mục 2 (TargetActualDashboard,
+  // thẻ chuẩn) dùng SVG line-icon phẳng 16x16px, KHÔNG có khung tròn nền màu.
+  // className="kpi-card-icon" (badge tròn ~26x26px chứa emoji) trước đây dùng ở
+  // đây khiến hàng header (icon+label) cao hơn chuẩn ~8-10px, kéo theo tổng
+  // chiều cao card bị lệch so với mục 2. Thay bằng SVG line-icon 16x16 giống
+  // hệt mục 2 để chiều cao khớp hoàn toàn.
+  const renderKpiIcon = (key: string, color: string) => {
+    const common = {
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: color,
+      strokeWidth: 2.5,
+      strokeLinecap: 'round' as const,
+      strokeLinejoin: 'round' as const,
+      style: { width: '16px', height: '16px', flexShrink: 0 }
+    };
+    switch (key) {
+      case 'sun':
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="12" r="4" />
+            <line x1="12" y1="2" x2="12" y2="4" />
+            <line x1="12" y1="20" x2="12" y2="22" />
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+            <line x1="2" y1="12" x2="4" y2="12" />
+            <line x1="20" y1="12" x2="22" y2="12" />
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          </svg>
+        );
+      case 'moon':
+        return (
+          <svg {...common}>
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        );
+      case 'bar-chart':
+        return (
+          <svg {...common}>
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+        );
+      case 'target':
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="6" />
+            <circle cx="12" cy="12" r="2" />
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div style={{ padding: '0 0 24px' }}>
+    <div className="per-capita-tab" style={{ padding: '0 0 24px' }}>
 
       {/* ══════════════════════════════════════════════════════════════════════
           TOOLBAR — FIX(toolbar-chuan-hoa): đồng bộ y hệt cấu trúc/kích thước/
@@ -1805,19 +1908,53 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
           thường, input ngày cao 38px, CustomSelect cho Model.
          ══════════════════════════════════════════════════════════════════════ */}
       <div className="topbar-dash" style={{
-        display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px',
+        display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: '0px', marginBottom: '10px',
         background: '#2F3A1D',
         borderRadius: '14px', padding: '10px 14px',
         border: '1px solid rgba(0,0,0,0.18)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
       }}>
+        {/* FIX (EPCC-fit-mgmt-target-row1): 경영목표 vẫn bị rớt xuống dòng
+            riêng (dòng 2) do 300px chưa đủ chứa DAY+NIGHT+경영목표 trên
+            cùng 1 dòng. Nới thêm cột trái lên 340px, giảm font 12px +
+            columnGap 6px để kéo 경영목표 lên nằm chung dòng 1 với DAY/NIGHT
+            như đúng khoanh đỏ yêu cầu (dòng 2 giờ chỉ còn "Dữ liệu cập nhật
+            đến"). */}
+        <div style={{
+          width: '340px', flexShrink: 0,
+          display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '4px',
+          fontSize: '12px', color: '#D7E4B8', lineHeight: 1.3,
+        }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', columnGap: '6px', rowGap: '2px' }}>
+            <span>DAY: <strong style={{ color: '#ffffff' }}>{(DAY_RATIO * 100).toFixed(1)}%</strong></span>
+            <span>NIGHT: <strong style={{ color: '#ffffff' }}>{(NIGHT_RATIO * 100).toFixed(1)}%</strong></span>
+            <span>
+              {lang === 'vi' ? '경영목표' : lang === 'ko' ? '경영목표' : 'Mgmt Target'}:
+              <strong style={{ color: '#6fd3e0', marginLeft: '4px' }}>{targetPC} {lang === 'vi' ? 'cái/người' : lang === 'ko' ? '개/인' : 'pcs/cap'}</strong>
+            </span>
+            {data.ttlStandard && (
+              <span>
+                {lang === 'vi' ? 'Chuẩn YR24' : lang === 'ko' ? '기준인원(YR24)' : 'Standard YR24'}:
+                <strong style={{ color: '#ff8a8a', marginLeft: '4px' }}>{fmt1(r1(data.ttlStandard))} {lang === 'vi' ? 'người' : lang === 'ko' ? '명' : 'prs'}</strong>
+              </span>
+            )}
+          </div>
+          {data.lastDataLabel && (
+            <div>
+              <span>
+                {lang === 'vi' ? 'Dữ liệu cập nhật đến' : lang === 'ko' ? '데이터 기준' : 'Data as of'}:
+                <strong style={{ color: '#7be6ab', marginLeft: '4px' }}>{data.lastDataLabel}</strong>
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Cột giữa: 2 hàng label + control như cũ, không còn spacer trái */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
         {/* Dòng 1 (labels) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          {/* Cụm trái dòng 1: đồng hồ đã bị bỏ theo yêu cầu — giữ spacer
-              trống cùng bề rộng để không lệch layout các cột nhãn bên phải. */}
-          <div style={{ width: '170px', flexShrink: 0 }} />
           {/* Cụm giữa dòng 1: Labels */}
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 8px' }}>
             <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
               {lang === 'vi' ? 'NGÀY BẮT ĐẦU' : lang === 'ko' ? '시작일' : 'START DATE'}
             </span>
@@ -1839,10 +1976,8 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
         {/* Dòng 2 (values/controls) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          {/* Cụm trái dòng 2: Trống để giữ căn lề */}
-          <div style={{ width: '170px', flexShrink: 0 }}></div>
           {/* Cụm giữa dòng 2: Controls */}
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 8px', alignItems: 'center' }}>
             <input
               type="date" value={dateFrom}
               onChange={e => handleDateFromChange(e.target.value)}
@@ -1924,78 +2059,82 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
             </span>
           </div>
         </div>
-      </div>
-
-      {/* Ratio info row */}
-      <div style={{
-        fontSize: '13px', color: 'var(--text-3)',
-        padding: '4px 14px 10px',
-        display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center',
-      }}>
-        <span>DAY: <strong style={{ color: 'var(--text-1)' }}>{(DAY_RATIO * 100).toFixed(1)}%</strong></span>
-        <span>NIGHT: <strong style={{ color: 'var(--text-1)' }}>{(NIGHT_RATIO * 100).toFixed(1)}%</strong></span>
-        <span>
-          {lang === 'vi' ? '경영목표' : lang === 'ko' ? '경영목표' : 'Mgmt Target'}:
-          <strong style={{ color: '#2e7d8c', marginLeft: '4px' }}>{targetPC} {lang === 'vi' ? 'cái/người' : lang === 'ko' ? '개/인' : 'pcs/cap'}</strong>
-        </span>
-        {data.ttlStandard && (
-          <span>
-            {lang === 'vi' ? 'Chuẩn YR24' : lang === 'ko' ? '기준인원(YR24)' : 'Standard YR24'}:
-            <strong style={{ color: '#ef4444', marginLeft: '4px' }}>{fmt1(r1(data.ttlStandard))} {lang === 'vi' ? 'người' : lang === 'ko' ? '명' : 'prs'}</strong>
-          </span>
-        )}
-        {data.lastDataLabel && (
-          <span>
-            {lang === 'vi' ? 'Dữ liệu cập nhật đến' : lang === 'ko' ? '데이터 기준' : 'Data as of'}:
-            <strong style={{ color: '#10b981', marginLeft: '4px' }}>{data.lastDataLabel}</strong>
-          </span>
-        )}
+        </div>
       </div>
 
       {/* ── KPI Row ── */}
       {hasData && (
         <div
           className="kpi-grid"
-          style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '12px' }}
+          style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '12px', width: '100%' }}
         >
           {[
             {
-              icon: '☀️',
+              icon: 'sun',
               label: lang === 'vi' ? 'Sản lượng đầu người ca ngày TB' : lang === 'ko' ? 'DAY 인당생산수 평균' : 'AVG DAY Per Capita',
               value: fmt1(avgDay),
               unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
               bg: 'var(--blue-soft)', color: '#1565C0',
+              // FIX (EPCC-copy-kpi-colors-from-muc2): copy đúng bộ màu KPI card
+              // từ mục 2 (TargetActualDashboard, tab "Tình hình doanh số") sang
+              // đây, đúng thứ tự trái→phải: teal #2e7d8c (card 1) → green #10b981
+              // (card 2) → purple #8b5cf6 (card 3) → orange #f59e0b (card 4).
+              // rgbaBg dùng đúng định dạng rgba(...,0.1) như mục 2 (không dùng
+              // suffix hex-alpha để tránh sai khác/tương thích trình duyệt).
+              borderColor: '#2e7d8c', rgbaBg: 'rgba(46,125,140,0.1)',
             },
             {
-              icon: '🌙',
+              icon: 'moon',
               label: lang === 'vi' ? 'Sản lượng đầu người ca đêm TB' : lang === 'ko' ? 'NIGHT 인당생산수 평균' : 'AVG NIGHT Per Capita',
               value: fmt1(avgNight),
               unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
               bg: 'var(--rose-soft)', color: '#ef4444',
+              borderColor: '#10b981', rgbaBg: 'rgba(16,185,129,0.1)',
             },
             {
-              icon: '📊',
+              icon: 'bar-chart',
               label: lang === 'vi' ? 'Sản lượng đầu người tổng TB' : lang === 'ko' ? 'TTL 인당생산수 평균' : 'AVG TTL Per Capita',
               value: fmt1(avgTtl),
               unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
               bg: 'var(--cyan-soft)', color: '#14b8a6',
+              borderColor: '#8b5cf6', rgbaBg: 'rgba(139,92,246,0.1)',
             },
             {
-              icon: '🎯',
+              icon: 'target',
               label: lang === 'vi' ? 'Mục tiêu' : lang === 'ko' ? '경영목표' : 'Mgmt. Target',
               value: String(targetPC),
               unit: lang === 'vi' ? 'sp/người' : lang === 'ko' ? '개/인' : 'pcs/cap',
               bg: 'var(--rose-soft)', color: '#f43f5e',
+              borderColor: '#f59e0b', rgbaBg: 'rgba(245,158,11,0.1)',
             },
           ].map((kpi, i) => (
-            <div key={i} className="kpi-card">
-              <div className="kpi-card-header">
-                <div className="kpi-card-icon" style={{ background: kpi.bg, color: kpi.color }}>{kpi.icon}</div>
-                <div className="kpi-card-label" style={{ fontSize: '12px', fontWeight: 700 }}>{kpi.label}</div>
+            <div
+              key={i}
+              className="kpi-card"
+              style={{
+                borderLeft: `4px solid ${kpi.borderColor}`,
+                background: `linear-gradient(135deg, ${kpi.rgbaBg} 0%, rgba(30,41,59,0.4) 100%)`,
+              }}
+            >
+              {/* FIX (EPCC-unify-kpi-typography-all-sections): copy đúng cỡ
+              chữ/spacing tường minh từ mục 2 (TargetActualDashboard —
+              .kpi-card-header: gap 6px + margin-bottom 8px; .kpi-card-label:
+              13.5px/700/var(--text-0); .kpi-card-value: weight 800/
+              var(--text-0); dòng đơn vị kiểu .kpi-card-target: 13.5px/700/
+              var(--text-1)) sang toàn bộ 4 card ở đây để 3 mục có tỷ lệ
+              dài/rộng/cao và cỡ chữ trên-dưới giống hệt nhau.
+              FIX (EPCC-remove-kpi-value-fontsize-override): mục 2 KHÔNG tự set
+              fontSize riêng cho .kpi-card-value (chỉ set marginBottom:0), số to
+              (867/30.1%/...) hoàn toàn dùng cỡ chữ mặc định của class. Trước đây
+              ở đây tự đặt fontSize:'26px' khiến số to hơn chuẩn mục 2. Bỏ hẳn
+              fontSize override để value dùng đúng cỡ chữ mặc định giống hệt mục 2. */}
+          <div className="kpi-card-header" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                {renderKpiIcon(kpi.icon, kpi.color)}
+                <div className="kpi-card-label" style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-0)' }}>{kpi.label}</div>
               </div>
-              <div className="kpi-card-value" style={{ fontSize: '30px' }}>
+              <div className="kpi-card-value" style={{ fontWeight: 800, color: 'var(--text-0)' }}>
                 {kpi.value}
-                <span style={{ fontSize: '16px', color: 'var(--text-3)', marginLeft: '4px' }}>{kpi.unit}</span>
+                <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-1)', marginLeft: '4px' }}>{kpi.unit}</span>
               </div>
             </div>
           ))}
@@ -2015,18 +2154,24 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
           {/* Chart 1: 인당생산수 */}
           <div className="panel">
-            <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0 }}>{lang === 'vi' ? '인당생산수 - Sản lượng theo đầu người' : lang === 'ko' ? '인당생산수' : 'Per Capita Output'}</h3>
-              <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
-                {lang === 'vi' ? 'TTL nhân lực x tỉ lệ ca (DAY/NIGHT)' : lang === 'ko' ? '근무인원 x 근무비율 (추정)' : 'Headcount x shift ratio (estimated)'}
-              </span>
+            <div className="panel-head" style={{ ...panelHeadStyle(0, isDark), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+              <h3 style={{ margin: 0 }}>{lang === 'vi' ? 'Sản lượng theo đầu người' : lang === 'ko' ? '인당생산수' : 'Per Capita Output'}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <PCLegendItem type="bar" color="#1565C0" label={t('dayPc', lang)} />
+                <PCLegendItem type="bar" color="#ef4444" label={t('nightPc', lang)} />
+                <PCLegendItem type="line" color={isDark ? '#14b8a6' : '#0f766e'} label={t('ttlPc', lang)} />
+                <PCLegendItem type="line" color="#f59e0b" label={t('target', lang)} />
+                <PCLegendItem type="line" color={isDark ? '#f43f5e' : '#be123c'} label={t('mgmtTarget', lang)} />
+              </div>
             </div>
-            <div id={ids.current.c1} style={{ height: '270px' }} />
+            <div className="chart-holder">
+              <div id={ids.current.c1} style={{ height: '270px' }} />
+            </div>
           </div>
 
           {/* ════ Chart: Sản xuất theo ca DAY / NIGHT / TTL ════════════════════════ */}
           <div className="panel">
-            <div className="panel-head" style={{ marginBottom: '12px' }}>
+            <div className="panel-head" style={{ ...panelHeadStyle(1, isDark), marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
               <h3 style={{ margin: 0 }}>
                 {lang === 'vi'
                   ? `📊 Tình hình sản xuất — Plan / Actual / Yield (%)${modelFilter !== 'all' ? ` — Model: ${modelFilter}` : ' — Tất cả Model'}`
@@ -2034,9 +2179,11 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                   ? `📊 생산 현황 — 계획 / 실적 / 달성률 (%)${modelFilter !== 'all' ? ` — 모델: ${modelFilter}` : ' — 전체 모델'}`
                   : `📊 Production Status — Plan / Actual / Yield (%)${modelFilter !== 'all' ? ` — Model: ${modelFilter}` : ' — All Models'}`}
               </h3>
-              <span style={{ fontSize: '11px', color: 'var(--text-3)', display: 'block', marginTop: '2px' }}>
-                {lang === 'vi' ? 'Tối đa 7 giai đoạn gần nhất' : lang === 'ko' ? '최근 7기간' : 'Up to last 7 periods'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <PCLegendItem type="bar" color={isDark ? '#f97316' : '#ea580c'} label="Plan" />
+                <PCLegendItem type="bar" color="#14b8a6" label="Actual" />
+                <PCLegendItem type="line" color="#1565C0" label="Yield %" />
+              </div>
               {!prodData.day.hasData && !prodData.night.hasData && !prodData.ttl.hasData && (
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -2052,7 +2199,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 </span>
               )}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            <div className="chart-holder" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
 
               {/* Chart: DAY */}
               <div>
@@ -2061,7 +2208,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                   textAlign: 'center', marginBottom: '4px',
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                 }}>
-                  DAY — Plan / Actual / Yield
+                  DAY
                 </div>
                 {prodData.day.hasData ? (
                   <div id={ids.current.cDay} style={{ height: '220px' }} />
@@ -2083,7 +2230,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                   textAlign: 'center', marginBottom: '4px',
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                 }}>
-                  NIGHT — Plan / Actual / Yield
+                  NIGHT
                 </div>
                 {prodData.night.hasData ? (
                   <div id={ids.current.cNight} style={{ height: '220px' }} />
@@ -2105,7 +2252,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                   textAlign: 'center', marginBottom: '4px',
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                 }}>
-                  TTL — Plan / Actual / Yield
+                  TTL
                 </div>
                 {prodData.ttl.hasData ? (
                   <div id={ids.current.cTtl} style={{ height: '220px' }} />
@@ -2128,7 +2275,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
             {/* Chart 4: Phân bố nhân lực theo Model — Giai đoạn gần nhất */}
             <div className="panel">
-              <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <div className="panel-head" style={{ ...panelHeadStyle(2, isDark), display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <h3 style={{ margin: 0 }}>
                   {lang === 'vi'
                     ? 'Phân bố nhân lực theo Model — Giai đoạn gần nhất'
@@ -2153,12 +2300,14 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                   </span>
                 )}
               </div>
-              <div id={ids.current.c4} style={{ minHeight: '450px' }} />
+              <div className="chart-holder">
+                <div id={ids.current.c4} style={{ minHeight: '450px' }} />
+              </div>
             </div>
 
             {/* Chart 5: Phân bố Model theo Giai đoạn (Spider) */}
             <div className="panel">
-              <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <div className="panel-head" style={{ ...panelHeadStyle(3, isDark), display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <h3 style={{ margin: 0 }}>
                   {lang === 'vi'
                     ? 'Phân bố Model theo Giai đoạn (Spider)'
@@ -2170,18 +2319,22 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                   {lang === 'vi' ? 'Tối đa 10 giai đoạn gần nhất' : lang === 'ko' ? '최근 10기간' : 'Up to last 10 periods'}
                 </span>
               </div>
-              <div id={ids.current.c5} style={{ minHeight: '450px' }} />
+              <div className="chart-holder">
+                <div id={ids.current.c5} style={{ minHeight: '450px' }} />
+              </div>
             </div>
 
           </div>
 
           {/* Chart 2: 인력 유실 비용 (Labor Loss Cost) — EPCC (chart2-loss-cost) */}
           <div className="panel">
-            <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div className="panel-head" style={{ ...panelHeadStyle(4, isDark), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
               <h3 style={{ margin: 0 }}>{t('chart2Title', lang)}</h3>
-              <span style={{ fontSize: '13px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
-                {t('chart2Subtitle', lang)}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <PCLegendItem type="bar" color="#1565C0" label={t('dayLossCost', lang)} />
+                <PCLegendItem type="bar" color="#ef4444" label={t('nightLossCost', lang)} />
+                <PCLegendItem type="line" color={isDark ? '#14b8a6' : '#0f766e'} label={t('ttlLossCost', lang)} />
+              </div>
               {!hasChart2Data && (
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -2197,13 +2350,23 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 </span>
               )}
             </div>
-            <div id={ids.current.c2} style={{ height: '270px' }} />
+            <div className="chart-holder">
+              <div id={ids.current.c2} style={{ height: '270px' }} />
+            </div>
           </div>
 
           {/* Chart 3: 근무 인력 현황 */}
           <div className="panel">
-            <div className="panel-head" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div className="panel-head" style={{ ...panelHeadStyle(5, isDark), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
               <h3 style={{ margin: 0 }}>{t('chart3Title', lang)}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <PCLegendItem type="bar" color="#1565C0" label={t('dayMP', lang)} />
+                <PCLegendItem type="bar" color="#ef4444" label={t('nightMP', lang)} />
+                <PCLegendItem type="line" color={isDark ? '#14b8a6' : '#0f766e'} label={t('ttlMP', lang)} />
+                {!!data.ttlStandard && (
+                  <PCLegendItem type="line" color={isDark ? '#f43f5e' : '#be123c'} label={t('standard', lang)} />
+                )}
+              </div>
               {data.ttlStandard && (
                 <span style={{
                   fontSize: '13px', padding: '2px 8px', borderRadius: '4px',
@@ -2215,11 +2378,35 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 </span>
               )}
             </div>
-            <div id={ids.current.c3} style={{ height: '270px' }} />
+            <div className="chart-holder">
+              <div id={ids.current.c3} style={{ height: '270px' }} />
+            </div>
           </div>
 
         </div>
       )}
+
+      {/* EPCC (panel-flush-header-match-salesdashboard) — .panel là class CSS
+          global dùng chung nhiều Mục khác nên KHÔNG sửa trực tiếp; chỉ ghi đè
+          CỤC BỘ trong phạm vi .per-capita-tab bằng specificity cao (lặp lại
+          class 3 lần), đúng pattern đã áp dụng ở SalesDashboard.tsx, để thanh
+          màu panel-head dán sát 3 cạnh trên/trái/phải khung .panel (đúng như
+          4 mũi tên đỏ khoanh góc trong ảnh mẫu). Phần padding bỏ khỏi .panel
+          được dồn sang .chart-holder để nội dung biểu đồ bên trong không bị
+          dính sát mép. */}
+      <style>{`
+        .per-capita-tab.per-capita-tab.per-capita-tab .panel {
+          padding: 0 !important;
+          overflow: hidden;
+        }
+        .per-capita-tab.per-capita-tab.per-capita-tab .panel-head {
+          margin: 0 !important;
+        }
+        .per-capita-tab.per-capita-tab.per-capita-tab .chart-holder {
+          box-sizing: border-box;
+          padding: 14px 16px 16px 16px !important;
+        }
+      `}</style>
     </div>
   );
 };

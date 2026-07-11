@@ -119,7 +119,7 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
   vi: {
     marketingInsights: 'Marketing Insights',
     mainTitleUpload: 'Tổng quan Sản xuất – Xuất hàng – Doanh số',
-    mainTitleDash: 'Tổng quan Sản xuất – Xuất hàng – Doanh số',
+    mainTitleDash: 'TỔNG QUAN XUẤT HÀNG - DOANH SỐ',
     subtitleUpload: 'Tải lên tệp Excel để phân tích theo Model, Đối tác, Khách hàng và thời gian',
     subtitleDash: 'Phân tích theo Model, Đối tác, Khách hàng và thời gian',
     dragDrop: 'Kéo thả file Excel vào đây',

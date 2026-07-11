@@ -6,6 +6,64 @@ import { usePagination } from '../hooks/usePagination';
 import { chartTheme, getChartLayout } from './chartTheme';
 import { NeonButton } from './NeonButton';
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * FIX (header-legend-merge, EPCC) — chuyển legend "Mục tiêu(Target)/Thực
+ * tế(Actual)/% Rate" và legend donut "By Customer" từ 1 HÀNG TRẮNG RIÊNG
+ * (do Plotly tự vẽ bên trong chart-holder, `showlegend:true`) LÊN GỘP
+ * CHUNG vào đúng 1 dòng với thanh tiêu đề màu (card-header-styled) —
+ * đúng theo ảnh tham chiếu (6 khung biểu đồ demo) và spec màu/cỡ chữ của
+ * DashboardTemplate.tsx (label bên phải header: cỡ chữ ~10.5-11px, không
+ * in hoa, opacity nhẹ). Đồng thời BỎ dòng subtitle thừa ("Target vs
+ * Actual" / "QTY / AMT" / "% Performance" / "By Customer") vì thông tin
+ * này giờ đã được thể hiện trực quan hơn qua chính các item legend màu.
+ *
+ * EXPLORE: 6 khung ở Mục 2 (TargetActualDashboard) dùng chung class
+ *   ".card-header-styled" (2 children: <span> tiêu đề trái, <span>
+ *   subtitle phải — CSS global đã có sẵn display:flex;
+ *   justify-content:space-between nên chỉ cần đổi NỘI DUNG bên phải,
+ *   không cần đổi cấu trúc/class ngoài).
+ * PLAN: viết 1 component <TALegendItem> tái sử dụng cho cả 6 khung, thay
+ *   <span>subtitle</span> bằng 1 <div> chứa nhiều <TALegendItem>, tắt
+ *   `showlegend` mặc định của Plotly (đang tự vẽ legend rời) cho các
+ *   chart có legend, và mở rộng lại domain donut về full-width vì không
+ *   còn cần chừa chỗ cho legend Plotly bên cạnh.
+ * ═══════════════════════════════════════════════════════════════════════ */
+const TALegendItem: React.FC<{ type: 'bar' | 'line' | 'dot'; color: string; label: string }> = ({ type, color, label }) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', fontWeight: 500, whiteSpace: 'nowrap', textTransform: 'none' }}>
+    {type === 'bar' && <span style={{ width: '9px', height: '9px', borderRadius: '2px', background: color, flexShrink: 0 }} />}
+    {type === 'line' && <span style={{ width: '12px', height: 0, borderTop: `2px dashed ${color}`, flexShrink: 0 }} />}
+    {type === 'dot' && <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />}
+    {label}
+  </span>
+);
+
+/** Bảng màu donut "By Customer" — PHẢI khớp nguyên văn mảng `marker.colors`
+ *  dùng cho traceDonutQty/traceDonutAmt bên dưới, để legend header và màu
+ *  lát cắt donut luôn đồng bộ dù danh sách khách hàng thay đổi theo dữ liệu. */
+const DONUT_COLORS = ['#ea580c', '#0ea5e9', '#8b5cf6', '#b45309', '#0d9488', '#ec4899'];
+
+/** Bảng màu 5 vòng cung "% Rate model" — PHẢI khớp nguyên văn với mảng dùng
+ *  trong SVG gauge (Chart 4) để legend header và màu vòng cung luôn đồng bộ. */
+const RING_COLORS = ['#2563eb', '#15803d', '#b91c1c', '#7c3aed', '#c2410c'];
+
+/** Bảng màu 6 khung header "chart-grid" — lấy ĐÚNG NGUYÊN VĂN từ 6 màu tham
+ *  chiếu trong DashboardTemplate.tsx (chartPanels[]), map theo ĐÚNG THỨ TỰ
+ *  1→6 người dùng khoanh đỏ trong ảnh yêu cầu:
+ *    1. Sản lượng Bán hàng Q'TY   → tím    #8b5cf6
+ *    2. Doanh số Bán hàng AMT     → cyan   #06b6d4
+ *    3. Doanh số bán hàng tháng   → cam    #f59e0b
+ *    4. % Rate model              → cam-đỏ #f97316
+ *    5. Khách hàng (Qty)          → xanh lá #10b981
+ *    6. Khách hàng (AMT)          → xanh dương #3b82f6 */
+const CHART_HEADER_THEME = [
+  { accent: '#8b5cf6', bgLight: '#d6c6fc', bgDark: 'rgba(139,92,246,0.14)' },
+  { accent: '#06b6d4', bgLight: '#a8e5f0', bgDark: 'rgba(6,182,212,0.14)' },
+  { accent: '#f59e0b', bgLight: '#fcddaa', bgDark: 'rgba(255,255,255,0.05)' },
+  { accent: '#f97316', bgLight: '#fdcead', bgDark: 'rgba(249,115,22,0.14)' },
+  { accent: '#10b981', bgLight: '#abe7d3', bgDark: 'rgba(16,185,129,0.14)' },
+  { accent: '#3b82f6', bgLight: '#bad3fc', bgDark: 'rgba(59,130,246,0.14)' },
+] as const;
+
 const PAGE_SIZES = [10, 25, 31, 50, 100];
 
 /**
@@ -123,9 +181,16 @@ const formatReportTitle = (prefix: string, startDate: Date | null, endDate: Date
   }
 
   // Same year
+  // FIX (duplicate-thang-word, EPCC): nếu `prefix` (tiêu đề gốc, VD "DOANH
+  // SỐ BÁN HÀNG THÁNG") đã sẵn có chữ "Tháng"/"THÁNG" ở cuối, hàm không
+  // được nối thêm chữ "Tháng" lần 2 nữa — chỉ nối số tháng/năm, tránh lặp
+  // "...THÁNG Tháng 7/2026" như ảnh phản hồi.
+  const prefixEndsWithThang = /tháng\s*$/i.test(prefix.trim());
   if (startMonth === endMonth) {
     if (lang === 'vi') {
-      return `${prefix} Tháng ${startMonth}/${startYear}`;
+      return prefixEndsWithThang
+        ? `${prefix} ${startMonth}/${startYear}`
+        : `${prefix} Tháng ${startMonth}/${startYear}`;
     } else if (lang === 'ko') {
       return `${prefix} ${startYear}년 ${startMonth}월`;
     } else {
@@ -134,7 +199,9 @@ const formatReportTitle = (prefix: string, startDate: Date | null, endDate: Date
     }
   } else {
     if (lang === 'vi') {
-      return `${prefix} Tháng ${startMonth}-${endMonth}/${startYear}`;
+      return prefixEndsWithThang
+        ? `${prefix} ${startMonth}-${endMonth}/${startYear}`
+        : `${prefix} Tháng ${startMonth}-${endMonth}/${startYear}`;
     } else if (lang === 'ko') {
       return `${prefix} ${startYear}년 ${startMonth}-${endMonth}월`;
     } else {
@@ -244,6 +311,22 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[lang];
   const isLightMode = theme === 'light';
+
+  // FIX (chart-header-color-match-template, EPCC): style header dùng
+  // chung cho 6 khung "chart-grid" — lấy nền sáng (bgLight/bgDark) + màu
+  // chữ tối tương phản từ CHART_HEADER_THEME (đúng màu tham chiếu
+  // DashboardTemplate), thay cho nền gradient đậm + chữ trắng cũ
+  // (green-style/purple-style/blue-style). idx = vị trí 0-5 tương ứng
+  // đúng thứ tự 1-6 người dùng khoanh đỏ.
+  const chartHeaderStyle = (idx: number): React.CSSProperties => {
+    const c = CHART_HEADER_THEME[idx % CHART_HEADER_THEME.length];
+    return {
+      background: isLightMode ? c.bgLight : c.bgDark,
+      color: isLightMode ? '#1f2937' : 'var(--text-1)',
+      borderLeft: `4px solid ${c.accent}`,
+      borderBottom: 'none',
+    };
+  };
 
   // ── Fix: "biểu đồ hiện khung trống, không có hình/số" khi mới mở trang ──
   // Root cause: script Plotly load từ CDN (bất đồng bộ) có thể CHƯA sẵn sàng
@@ -803,6 +886,12 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [gaugeData, setGaugeData] = useState<Array<{ name: string; rate: number }>>([]);
+  // FIX (header-legend-merge, EPCC): legend donut "Khách hàng (Qty/AMT)"
+  // chuyển vào header màu — cần lưu vào state vì header (JSX) render TÁCH
+  // RỜI khỏi useEffect xây chart (nơi duy nhất biết danh sách khách hàng
+  // thật + màu tương ứng theo DONUT_COLORS).
+  const [customQtyLegend, setCustomQtyLegend] = useState<Array<{ label: string; color: string }>>([]);
+  const [customAmtLegend, setCustomAmtLegend] = useState<Array<{ label: string; color: string }>>([]);
   const [gaugeOverallRate, setGaugeOverallRate] = useState(0);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
   const [selectedWeek, setSelectedWeek] = useState<string>('');
@@ -1549,6 +1638,14 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       yaxisRange: [0, maxQtyVal * 1.15],
       yaxis2Range: [-20, 140]
     });
+    // FIX (header-legend-merge v2, EPCC): getChartLayout() tính margin.t
+    // (khoảng trống phía trên biểu đồ) DỰA TRÊN showlegend MẶC ĐỊNH (true)
+    // ngay TẠI THỜI ĐIỂM gọi hàm — set showlegend=false SAU đó không làm
+    // margin.t tự co lại theo, nên khoảng trắng dành cho legend cũ vẫn còn
+    // nguyên (đúng như ảnh phản hồi: khoảng cách header↔biểu đồ quá rộng).
+    // Ép thẳng margin.t nhỏ lại, giữ nguyên l/r/b đang có.
+    (layoutQty as any).showlegend = false;
+    (layoutQty as any).margin = { ...(((layoutQty as any).margin) || {}), t: 20 };
 
     window.Plotly.newPlot('salesQtyChart', [traceQtyTarget, traceQtyActual, traceQtyRate] as any, layoutQty as any, { displayModeBar: false, responsive: true });
 
@@ -1640,6 +1737,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       yaxisRange: [0, maxAmtVal * 1.15],
       yaxis2Range: [-20, 140]
     });
+    (layoutAmt as any).showlegend = false; // FIX (header-legend-merge, EPCC) — legend đã chuyển lên header
+    (layoutAmt as any).margin = { ...(((layoutAmt as any).margin) || {}), t: 20 }; // FIX v2 — margin.t vẫn tính theo showlegend cũ, ép nhỏ lại
 
     window.Plotly.newPlot('salesAmtChart', [traceAmtTarget, traceAmtActual, traceAmtRate] as any, layoutAmt as any, { displayModeBar: false, responsive: true });
 
@@ -1737,6 +1836,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       yaxisRange: [0, maxSumVal * 1.15],
       yaxis2Range: [Math.min(totalQtyRate, totalAmtRate) - 10, Math.max(totalQtyRate, totalAmtRate) + 10]
     });
+    (layoutSum as any).showlegend = false; // FIX (header-legend-merge, EPCC) — legend đã chuyển lên header
+    (layoutSum as any).margin = { ...(((layoutSum as any).margin) || {}), t: 20 }; // FIX v2 — margin.t vẫn tính theo showlegend cũ, ép nhỏ lại
 
     window.Plotly.newPlot('salesSummaryChart', [traceSumTarget, traceSumActual, traceSumRate] as any, layoutSum as any, { displayModeBar: false, responsive: true });
 
@@ -1815,15 +1916,31 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       textposition: 'inside',
       insidetextorientation: 'horizontal',
       marker: {
-        colors: ['#ea580c', '#0ea5e9', '#8b5cf6', '#b45309', '#0d9488', '#ec4899']
+        colors: DONUT_COLORS
       },
-      showlegend: true,
-      domain: { x: [0, 0.76] }
+      // FIX (header-legend-merge, EPCC): legend donut chuyển lên header màu
+      // (xem customQtyLegend/<TALegendItem> trong JSX) — tắt legend Plotly
+      // và mở lại domain full-width (trước đây chừa 24% bên phải cho
+      // legend Plotly, giờ không cần nữa nên donut được vẽ to hơn).
+      showlegend: false,
+      domain: { x: [0, 1] }
     };
 
     const layoutDonutQty = getChartLayout('donut', theme);
+    // FIX (donut-fill-empty-space, EPCC): cùng nguyên nhân với Chart 1/2/3 —
+    // getChartLayout('donut', theme) tính margin dựa trên trạng thái
+    // showlegend MẶC ĐỊNH (true, dành chỗ cho legend Plotly cũ bên phải)
+    // TẠI THỜI ĐIỂM gọi hàm, không tự co lại khi trace override
+    // showlegend:false phía trên. Ép nhỏ margin 4 phía + domain y full-height
+    // để donut phóng to lấp hết khung trắng (đúng yêu cầu ảnh mẫu).
+    (layoutDonutQty as any).margin = { l: 10, r: 10, t: 10, b: 10 };
+    (layoutDonutQty as any).height = undefined; // để tự giãn theo chart-holder thay vì chiều cao cứng cũ
 
     window.Plotly.newPlot('customQtyChart', [traceDonutQty] as any, layoutDonutQty as any, { displayModeBar: false, responsive: true });
+
+    // FIX (header-legend-merge, EPCC): dựng danh sách legend (tên khách +
+    // màu khớp DONUT_COLORS theo đúng thứ tự) để header phía JSX render.
+    setCustomQtyLegend(customQtyLabels.map((lbl, idx) => ({ label: lbl, color: DONUT_COLORS[idx % DONUT_COLORS.length] })));
 
     // ----------------------------------------------------
     // CHART 6: Custom (AMT) Donut
@@ -1853,10 +1970,10 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       textposition: 'inside',
       insidetextorientation: 'horizontal',
       marker: {
-        colors: ['#ea580c', '#0ea5e9', '#8b5cf6', '#b45309', '#0d9488', '#ec4899']
+        colors: DONUT_COLORS
       },
-      showlegend: true,
-      domain: { x: [0, 0.76] }
+      showlegend: false, // FIX (header-legend-merge, EPCC) — legend đã chuyển lên header
+      domain: { x: [0, 1] }
     };
 
     const layoutDonutAmt = {
@@ -1864,6 +1981,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     };
 
     window.Plotly.newPlot('customAmtChart', [traceDonutAmt] as any, layoutDonutAmt as any, { displayModeBar: false, responsive: true });
+
+    setCustomAmtLegend(customAmtLabels.map((lbl, idx) => ({ label: lbl, color: DONUT_COLORS[idx % DONUT_COLORS.length] })));
 
   }, [filteredRecords, lang, theme, selectedDateStart, selectedDateEnd, viewMode, activeTab, plotlyReady]);
 
@@ -1886,12 +2005,28 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
   // để luôn đủ tương phản trên nền vàng nhạt ở CẢ light lẫn dark theme.
   const filterLabelColor = '#C0EF6A';
 
+  // FIX (EPCC-no-scroll-page): trang không cuộn được để xem phần dưới
+  // (Khách hàng Qty/Amt, ...). Root div này trước đây chỉ có position:relative,
+  // không tự khai báo height/overflow — nếu App.tsx bọc dashboard trong 1
+  // container display:flex có chiều cao cố định + overflow:hidden (layout
+  // sidebar cố định), flex-item con mặc định min-height:auto nên phình to
+  // theo nội dung, vượt khung cha, và phần dư bị cha overflow:hidden cắt mất
+  // — không nơi nào có scrollbar để cuộn.
+  // Cách sửa AN TOÀN, không phụ thuộc tên class/cấu trúc DOM cha (tránh lặp
+  // lại lỗi "dễ vỡ" đã gặp với .app-content/.app-layout trước đây): để chính
+  // component này tự quản lý cuộn của nó — minHeight:0 cho phép nó co lại
+  // đúng theo chiều cao cha cấp (dù cha là flex hay block), height:100% để
+  // lấp đầy đúng khung cha (không hơn không kém), overflowY:auto để bản thân
+  // nó có scrollbar riêng khi nội dung dài hơn khung nhìn.
   return (
     <div 
       className="sales-dashboard second-dashboard" 
       style={{ 
         position: 'relative', 
         zIndex: 1,
+        height: '100%',
+        minHeight: 0,
+        overflowY: 'auto',
       }}
     >
       <style>{`
@@ -2093,8 +2228,16 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           text-align: center;
           text-align-last: center;
         }
+        /* FIX (EPCC-unify-kpi-box-size-muc2-theo-muc3): mục 2 (dashboard này)
+           đang tự đặt padding riêng '12px 14px' cho .kpi-card, khiến kích
+           thước (dài/rộng/cao) của ô KPI to hơn và lệch chuẩn so với ô KPI
+           chuẩn ở mục 3 (PerCapitaTab / ManpowerDashboard) và mục 1
+           (SalesDashboard) — cả 2 mục kia đều dùng đúng padding 7px 10px
+           (className="kpi-card" mặc định theo index.css, border-radius
+           var(--radius-md) = 12px không đổi). Đồng bộ lại padding về đúng
+           7px 10px để 3 mục có ô KPI kích thước giống hệt nhau. */
         .second-dashboard .kpi-card {
-          padding: 12px 14px;
+          padding: 7px 10px;
         }
         .second-dashboard .kpi-card-header {
           margin-bottom: 8px;
@@ -2139,7 +2282,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
             selectedDateStart ? parseYYYYMMDD(selectedDateStart) : dateBounds.min,
             selectedDateEnd ? parseYYYYMMDD(selectedDateEnd) : dateBounds.max,
             lang
-          )}
+          ).toUpperCase()}
         </h1>
         <div className="dashboard-header-right" />
       </div>
@@ -2348,7 +2491,16 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       {activeTab === 'summary' && (
         <>
           {/* Top 4 statistics cards */}
-          <div className="kpi-grid" style={{ marginBottom: '12px' }}>
+          {/* FIX (EPCC-kpi-grid-fill-width-muc2): trước đây div này chỉ dùng
+              className="kpi-grid" mặc định, không set gridTemplateColumns
+              riêng — CSS .kpi-grid mặc định của toàn app tính chỗ cho tối đa
+              5 cột (dùng chung với KPIGrid.tsx), nên khi chỉ có 4 card thực
+              tế, cột thứ 5 vẫn được grid chừa chỗ nhưng bỏ trống, tạo khoảng
+              trắng bên phải hàng KPI. Set cứng gridTemplateColumns:
+              'repeat(4,1fr)' (đồng bộ đúng cách PerCapitaTab.tsx /
+              ManpowerDashboard.tsx đang làm ở mục 3) để 4 card luôn chia đều
+              lấp đầy 100% chiều rộng, không còn ô trống phía phải. */}
+          <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '12px', width: '100%' }}>
             <div className="kpi-card" style={{ borderLeft: '4px solid #2e7d8c', background: 'linear-gradient(135deg, rgba(46,125,140,0.1) 0%, rgba(30,41,59,0.4) 100%)' }}>
               <div className="kpi-card-header" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="#2e7d8c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
@@ -2418,25 +2570,33 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           <div className="chart-grid">
             {/* Chart 1: 판매 Q'TY */}
             <div className="panel chart-panel">
-              <div className="card-header-styled green-style">
+              <div className="card-header-styled" style={chartHeaderStyle(0)}>
                 <span>{t.salesQtyChartTitle}</span>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>Target vs Actual</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <TALegendItem type="bar" color="#E8836B" label={lang === 'vi' ? 'Mục tiêu (Target)' : lang === 'ko' ? '목표 (Target)' : 'Target'} />
+                  <TALegendItem type="bar" color="#2e7d8c" label={lang === 'vi' ? 'Thực tế (Actual)' : lang === 'ko' ? '실적 (Actual)' : 'Actual'} />
+                  <TALegendItem type="line" color="#eab308" label="% Rate" />
+                </div>
               </div>
               <div className="chart-holder" id="salesQtyChart" style={{ height: '100%' }}></div>
             </div>
 
             {/* Chart 2: 판매 AMT */}
             <div className="panel chart-panel">
-              <div className="card-header-styled green-style">
+              <div className="card-header-styled" style={chartHeaderStyle(1)}>
                 <span>{t.salesAmtChartTitle}</span>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>Target vs Actual</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <TALegendItem type="bar" color="#E8836B" label={lang === 'vi' ? 'Mục tiêu (Target)' : lang === 'ko' ? '목표 (Target)' : 'Target'} />
+                  <TALegendItem type="bar" color="#2e7d8c" label={lang === 'vi' ? 'Thực tế (Actual)' : lang === 'ko' ? '실적 (Actual)' : 'Actual'} />
+                  <TALegendItem type="line" color="#eab308" label="% Rate" />
+                </div>
               </div>
               <div className="chart-holder" id="salesAmtChart" style={{ height: '100%' }}></div>
             </div>
 
             {/* Chart 3: SALES AMT OF SELECTED MONTH */}
             <div className="panel chart-panel">
-              <div className="card-header-styled purple-style">
+              <div className="card-header-styled" style={chartHeaderStyle(2)}>
                 <span>
                   {formatReportTitle(
                     t.salesSummaryChartTitle,
@@ -2445,25 +2605,42 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                     lang
                   )}
                 </span>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>QTY / AMT</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <TALegendItem type="bar" color="#E8836B" label="Target" />
+                  <TALegendItem type="bar" color="#2e7d8c" label="Actual" />
+                  <TALegendItem type="line" color="#eab308" label="% Rate" />
+                </div>
               </div>
               <div className="chart-holder" id="salesSummaryChart" style={{ height: '100%' }}></div>
             </div>
 
             {/* Chart 4: % Rate by Model — SVG concentric semi-donut gauge */}
             <div className="panel chart-panel">
-              <div className="card-header-styled blue-style">
+              <div className="card-header-styled" style={chartHeaderStyle(3)}>
                 <span>% Rate model</span>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>% Performance</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {gaugeData.map((item, idx) => (
+                    <TALegendItem
+                      key={item.name}
+                      type="dot"
+                      color={RING_COLORS[idx % RING_COLORS.length]}
+                      label={`${item.name} ${Math.round(item.rate)}%`}
+                    />
+                  ))}
+                </div>
               </div>
               <div className="chart-holder" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                 {gaugeData.length > 0 ? (() => {
-                  const RING_COLORS = ['#2563eb', '#15803d', '#b91c1c', '#7c3aed', '#c2410c'];
                   const GREY = theme === 'dark' ? 'rgba(30,41,59,0.5)' : 'rgba(200,200,200,0.6)';
                   const textCol = theme === 'dark' ? '#f3f4f6' : '#1e293b';
-                  const W = 380, H = 200;
-                  const cx = 155, cy = 185;
-                  const maxR = 145, minR = 55;
+                  // FIX (header-legend-merge v2, EPCC): legend model (SO2701 S1
+                  // 46%...) đã CHUYỂN HẲN lên header màu (xem TALegendItem ở
+                  // JSX phía trên) — bỏ khối "Legend on right" vẽ trong SVG và
+                  // mở rộng viewBox full-width + đưa tâm gauge (cx) về giữa,
+                  // tận dụng hết phần trống bên phải trước đây dành cho legend.
+                  const W = 320, H = 200;
+                  const cx = W / 2, cy = 185;
+                  const maxR = 170, minR = 65;
                   const n = gaugeData.length;
                   const ringW = n > 1 ? (maxR - minR) / n : 40;
                   const gap = 2;
@@ -2518,10 +2695,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                     return { x: cx + r * Math.cos(mid), y: cy + r * Math.sin(mid) };
                   };
 
-                  const LEGEND_X = 305;
-                  const legendStep = 32;
-                  const legendStartY = (H - legendStep * (n - 1)) / 2;
-
                   return (
                     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                       {gaugeData.map((item, idx) => {
@@ -2555,18 +2728,6 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                       <text x={cx} y={cy + 8} textAnchor="middle" fontSize="9.5" fill={textCol} opacity={0.65}>
                         Overall Rate
                       </text>
-                      {/* Legend on right */}
-                      {gaugeData.map((item, idx) => {
-                        const color = RING_COLORS[idx % RING_COLORS.length];
-                        const ly = legendStartY + idx * legendStep;
-                        return (
-                          <g key={`leg-${item.name}`}>
-                            <circle cx={LEGEND_X + 5} cy={ly + 6} r={5} fill={color} />
-                            <text x={LEGEND_X + 15} y={ly + 7} fontSize="11" fontWeight="700" fill={color} dominantBaseline="middle">{item.name}</text>
-                            <text x={LEGEND_X + 15} y={ly + 20} fontSize="12" fontWeight="bold" fill={textCol} dominantBaseline="middle">{Math.round(item.rate)}%</text>
-                          </g>
-                        );
-                      })}
                     </svg>
                   );
                 })() : (
@@ -2577,18 +2738,26 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
 
             {/* Chart 5: Custom (Qty) */}
             <div className="panel chart-panel">
-              <div className="card-header-styled blue-style">
+              <div className="card-header-styled" style={chartHeaderStyle(4)}>
                 <span>{t.customQtyChartTitle}</span>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>By Customer</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {customQtyLegend.map(item => (
+                    <TALegendItem key={item.label} type="dot" color={item.color} label={item.label} />
+                  ))}
+                </div>
               </div>
               <div className="chart-holder" id="customQtyChart" style={{ height: '100%' }}></div>
             </div>
 
             {/* Chart 6: Custom (AMT) */}
             <div className="panel chart-panel">
-              <div className="card-header-styled blue-style">
+              <div className="card-header-styled" style={chartHeaderStyle(5)}>
                 <span>{t.customAmtChartTitle}</span>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>By Customer</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {customAmtLegend.map(item => (
+                    <TALegendItem key={item.label} type="dot" color={item.color} label={item.label} />
+                  ))}
+                </div>
               </div>
               <div className="chart-holder" id="customAmtChart" style={{ height: '100%' }}></div>
             </div>

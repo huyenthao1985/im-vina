@@ -38,23 +38,32 @@ const ITEMS = [
   {
     id: 'overview',
     index: '1',
-    name: { vi: 'Tổng quan SX - Xuất hàng - Doanh số', en: 'Production - Shipment - Sales', ko: '생산-출하-매출 개요' },
+    name: { vi: 'TỔNG QUAN XUẤT HÀNG - DOANH SỐ', en: 'Production - Shipment - Sales', ko: '생산-출하-매출 개요' },
   },
   {
     id: 'target_actual',
     index: '2',
-    name: { vi: 'Báo cáo doanh số (Target/Actual)', en: 'Sales Target vs Actual', ko: '매출 목표 대비 실적' },
+    name: { vi: 'DOANH SỐ THEO THÁNG', en: 'Sales Target vs Actual', ko: '매출 목표 대비 실적' },
   },
   {
     // Mục 3 = Manpower + ProductionPerCapita gộp lại, dùng tab bên trong
     id: 'manpower',
     index: '3',
-    name: { vi: 'Sản lượng đầu người & Nhân lực', en: 'Production Per Capita & Manpower', ko: '인당 생산수 & 근무 인력 현황' },
+    name: { vi: 'SẢN LƯỢNG ĐẦU NGƯỜI & NHÂN LỰC', en: 'Production Per Capita & Manpower', ko: '인당 생산수 & 근무 인력 현황' },
   },
   {
     id: 'placeholder',
     index: '4',
-    name: { vi: 'Cấu hình & Khác', en: 'Config & Others', ko: '설정 및 기타' },
+    name: { vi: 'HIỆU SUẤT RTY', en: 'RTY Performance', ko: 'RTY 성과' },
+  },
+  {
+    // FIX (add-template-dashboard-menu): mục mới trỏ tới DashboardTemplate.tsx
+    // (file mẫu EPCC) — đổi id 'my_new_dashboard' thành id thật khi nhân bản,
+    // và PHẢI khớp CHÍNH XÁC với điều kiện `activeViewId === '...'` đang thêm
+    // trong App.tsx (xem hướng dẫn 3 bước đã trao đổi ở lượt chat trước).
+    id: 'my_new_dashboard',
+    index: '5',
+    name: { vi: 'TÊN TRANG MỚI', en: 'New Page Name', ko: '새 페이지 이름' },
   },
 ];
 

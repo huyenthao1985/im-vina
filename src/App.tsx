@@ -19,6 +19,8 @@ import { FilterBar } from './components/FilterBar';
 import { DetailTable } from './components/DetailTable';
 import { TargetActualDashboard } from './components/TargetActualDashboard';
 import { SalesDashboard } from './components/SalesDashboard';
+import { RtyDashboard } from './components/RtyDashboard';
+import DashboardTemplate from './components/DashboardTemplate';
 import { Sidebar } from './components/Sidebar';
 // FIX (sidebar-utility-widgets): GlobalHeaderControls không còn được mount
 // trực tiếp trong App.tsx nữa — Sidebar tự vẽ khối Lang+Theme riêng bằng
@@ -1220,18 +1222,21 @@ export default function App() {
             )}
 
             {activeViewId === 'placeholder' && (
-              <div style={{ padding: '40px', background: 'var(--surface)', margin: '24px', borderRadius: '12px', border: '1px solid var(--border-soft)', textAlign: 'center' }}>
-                <h2 style={{ color: 'var(--text-0)' }}>
-                  {lang === 'vi' ? '4. Cấu hình & Khác' : lang === 'en' ? '4. Config & Others' : '4. 설정 및 기타'}
-                </h2>
-                <p style={{ color: 'var(--text-2)', marginTop: '8px' }}>
-                  {lang === 'vi' 
-                    ? 'Trang này hiện chưa có nội dung biểu đồ. Bạn có thể dễ dàng thêm mới các module khác tại đây.' 
-                    : lang === 'en' 
-                      ? 'This page does not have chart content yet. You can easily add other modules here.'
-                      : '이 페이지에는 아직 차트 콘텐츠가 없습니다. 여기에 다른 모듈을 쉽게 추가할 수 있습니다.'}
-                </p>
-              </div>
+              <RtyDashboard
+                theme={theme}
+                onToggleTheme={toggleTheme}
+                lang={lang}
+                setLang={setLang}
+              />
+            )}
+
+            {/* MENU 5: DashboardTemplate — trang mẫu EPCC, đổi 'my_new_dashboard'
+               thành id thật khi nhân bản (phải khớp id trong Sidebar.tsx ITEMS). */}
+            {activeViewId === 'my_new_dashboard' && (
+              <DashboardTemplate
+                theme={theme as 'dark' | 'light'}
+                title="TÊN TRANG MỚI CỦA BẠN"
+              />
             )}
 
             {activeViewId === 'overview' && isInitialDataLoading && (
