@@ -540,7 +540,7 @@ const TXT: Record<Lang, Record<string, string>> = {
 };
 
 declare global {
-  interface Window { Plotly: any; }
+  interface Window { Plotly?: any; }
 }
 
 interface RtyLegend {
@@ -570,7 +570,7 @@ const RtyLegendItem: React.FC<RtyLegend> = ({ type, label, color }) => {
 };
 
 export const RtyDashboard: React.FC<RtyDashboardProps> = ({
-  theme, onToggleTheme, lang, setLang, onFileSelected,
+  theme, onToggleTheme: _onToggleTheme, lang, setLang: _setLang, onFileSelected,
 }) => {
   const t = TXT[lang];
   const isLightMode = theme === 'light';
@@ -644,10 +644,10 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   // màu xanh-vàng chanh ở cả 2 dashboard, không đổi màu theo light/dark.
   const filterLabelColor = '#C0EF6A';
 
-  const resetFilters = () => {
+  const _resetFilters = () => {
     setSelectedModel(BEST_MODEL); setViewMode('day');
     setStartDate(getDefaultStartDate()); setEndDate(getDefaultEndDate());
-  };
+  }; void _resetFilters;
 
   // ── Quy đổi nhãn Tháng/Tuần/Ngày sang mốc ngày thật (năm 2026) để lọc
   //    theo Ngày bắt đầu/kết thúc. ─────────────────────────────────────
@@ -800,7 +800,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
           line: { color: s.color, width: s.width ?? 1.6, shape: 'spline' as const, smoothing: 1, dash: s.dash as any },
           marker: { color: s.color, size: 6 },
           text: ys.map(v => v == null ? '' : `${v.toFixed(1)}%`),
-          textposition: pos as const,
+          textposition: pos as 'top center' | 'bottom center',  // cast to valid Plotly literal
           textfont: { size: 10, color: s.color, family: 'Arial Black, Arial, sans-serif' },
           cliponaxis: false,
           connectgaps: true,
