@@ -830,7 +830,12 @@ function buildDailyChart(
     plot_bgcolor: 'rgba(0,0,0,0)',
     font: { family: 'Inter, sans-serif', color: chartTextColor, size: 11 },
     margin: { l: 45, r: 55, t: 28, b: 36 },
-    legend: { orientation: 'h', y: -0.22, font: { size: 10 } },
+    // EPCC (daily-legend-merge-to-header) — legend theo Model (phần khoanh đỏ
+    // + mũi tên "di chuyển lên tab cao nhất") dời khỏi canvas (trước đây vẽ
+    // rời bên dưới trục X qua legend: { y: -0.22 }), gộp lên panel-head dạng
+    // HTML (xem MPLegendItem trong JSX) — cùng pattern header-legend-merge đã
+    // áp dụng cho UPPH/PerCapitaTab Chart 3. Tắt hẳn legend của Plotly.
+    showlegend: false,
     xaxis: { gridcolor: chartGridColor, tickfont: { size: 10 } },
     yaxis:  { gridcolor: chartGridColor, tickfont: { size: 9 }, title: { text: t('persons', lang), font: { size: 10 } } },
     yaxis2: { overlaying: 'y', side: 'right', showgrid: false, tickfont: { size: 9 } },
@@ -1496,8 +1501,23 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
           {/* ── Row 2: Daily Chart & Summary Table ── */}
           <div className="mp-charts-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <div className="panel">
-              <div className="panel-head" style={mpPanelHeadStyle(1, isDark)}>
-                <h3>{t('chartDay', lang)}</h3>
+              {/* EPCC (daily-legend-merge-to-header) — legend theo Model (phần
+                  khoanh đỏ trong ảnh góp ý, "di chuyển lên tab cao nhất") được
+                  gộp lên panel-head, ngang hàng tiêu đề, thay vì nằm rời bên
+                  dưới trục X trong canvas. Danh sách + màu lấy ĐÚNG từ cùng 1
+                  logic lọc dùng trong buildDailyChart (models có ít nhất 1
+                  giá trị > 0 trong data.activeLabels) + TTL, để không bị lệch
+                  màu/tên so với đường thực tế trên biểu đồ. */}
+              <div className="panel-head" style={{ ...mpPanelHeadStyle(1, isDark), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0 }}>{t('chartDay', lang)}</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  {modelsToPlot
+                    .filter(m => data.activeLabels.some(l => (data.byModelPeriod[m]?.[l] ?? 0) > 0))
+                    .map((model, idx) => (
+                      <MPLegendItem key={model} type="line" color={getModelColor(model, idx)} label={model} />
+                    ))}
+                  <MPLegendItem type="line" color="#14b8a6" label={TTL_MODEL} />
+                </div>
               </div>
               <div className="chart-holder" id={chartIds.current.daily} style={{ minHeight: '300px' }} />
             </div>
