@@ -20,7 +20,6 @@ import { DetailTable } from './components/DetailTable';
 import { TargetActualDashboard } from './components/TargetActualDashboard';
 import { SalesDashboard } from './components/SalesDashboard';
 import { RtyDashboard } from './components/RtyDashboard';
-import DashboardTemplate from './components/DashboardTemplate';
 import Menu5ModelDashboard from './components/Menu5db';
 import { Sidebar } from './components/Sidebar';
 // FIX (sidebar-utility-widgets): GlobalHeaderControls không còn được mount

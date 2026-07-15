@@ -807,7 +807,6 @@ function ComboBarDualLineChart({
     ...actual.filter((v): v is number => v != null));
 
   const xOf = (i: number) => padL + step * i + step / 2;
-  const yBar = (v: number) => padT + innerH - (v / maxBar) * innerH;
   const yPct = (v: number) => padT + innerH - (v / maxPct) * innerH;
 
   return (
@@ -1553,19 +1552,6 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
       .sort((a, b) => ym(a.y, a.m) - ym(b.y, a.m));
   }
 
-  // Gộp theo Tháng / Quý / Năm tuỳ viewBy — giữ nguyên đơn vị gốc (Q'TY),
-  // chỉ đổi cách nhóm trục X.
-  function groupPoints(pts: { y: number; m: number; v: number }[]): { label: string; value: number }[] {
-    if (viewBy === 'month') {
-      return pts.map(p => ({ label: `${t.byMonth === 'Tháng' ? 'T' : 'M'}${p.m}/${String(p.y).slice(2)}`, value: p.v }));
-    }
-    const bucket = new Map<string, number>();
-    for (const p of pts) {
-      const key = viewBy === 'quarter' ? `Q${Math.ceil(p.m / 3)}/${p.y}` : `${p.y}`;
-      bucket.set(key, (bucket.get(key) ?? 0) + p.v);
-    }
-    return Array.from(bucket.entries()).map(([label, value]) => ({ label, value }));
-  }
 
   const shipmentPts = seriesInRange(ITEM_SHIPMENT);
   const prodPts = seriesInRange(ITEM_PRODUCTION);
@@ -2663,7 +2649,7 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
 // cũ (không có legend, không cần đổi). Nhờ đó phần thân card giải phóng hẳn
 // hàng legend cũ → chart bên dưới có thêm không gian để phóng to.
 function ChartCard({
-  title, subtitle, headerExtra, accent, idx, theme, children,
+  title, subtitle, headerExtra, accent: _accent, idx, theme, children,
 }: {
   title: string; subtitle?: string; headerExtra?: React.ReactNode; accent: string; idx: number; theme: ThemeMode; children: React.ReactNode;
 }) {
