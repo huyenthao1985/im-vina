@@ -21,6 +21,7 @@ import { TargetActualDashboard } from './components/TargetActualDashboard';
 import { SalesDashboard } from './components/SalesDashboard';
 import { RtyDashboard } from './components/RtyDashboard';
 import DashboardTemplate from './components/DashboardTemplate';
+import Menu5ModelDashboard from './components/Menu5db';
 import { Sidebar } from './components/Sidebar';
 // FIX (sidebar-utility-widgets): GlobalHeaderControls không còn được mount
 // trực tiếp trong App.tsx nữa — Sidebar tự vẽ khối Lang+Theme riêng bằng
@@ -1230,12 +1231,16 @@ export default function App() {
               />
             )}
 
-            {/* MENU 5: DashboardTemplate — trang mẫu EPCC, đổi 'my_new_dashboard'
-               thành id thật khi nhân bản (phải khớp id trong Sidebar.tsx ITEMS). */}
+            {/* MENU 5: Dashboard Hiệu suất sản xuất theo Model — dữ liệu thật
+               từ Test5.xlsx (đã tổng hợp sẵn ở data/test5Data.json), thay cho
+               demo DashboardTemplate ban đầu. Bucket riêng, không đụng
+               sales/manpower/target_actual. */}
             {activeViewId === 'my_new_dashboard' && (
-              <DashboardTemplate
+              <Menu5ModelDashboard
                 theme={theme as 'dark' | 'light'}
-                title="TÊN TRANG MỚI CỦA BẠN"
+                onToggleTheme={toggleTheme}
+                lang={lang}
+                setLang={setLang}
               />
             )}
 

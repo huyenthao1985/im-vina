@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { NeonButton } from './NeonButton';
+// EPCC (rty-total-move-to-muc4): chuyển tab "RTY Total" từ Mục 5 sang đây
+// (Mục 4) theo yêu cầu — cùng nhóm "RTY" để dễ quan sát/quản lý, tách hẳn
+// khỏi Menu5ModelDashboard.tsx (đã dọn sạch, trả về đúng 2 tab gốc).
+import { RtyTotalTab } from './RtyTotalTab';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════
@@ -111,6 +115,17 @@ const HERO_MODEL = 'SO3560';
  * của MODEL_SUMMARY_SORTED (đã sắp xếp giảm dần) thay vì tự reduce lại,
  * tránh trùng lặp logic so sánh. */
 const BEST_MODEL: string = MODEL_SUMMARY_SORTED[0].model;
+
+/** ═══════════════════════════════════════════════════════════════════════
+ * "DỮ LIỆU CẬP NHẬT ĐẾN" — mốc ngày cuối cùng THỰC SỰ có phát sinh dữ liệu
+ * RTY trong file tham chiếu Test4.xlsx (không phải ngày hệ thống/đồng hồ).
+ * File này là bản NHÚNG TĨNH (xem ghi chú ở đầu component) nên mốc này
+ * được xác định trực tiếp từ chính dữ liệu THẬT đã trích xuất, không suy
+ * diễn — khi nào có pipeline đọc file RTY động, thay hằng số này bằng giá
+ * trị tính toán tương tự (ví dụ ngày lớn nhất có Actual ≠ null) như đã áp
+ * dụng ở Mục 2 (Báo cáo doanh số).
+ * ═══════════════════════════════════════════════════════════════════════ */
+const LAST_DATA_UPDATE_LABEL = '07/08';
 
 /** Nhãn trục X dùng chung cho toàn bộ 4 biểu đồ (đồng bộ giữa các Type
  *  trong cùng 1 chart, giống hệt cách trục X thống nhất trong ảnh mẫu). */
@@ -576,7 +591,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   const isLightMode = theme === 'light';
   const tealAccent  = isLightMode ? '#0f766e' : '#14b8a6';
 
-  const [activeTab, setActiveTab] = useState<'summary' | 'merged'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'rtyTotal' | 'merged'>('summary');
 
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -1181,17 +1196,28 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
         <div className="dashboard-header-right" />
       </div>
 
-      {/* ── 2 Tab ── */}
+      {/* ── 3 Tab (thêm RTY Total, chuyển từ Mục 5 sang) ── */}
       <div className="tab-container">
         <button className={`tab-btn ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => setActiveTab('summary')}>
           📊 {t.tab1}
+        </button>
+        {/* EPCC (rty-total-move-to-muc4): tab mới — đọc trực tiếp cột RTY %
+            từ Test6.xlsx qua RtyTotalTab, có nút "Tải Excel RTY" RIÊNG bên
+            trong, không dùng chung nút "Tải Excel" (đang disabled) của
+            toolbar bên dưới. */}
+        <button className={`tab-btn ${activeTab === 'rtyTotal' ? 'active' : ''}`} onClick={() => setActiveTab('rtyTotal')}>
+          🎯 RTY Total
         </button>
         <button className={`tab-btn ${activeTab === 'merged' ? 'active' : ''}`} onClick={() => setActiveTab('merged')}>
           💼 {t.tab2}
         </button>
       </div>
 
-      {/* ── Thanh Filter + nút Tải Excel ── */}
+      {/* EPCC (rty-total-move-to-muc4): ẩn toolbar filter Ngày/Model/Xem theo
+          + nút "Tải Excel" (đang disabled, thuộc dữ liệu tĩnh Test4.xlsx)
+          khi đang ở tab RTY Total — tab đó có toolbar RIÊNG của chính nó
+          (đọc động Test6.xlsx), không liên quan gì tới toolbar này. */}
+      {activeTab !== 'rtyTotal' && (
       <div className="topbar-dash" style={{
         display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px',
         background: '#2F3A1D', borderRadius: '14px', padding: '10px 14px',
@@ -1217,17 +1243,27 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
               hẳn vào TRONG khung filter xanh đậm (#2F3A1D), đặt ở ô trống
               bên trái dòng 2 (cùng hàng với ô input ngày/model/xem theo)
               để gọn trong 1 khung duy nhất thay vì tách rời bên ngoài. */}
-          <div style={{ width: '170px', minWidth: '170px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: filterLabelColor, whiteSpace: 'nowrap' }}>{t.kpiShowingModel}:</span>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px',
-              borderRadius: '999px', fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap',
-              background: selectedModel === BEST_MODEL ? 'rgba(16,185,129,0.22)' : 'rgba(14,165,233,0.22)',
-              color: selectedModel === BEST_MODEL ? '#34d399' : '#38bdf8',
-            }}>
-              {selectedModel === BEST_MODEL && '⭐ '}
-              {selectedModel || t.allOption}
-              {selectedModel === BEST_MODEL && ` (${t.kpiBestLabel})`}
+          <div style={{ width: '170px', minWidth: '170px', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: filterLabelColor, whiteSpace: 'nowrap' }}>{t.kpiShowingModel}:</span>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px',
+                borderRadius: '999px', fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap',
+                background: selectedModel === BEST_MODEL ? 'rgba(16,185,129,0.22)' : 'rgba(14,165,233,0.22)',
+                color: selectedModel === BEST_MODEL ? '#34d399' : '#38bdf8',
+              }}>
+                {selectedModel === BEST_MODEL && '⭐ '}
+                {selectedModel || t.allOption}
+                {selectedModel === BEST_MODEL && ` (${t.kpiBestLabel})`}
+              </span>
+            </div>
+            {/* FIX (add-last-data-update-label, EPCC): thêm dòng "Dữ liệu
+                cập nhật đến" ngay dưới badge model — đúng vị trí khoanh đỏ
+                trong ảnh yêu cầu. Giá trị lấy từ LAST_DATA_UPDATE_LABEL,
+                phản ánh mốc ngày cuối cùng thực sự có dữ liệu RTY trong
+                file tham chiếu Test4.xlsx (xem chú thích hằng số). */}
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#22c55e', whiteSpace: 'nowrap' }}>
+              📅 {lang === 'vi' ? 'Dữ liệu cập nhật đến' : lang === 'ko' ? '데이터 업데이트 기준일' : 'Data updated to'}: {LAST_DATA_UPDATE_LABEL}
             </span>
           </div>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px', alignItems: 'center' }}>
@@ -1297,6 +1333,10 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
           </div>
         </div>
       </div>
+      )}
+
+      {/* ══════════════ TAB MỚI: RTY TOTAL (chuyển từ Mục 5 sang) ══════════════ */}
+      {activeTab === 'rtyTotal' && <RtyTotalTab theme={theme} lang={lang} />}
 
       {/* ══════════════ TAB 1: TÌNH HÌNH RTY ══════════════ */}
       {activeTab === 'summary' && (

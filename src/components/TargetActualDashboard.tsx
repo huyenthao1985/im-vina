@@ -858,6 +858,37 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     }).filter((r): r is NonNullable<typeof r> => r !== null && r.model !== '');
   }, [rows, mapModel, mapCustomer, mapMonth, mapValue, mapType, targetMatch, actualMatch, mapMetricMode, mapMetricCol, qtyMatch, amtMatch]);
 
+  /**
+   * "Dữ liệu cập nhật đến" — thời điểm dữ liệu MỚI NHẤT thực sự có trong
+   * database (normalizedRows), KHÔNG phải giờ hệ thống/đồng hồ máy người
+   * dùng. Ưu tiên lấy ngày lớn nhất trong các dòng có phát sinh Actual
+   * (qtyActual > 0 hoặc amtActual > 0) vì đó là mốc dữ liệu thực tế đã
+   * được ghi nhận lên hệ thống; nếu chưa có dòng Actual nào thì fallback
+   * lấy ngày lớn nhất trong toàn bộ dữ liệu hiện có.
+   */
+  const lastDataUpdateDate = useMemo(() => {
+    if (normalizedRows.length === 0) return null;
+
+    let maxActualDate: Date | null = null;
+    let maxAnyDate: Date | null = null;
+
+    for (const r of normalizedRows) {
+      if (!r.date) continue;
+      if (!maxAnyDate || r.date.getTime() > maxAnyDate.getTime()) maxAnyDate = r.date;
+      if ((r.qtyActual > 0 || r.amtActual > 0) && (!maxActualDate || r.date.getTime() > maxActualDate.getTime())) {
+        maxActualDate = r.date;
+      }
+    }
+
+    return maxActualDate ?? maxAnyDate;
+  }, [normalizedRows]);
+
+  const formattedLastDataUpdate = lastDataUpdateDate
+    ? lastDataUpdateDate.toLocaleDateString(lang === 'vi' ? 'vi-VN' : lang === 'ko' ? 'ko-KR' : 'en-US', {
+        day: '2-digit', month: '2-digit', year: 'numeric'
+      })
+    : (lang === 'vi' ? 'Chưa có dữ liệu' : lang === 'ko' ? '데이터 없음' : 'No data');
+
   // 2. State values
   const [activeTab, setActiveTab] = useState<'summary' | 'merged'>('summary');
   // FIX (EPCC bottom=0): thay vì maxHeight cố định '62vh' (luôn để hở một
@@ -1411,6 +1442,21 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       ? getComputedStyle(document.documentElement).getPropertyValue('--axis-text-color').trim() || (isDark ? '#E8E8F0' : '#1A1A2E')
       : (isDark ? '#E8E8F0' : '#1A1A2E');
 
+    /* FIX (EPCC-rate-line-theme-color):
+     * EXPLORE — line "% Rate" (traceQtyRate/traceAmtRate/traceSumRate) đang
+     *   hard-code màu cố định '#eab308' (vàng) cho line và '#10b981' (xanh
+     *   lá) cho viền marker, KHÔNG phụ thuộc `theme` → khi đổi Light/Dark,
+     *   3 line/marker này không đổi màu như phần còn lại của chart (bar,
+     *   text label đều đã dùng axisTextColor theo theme), gây tương phản
+     *   kém / khó nhìn ở 1 trong 2 theme.
+     * PLAN — khai báo 2 biến màu theo `isDark` ngay tại đây, dùng chung cho
+     *   cả 3 line trace bên dưới, để đồng bộ và dễ bảo trì (đổi 1 chỗ áp
+     *   dụng cho cả 3 chart).
+     * CODE — xem rateLineColor/rateMarkerColor áp dụng tại traceQtyRate,
+     *   traceAmtRate, traceSumRate. */
+    const rateLineColor = isDark ? '#eab308' : '#b45309';
+    const rateMarkerColor = isDark ? '#10b981' : '#047857';
+
     let xQty: string[] = [];
     let qtyTargets: number[] = [];
     let qtyActuals: number[] = [];
@@ -1621,8 +1667,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       type: 'scatter',
       mode: 'lines+markers+text',
       name: '% Rate',
-      line: { color: '#eab308', width: 3, dash: 'dash' },
-      marker: { size: 10, color: '#10b981', line: { color: '#eab308', width: 2 } },
+      line: { color: rateLineColor, width: 3, dash: 'dash' },
+      marker: { size: 10, color: rateMarkerColor, line: { color: rateLineColor, width: 2 } },
       yaxis: 'y2',
       text: qtyRates.map(v => v > 0 ? Math.round(v) + '%\n' : ''),
       textposition: 'top center',
@@ -1646,6 +1692,28 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     // Ép thẳng margin.t nhỏ lại, giữ nguyên l/r/b đang có.
     (layoutQty as any).showlegend = false;
     (layoutQty as any).margin = { ...(((layoutQty as any).margin) || {}), t: 20 };
+
+    /* FIX (EPCC-xaxis-model-labels-cut-off):
+     * EXPLORE — khi số lượng model nhiều (>8), tên model ở trục X ("SO2701
+     *   S1", "SO1C00 S2"...) bị chồng/lem lên nhau hoặc bị CẮT CỤT phía
+     *   dưới (nhìn ảnh phản hồi: chữ mờ, thiếu nét) vì (a) `tickangle` mặc
+     *   định trong chartTheme.ts không đủ dốc để tách các nhãn dài ra xa
+     *   nhau, và (b) margin-bottom mặc định không đủ chỗ chứa hết chiều
+     *   cao của nhãn xoay nghiêng → Plotly clip bớt phần dưới.
+     * PLAN — ép `tickangle: -45`, bật `automargin: true` (Plotly tự đo và
+     *   chừa đủ khoảng trống cho nhãn dài thay vì dùng margin cố định),
+     *   đồng thời tăng margin.b tối thiểu lên 95px làm nền, để nhãn luôn
+     *   hiển thị TRỌN VẸN dù có bao nhiêu model.
+     * CODE — override xaxis + margin.b ngay sau khi lấy layout từ
+     *   getChartLayout(), áp dụng cho cả layoutQty và layoutAmt (2 chart
+     *   có trục X theo model). */
+    (layoutQty as any).xaxis = {
+      ...(((layoutQty as any).xaxis) || {}),
+      tickangle: -45,
+      automargin: true,
+      tickfont: { ...((((layoutQty as any).xaxis) || {}).tickfont || {}), size: 11 }
+    };
+    (layoutQty as any).margin = { ...(((layoutQty as any).margin) || {}), t: 20, b: Math.max(95, ((layoutQty as any).margin?.b) || 0) };
 
     window.Plotly.newPlot('salesQtyChart', [traceQtyTarget, traceQtyActual, traceQtyRate] as any, layoutQty as any, { displayModeBar: false, responsive: true });
 
@@ -1720,8 +1788,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       type: 'scatter',
       mode: 'lines+markers+text',
       name: '% Rate',
-      line: { color: '#eab308', width: 3, dash: 'dash' },
-      marker: { size: 10, color: '#10b981', line: { color: '#eab308', width: 2 } },
+      line: { color: rateLineColor, width: 3, dash: 'dash' },
+      marker: { size: 10, color: rateMarkerColor, line: { color: rateLineColor, width: 2 } },
       yaxis: 'y2',
       text: amtRates.map(v => v > 0 ? Math.round(v) + '%\n' : ''),
       textposition: 'top center',
@@ -1739,6 +1807,16 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     });
     (layoutAmt as any).showlegend = false; // FIX (header-legend-merge, EPCC) — legend đã chuyển lên header
     (layoutAmt as any).margin = { ...(((layoutAmt as any).margin) || {}), t: 20 }; // FIX v2 — margin.t vẫn tính theo showlegend cũ, ép nhỏ lại
+
+    // FIX (EPCC-xaxis-model-labels-cut-off) — xem giải thích đầy đủ ở layoutQty
+    // phía trên; áp dụng tương tự cho chart AMT vì trục X cũng theo model.
+    (layoutAmt as any).xaxis = {
+      ...(((layoutAmt as any).xaxis) || {}),
+      tickangle: -45,
+      automargin: true,
+      tickfont: { ...((((layoutAmt as any).xaxis) || {}).tickfont || {}), size: 11 }
+    };
+    (layoutAmt as any).margin = { ...(((layoutAmt as any).margin) || {}), t: 20, b: Math.max(95, ((layoutAmt as any).margin?.b) || 0) };
 
     window.Plotly.newPlot('salesAmtChart', [traceAmtTarget, traceAmtActual, traceAmtRate] as any, layoutAmt as any, { displayModeBar: false, responsive: true });
 
@@ -1819,8 +1897,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       type: 'scatter',
       mode: 'lines+markers+text',
       name: '% Rate',
-      line: { color: '#eab308', width: 3, dash: 'dash' },
-      marker: { size: 10, color: '#84cc16' },
+      line: { color: rateLineColor, width: 3, dash: 'dash' },
+      marker: { size: 10, color: rateMarkerColor },
       yaxis: 'y2',
       text: [totalQtyRate, totalAmtRate].map(v => Math.round(v) + '%\n'),
       textposition: 'top center',
@@ -2310,9 +2388,12 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       }}>
         {/* Dòng 1 (labels) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          {/* Cụm trái dòng 1: đồng hồ đã chuyển vào Sidebar — giữ spacer
-              trống cùng bề rộng để không lệch layout các cột nhãn bên phải. */}
-          <div style={{ width: '170px', flexShrink: 0 }} />
+          {/* Cụm trái dòng 1: nhãn "Dữ liệu cập nhật đến" — thay cho spacer
+              trống trước đây (vùng người dùng khoanh đỏ). Giữ nguyên bề
+              rộng 170px để không lệch layout các cột nhãn bên phải. */}
+          <div style={{ width: '170px', flexShrink: 0, textAlign: 'center', fontSize: '12px', fontWeight: 700, color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+            {lang === 'vi' ? 'Dữ liệu cập nhật đến' : lang === 'ko' ? '데이터 업데이트 기준일' : 'Data updated to'}
+          </div>
           {/* Cụm giữa dòng 1: Labels */}
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px' }}>
             <span style={{ width: '130px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: filterLabelColor, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{t.startDate}</span>
@@ -2335,8 +2416,12 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
 
         {/* Dòng 2 (values/controls) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          {/* Cụm trái dòng 2: Trống để giữ căn lề */}
-          <div style={{ width: '170px', flexShrink: 0 }}></div>
+          {/* Cụm trái dòng 2: giá trị ngày dữ liệu cập nhật gần nhất — lấy
+              TRỰC TIẾP từ dữ liệu thật trong database (lastDataUpdateDate),
+              không phải giờ đồng hồ hệ thống. */}
+          <div style={{ width: '170px', flexShrink: 0, textAlign: 'center', fontSize: '13.5px', fontWeight: 700, color: '#22c55e', whiteSpace: 'nowrap' }}>
+            📅 {formattedLastDataUpdate}
+          </div>
           {/* Cụm giữa dòng 2: Controls */}
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px', alignItems: 'center' }}>
             <input 
@@ -2575,7 +2660,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <TALegendItem type="bar" color="#E8836B" label={lang === 'vi' ? 'Mục tiêu (Target)' : lang === 'ko' ? '목표 (Target)' : 'Target'} />
                   <TALegendItem type="bar" color="#2e7d8c" label={lang === 'vi' ? 'Thực tế (Actual)' : lang === 'ko' ? '실적 (Actual)' : 'Actual'} />
-                  <TALegendItem type="line" color="#eab308" label="% Rate" />
+                  <TALegendItem type="line" color={isLightMode ? '#b45309' : '#eab308'} label="% Rate" />
                 </div>
               </div>
               <div className="chart-holder" id="salesQtyChart" style={{ height: '100%' }}></div>
@@ -2588,7 +2673,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <TALegendItem type="bar" color="#E8836B" label={lang === 'vi' ? 'Mục tiêu (Target)' : lang === 'ko' ? '목표 (Target)' : 'Target'} />
                   <TALegendItem type="bar" color="#2e7d8c" label={lang === 'vi' ? 'Thực tế (Actual)' : lang === 'ko' ? '실적 (Actual)' : 'Actual'} />
-                  <TALegendItem type="line" color="#eab308" label="% Rate" />
+                  <TALegendItem type="line" color={isLightMode ? '#b45309' : '#eab308'} label="% Rate" />
                 </div>
               </div>
               <div className="chart-holder" id="salesAmtChart" style={{ height: '100%' }}></div>
@@ -2608,7 +2693,7 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <TALegendItem type="bar" color="#E8836B" label="Target" />
                   <TALegendItem type="bar" color="#2e7d8c" label="Actual" />
-                  <TALegendItem type="line" color="#eab308" label="% Rate" />
+                  <TALegendItem type="line" color={isLightMode ? '#b45309' : '#eab308'} label="% Rate" />
                 </div>
               </div>
               <div className="chart-holder" id="salesSummaryChart" style={{ height: '100%' }}></div>
