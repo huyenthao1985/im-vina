@@ -24,3 +24,12 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Scratch / debug scripts (local only, không push lên GitHub)
+*.cjs
+scratch_*.js
+check_excel.txt
+check_excel_utf8.txt
+tatus
+supabase_setup.sql
+skills-lock.json
