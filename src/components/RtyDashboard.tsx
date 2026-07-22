@@ -1064,9 +1064,14 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
     return idxs.slice(-8);
   };
 
+  // EPCC (rty-chart-static-data-bug) - FIX ROOT CAUSE "biểu đồ không cập nhật
+  // sau khi tải file lên": trước đây filteredModels dùng hằng số MODEL_SUMMARY
+  // tĩnh thay vì activeModelSummary (dữ liệu động từ file upload/cache IDB).
+  // Khi upload file mới → setDynamicRtyData cập nhật activeModelSummary đúng,
+  // nhưng filteredModels vẫn đọc từ MODEL_SUMMARY cũ → 4 thẻ KPI không đổi.
   const filteredModels = useMemo(
-    () => selectedModel ? MODEL_SUMMARY.filter(m => m.model === selectedModel) : MODEL_SUMMARY,
-    [selectedModel]
+    () => selectedModel ? activeModelSummary.filter(m => m.model === selectedModel) : activeModelSummary,
+    [selectedModel, activeModelSummary]
   );
 
   const kpi = useMemo(() => {
@@ -1083,14 +1088,53 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
     };
   }, [filteredModels]);
 
-  // FIX (table-not-following-day-week-month, EPCC): chọn đúng mảng đã sinh
-  // sẵn theo `viewMode` (day/week/month) trong TABLE_ROWS_BY_MODE — trước
-  // đây luôn đọc 1 mảng cố định (TABLE_ROWS_SORTED, chỉ có mức Tháng) nên
-  // bảng "RTY & Chi tiết" không đổi khi bấm Ngày/Tuần/Tháng.
+  // EPCC (rty-chart-static-data-bug) - FIX ROOT CAUSE "bảng RTY & Chi tiết
+  // không cập nhật sau khi tải file lên": trước đây filteredRows dùng
+  // TABLE_ROWS_BY_MODE (tính từ hằng số MODEL_SERIES tĩnh). Khi upload file
+  // mới → activeModelSeries thay đổi nhưng bảng vẫn dùng data cũ.
+  // Sửa: xây dựng dynamic rows từ activeModelSeries + labels động.
   const filteredRows = useMemo(() => {
+    // Nếu có dữ liệu động (sau upload), xây bảng từ activeModelSeries
+    if (dynamicRtyData) {
+      const labels = viewMode === 'day' ? activeDayLabels : viewMode === 'week' ? activeWeekLabels : activeMonthLabels;
+      const rows: RtyTableRow[] = [];
+      const processKeyDefs = [
+        { processKey: 'RTY_TTL',    process: 'RTY Total',     type: 'Actual', target: TARGET_TTL },
+        { processKey: 'RTY_MAIN',   process: 'MAIN',          type: 'Actual', target: TARGET_MAIN },
+        { processKey: 'RTY_SUB1',   process: 'SUB1',          type: 'Actual', target: TARGET_SUB1 },
+        { processKey: 'RTY_SUB2',   process: 'SUB2',          type: 'Actual', target: TARGET_SUB2 },
+        { processKey: 'MAIN_FVI',   process: 'MAIN FVI',      type: 'Actual', target: TARGET_MAIN },
+        { processKey: 'MAIN_ASSY',  process: 'MAIN ASSY',     type: 'Actual', target: TARGET_MAIN },
+        { processKey: 'MAIN_DRIVING', process: 'MAIN DRIVING', type: 'Actual', target: TARGET_MAIN },
+        { processKey: 'MAIN_TILT',  process: 'MAIN TILT',     type: 'Actual', target: TARGET_MAIN },
+        { processKey: 'SUB1_FPCB',  process: 'SUB1 FPCB',     type: 'Actual', target: TARGET_SUB1 },
+        { processKey: 'SUB1_FVI',   process: 'SUB1 FVI',      type: 'Actual', target: TARGET_SUB1 },
+        { processKey: 'SUB2_HOOK',  process: 'SUB2 HOOK',     type: 'Actual', target: TARGET_SUB2 },
+        { processKey: 'SUB2_OVEN',  process: 'SUB2 OVEN',     type: 'Actual', target: TARGET_SUB2 },
+        { processKey: 'SUB2_INDEX', process: 'SUB2 INDEX',    type: 'Actual', target: TARGET_SUB2 },
+      ];
+      const modelsToShow = selectedModel
+        ? activeModelSummary.filter(m => m.model === selectedModel).map(m => m.model)
+        : activeModelSummary.map(m => m.model);
+      modelsToShow.forEach(modelName => {
+        const seriesForModel = activeModelSeries[modelName];
+        if (!seriesForModel) return;
+        processKeyDefs.forEach(def => {
+          const arr = (seriesForModel[def.processKey] as any)?.[viewMode] as (number | null)[] | undefined;
+          if (!arr) return;
+          labels.forEach((label, i) => {
+            const v = arr[i];
+            if (v == null) return;
+            rows.push({ model: modelName, process: def.process, type: def.type, period: label, target: def.target, actual: v });
+          });
+        });
+      });
+      return rows;
+    }
+    // Fallback: dùng bảng tĩnh đã sinh sẵn (khi chưa có data động)
     const rows = TABLE_ROWS_BY_MODE[viewMode];
     return selectedModel ? rows.filter(r => r.model === selectedModel) : rows;
-  }, [viewMode, selectedModel]);
+  }, [viewMode, selectedModel, dynamicRtyData, activeModelSeries, activeModelSummary, activeDayLabels, activeWeekLabels, activeMonthLabels]);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   useEffect(() => { setPage(1); }, [selectedModel, viewMode, rowsPerPage]);
@@ -1476,7 +1520,9 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
     plotSpiderPanel('rtySpiderTTL', 'TTL');
     plotSpiderPanel('rtySpiderMAIN', 'MAIN');
 
-  }, [plotlyReady, activeTab, isLightMode, t, viewMode, startDate, endDate, selectedModel, xs, idxs]);
+  // EPCC (rty-chart-static-data-bug): thêm dynamicRtyData vào dependency
+  // array để useEffect vẽ lại biểu đồ ngay khi có dữ liệu mới từ upload.
+  }, [plotlyReady, activeTab, isLightMode, t, viewMode, startDate, endDate, selectedModel, xs, idxs, dynamicRtyData]);
 
   return (
     <div className={`second-dashboard rty-dashboard theme-${theme}`} style={{ padding: '0 16px 16px 16px', height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
