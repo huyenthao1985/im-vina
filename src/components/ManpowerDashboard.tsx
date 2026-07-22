@@ -1246,7 +1246,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
             </div>
             {/* Cụm phải dòng 1: Spacer matching Dòng 2 (Tải Excel) */}
             <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-              <div style={{ width: '120px' }}></div>
+              <div style={{ width: '140px' }}></div>
             </div>
           </div>
 
@@ -1332,7 +1332,7 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
               <NeonButton
                 className="btn btn-outline btn-sm"
                 onClick={() => fileInputRef.current?.click()}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', minWidth: '140px', padding: '0 14px', boxSizing: 'border-box', fontSize: '13px' }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
                   <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
