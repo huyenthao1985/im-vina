@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { NeonButton } from './NeonButton';
 // EPCC (rty-total-move-to-muc4): chuyển tab "RTY Total" từ Mục 5 sang đây
 // (Mục 4) theo yêu cầu — cùng nhóm "RTY" để dễ quan sát/quản lý, tách hẳn
@@ -34,10 +35,7 @@ interface RtyDashboardProps {
   onToggleTheme: () => void;
   lang: Lang;
   setLang: (l: Lang) => void;
-  /** Giữ tương thích chữ ký với các dashboard khác (Mục 1-3) — hiện chưa
-   *  có bucket dữ liệu RTY thật (upload) nên nút "Tải Excel" vẫn ở trạng
-   *  thái chờ (disabled). Dữ liệu hiển thị bên dưới là dữ liệu THAM CHIẾU
-   *  nhúng sẵn từ Test4.xlsx, không phải dữ liệu do người dùng tải lên. */
+  rtyRows?: any[];
   onFileSelected?: (file: File, workbook: any) => void;
   onSyncProgress?: (progress: { bucket: string; done: number; total: number } | null) => void;
 }
@@ -641,8 +639,14 @@ interface RtySummaryDynamicData {
 
 function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
   try {
-    const XLSX_lib = (window as any).XLSX || (globalThis as any).XLSX;
-    if (!XLSX_lib) return null;
+    // EPCC (rty-upload-xlsx-global-missing) - FIX ROOT CAUSE "bấm Tải tệp lên nhưng
+    // dữ liệu không cập nhật, không có thông báo lỗi nào cả":
+    // Trước đây hàm này tìm thư viện XLSX qua `window.XLSX`/`globalThis.XLSX`, nhưng
+    // dự án import XLSX theo kiểu ES module (`import * as XLSX from 'xlsx'`) nên
+    // không bao giờ có biến global đó -> `XLSX_lib` luôn undefined -> hàm return null
+    // ngay từ dòng đầu -> onChange coi như "đọc được file nhưng không có dữ liệu hợp lệ"
+    // và bỏ qua trong im lặng. Fix: dùng thẳng module XLSX đã import tĩnh ở đầu file.
+    const XLSX_lib = XLSX;
     const sheetNames = wb.SheetNames || [];
     const parsedRows: Array<{
       model: string;
@@ -889,8 +893,238 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
   }
 }
 
+function parseRowsToRtySummaryData(rows: any[]): RtySummaryDynamicData | null {
+  try {
+    if (!rows || rows.length === 0) return null;
+    const parsedRows: Array<{
+      model: string;
+      processKey: string;
+      isActual: boolean;
+      rty: number;
+      dateInfo: NonNullable<ReturnType<typeof parseDateInfo>>;
+    }> = [];
+
+    const monthNamesMap: Record<string, number> = {
+      jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+      jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+      'tháng 1': 1, 'tháng 2': 2, 'tháng 3': 3, 'tháng 4': 4, 'tháng 5': 5, 'tháng 6': 6,
+      'tháng 7': 7, 'tháng 8': 8, 'tháng 9': 9, 'tháng 10': 10, 'tháng 11': 11, 'tháng 12': 12,
+    };
+
+    const parseDateInfo = (val: any, rawYear?: any) => {
+      if (val == null) return null;
+      let d: Date | null = null;
+      let yearNum = typeof rawYear === 'number' ? rawYear : 2026;
+      if (typeof rawYear === 'string' && !isNaN(Number(rawYear))) yearNum = Number(rawYear);
+      if (yearNum < 2000 || yearNum > 2100) yearNum = 2026;
+
+      if (val instanceof Date) {
+        d = val;
+      } else if (typeof val === 'number') {
+        if (val > 1000 && val < 99999) {
+          d = new Date(Math.round((val - 25569) * 86400 * 1000));
+        } else if (val >= 1 && val <= 12) {
+          d = new Date(yearNum, val - 1, 1);
+        }
+      } else if (typeof val === 'string') {
+        const str = val.trim();
+        const lowerStr = str.toLowerCase();
+        if (monthNamesMap[lowerStr]) {
+          d = new Date(yearNum, monthNamesMap[lowerStr] - 1, 1);
+        } else if (str.includes('-')) {
+          const parts = str.split('-');
+          if (parts.length === 3) d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+          else if (parts.length === 2) {
+            const p1 = Number(parts[0]);
+            const p2 = Number(parts[1]);
+            if (!isNaN(p1) && !isNaN(p2)) {
+              if (p1 > 12) d = new Date(yearNum, p2 - 1, p1);
+              else d = new Date(yearNum, p1 - 1, p2);
+            }
+          }
+        } else if (str.includes('/')) {
+          const parts = str.split('/');
+          if (parts.length === 2) {
+            const p1 = Number(parts[0]);
+            const p2 = Number(parts[1]);
+            if (!isNaN(p1) && !isNaN(p2)) {
+              if (p1 > 12) d = new Date(yearNum, p2 - 1, p1);
+              else d = new Date(yearNum, p1 - 1, p2);
+            }
+          } else if (parts.length === 3) d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        }
+      }
+      if (!d || isNaN(d.getTime())) return null;
+      const yyyy = d.getFullYear();
+      const mmNum = d.getMonth() + 1;
+      const ddNum = d.getDate();
+      const mm = String(mmNum).padStart(2, '0');
+      const dd = String(ddNum).padStart(2, '0');
+      const formattedDay = `${mm}/${dd}`;
+      const isoDate = `${yyyy}-${mm}-${dd}`;
+      const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      const monthLabel = monthNames[d.getMonth()] || 'JAN';
+      const startOfYear = new Date(yyyy, 0, 1);
+      const weekNum = Math.ceil((((d.getTime() - startOfYear.getTime()) / 86400000) + startOfYear.getDay() + 1) / 7);
+      const weekLabel = `W${String(weekNum).padStart(2, '0')}`;
+      return { timestamp: d.getTime(), formattedDay, isoDate, monthLabel, weekLabel };
+    };
+
+    const parseRtyVal = (val: any): number | null => {
+      if (val == null) return null;
+      if (typeof val === 'number') {
+        if (isNaN(val)) return null;
+        return val > 1 ? val / 100 : val;
+      }
+      if (typeof val === 'string') {
+        const num = parseFloat(val.replace('%', '').trim());
+        if (isNaN(num)) return null;
+        return num > 1 ? num / 100 : num;
+      }
+      return null;
+    };
+
+    const normalizeProcess = (proc: string): string => {
+      const p = proc.trim().toUpperCase();
+      if (p.includes('TTL') || p.includes('TOTAL') || p === 'RTY' || p === 'RTY %') return 'RTY_TTL';
+      if (p.includes('MAIN FVI')) return 'MAIN_FVI';
+      if (p.includes('MAIN ASSY') || p.includes('ASSY')) return 'MAIN_ASSY';
+      if (p.includes('MAIN DRIVING') || p.includes('DRIVING')) return 'MAIN_DRIVING';
+      if (p.includes('MAIN TILT') || p.includes('TILT')) return 'MAIN_TILT';
+      if (p.includes('MAIN')) return 'RTY_MAIN';
+      if (p.includes('SUB1 FPCB') || p.includes('FPCB')) return 'SUB1_FPCB';
+      if (p.includes('SUB1 FVI')) return 'SUB1_FVI';
+      if (p.includes('SUB1')) return 'RTY_SUB1';
+      if (p.includes('SUB2 HOOK') || p.includes('HOOK')) return 'SUB2_HOOK';
+      if (p.includes('SUB2 OVEN') || p.includes('OVEN')) return 'SUB2_OVEN';
+      if (p.includes('SUB2 INDEX') || p.includes('INDEX')) return 'SUB2_INDEX';
+      if (p.includes('SUB2')) return 'RTY_SUB2';
+      return 'RTY_TTL';
+    };
+
+    const gv = (r: any, ...keys: string[]) => {
+      for (const k of keys) {
+        if (r[k] !== undefined && r[k] !== null) return r[k];
+        const lowerK = k.toLowerCase();
+        for (const rk of Object.keys(r)) {
+          if (rk.trim().toLowerCase() === lowerK && r[rk] !== undefined && r[rk] !== null) {
+            return r[rk];
+          }
+        }
+      }
+      return null;
+    };
+
+    rows.forEach(r => {
+      const rawModel = gv(r, 'model', 'Model', 'MODEL', 'so', 'SO');
+      const rawProc  = gv(r, 'division', 'Division', 'process', 'Process', 'PROCESS', 'item', 'Item', 'ITEM');
+      const rawType  = gv(r, 'type', 'Type', 'TYPE');
+      const rawYear  = gv(r, 'year', 'Year', 'YEAR');
+      const rawDate  = gv(r, 'month', 'Month', 'date', 'Date', 'DATE', 'period', 'Period', 'PERIOD', 'day', 'Day', 'DAY', 'time', 'Time', 'TIME');
+      const rawRty   = gv(r, 'value', 'Value', 'rty', 'RTY', 'RTY %', 'RTY%', 'rate', 'Rate');
+
+      if (rawModel && rawProc) {
+        const modelStr = String(rawModel).trim();
+        const processKey = normalizeProcess(String(rawProc));
+        const typeStr = rawType ? String(rawType).trim().toLowerCase() : 'actual';
+        const isActual = typeStr.includes('actual') || typeStr.includes('thực tế') || typeStr.includes('act');
+
+        if (rawRty != null && rawDate != null) {
+          const rtyVal = parseRtyVal(rawRty);
+          const dateInfo = parseDateInfo(rawDate, rawYear);
+          if (rtyVal != null && dateInfo != null) {
+            parsedRows.push({ model: modelStr, processKey, isActual, rty: rtyVal, dateInfo });
+          }
+        }
+      }
+    });
+
+    if (parsedRows.length === 0) return null;
+
+    const dayMap = new Map<string, number>();
+    parsedRows.forEach(r => {
+      if (!dayMap.has(r.dateInfo.formattedDay) || r.dateInfo.timestamp < dayMap.get(r.dateInfo.formattedDay)!) {
+        dayMap.set(r.dateInfo.formattedDay, r.dateInfo.timestamp);
+      }
+    });
+    const dayEntries = Array.from(dayMap.entries()).sort((a, b) => a[1] - b[1]);
+    const dayLabels = dayEntries.map(e => e[0]);
+
+    const weekLabels: string[] = [];
+    const monthLabels: string[] = [];
+    parsedRows.forEach(r => {
+      if (!weekLabels.includes(r.dateInfo.weekLabel)) weekLabels.push(r.dateInfo.weekLabel);
+      if (!monthLabels.includes(r.dateInfo.monthLabel)) monthLabels.push(r.dateInfo.monthLabel);
+    });
+
+    const lastUpdateLabel = dayLabels[dayLabels.length - 1] || '07/08';
+    let dataMaxDate = '2026-07-09';
+    let dataMinDate = '2026-01-02';
+    parsedRows.forEach(r => {
+      if (r.dateInfo.isoDate > dataMaxDate) dataMaxDate = r.dateInfo.isoDate;
+      if (r.dateInfo.isoDate < dataMinDate) dataMinDate = r.dateInfo.isoDate;
+    });
+
+    const modelSeries: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>> = {};
+
+    parsedRows.filter(r => r.isActual).forEach(row => {
+      if (!modelSeries[row.model]) modelSeries[row.model] = {};
+      if (!modelSeries[row.model][row.processKey]) {
+        modelSeries[row.model][row.processKey] = {
+          day: new Array(dayLabels.length).fill(null),
+          week: new Array(weekLabels.length).fill(null),
+          month: new Array(monthLabels.length).fill(null),
+        };
+      }
+      const dayIdx = dayLabels.indexOf(row.dateInfo.formattedDay);
+      if (dayIdx >= 0) modelSeries[row.model][row.processKey].day[dayIdx] = row.rty;
+
+      const weekIdx = weekLabels.indexOf(row.dateInfo.weekLabel);
+      if (weekIdx >= 0) modelSeries[row.model][row.processKey].week[weekIdx] = row.rty;
+
+      const monthIdx = monthLabels.indexOf(row.dateInfo.monthLabel);
+      if (monthIdx >= 0) modelSeries[row.model][row.processKey].month[monthIdx] = row.rty;
+    });
+
+    const modelsAll = Object.keys(modelSeries);
+    const modelSummary: ModelSummary[] = modelsAll.map(m => {
+      const getAvg = (procKey: string) => {
+        const arr = (modelSeries[m]?.[procKey]?.day || []).filter((v): v is number => v != null);
+        if (arr.length === 0) return null;
+        return arr.reduce((a, b) => a + b, 0) / arr.length;
+      };
+      const sub1Act = getAvg('RTY_SUB1');
+      const sub2Act = getAvg('RTY_SUB2');
+      const mainAct = getAvg('RTY_MAIN');
+      const ttlAct  = getAvg('RTY_TTL') ?? mainAct ?? 0.95;
+
+      return {
+        model: m,
+        ...(sub1Act != null ? { sub1: { target: 0.992, actual: sub1Act } } : {}),
+        ...(sub2Act != null ? { sub2: { target: 0.988, actual: sub2Act } } : {}),
+        ...(mainAct != null ? { main: { target: 0.983, actual: mainAct } } : {}),
+        ttl: { target: 0.964, actual: ttlAct },
+      };
+    });
+
+    return {
+      modelSummary,
+      modelSeries,
+      dayLabels,
+      weekLabels,
+      monthLabels,
+      lastUpdateLabel,
+      dataMaxDate,
+      dataMinDate,
+    };
+  } catch (err) {
+    console.error('Error parsing RTY rows:', err);
+    return null;
+  }
+}
+
 export const RtyDashboard: React.FC<RtyDashboardProps> = ({
-  theme, onToggleTheme: _onToggleTheme, lang, setLang: _setLang, onFileSelected, onSyncProgress,
+  theme, onToggleTheme: _onToggleTheme, lang, setLang: _setLang, rtyRows, onFileSelected, onSyncProgress,
 }) => {
   const t = TXT[lang];
   const isLightMode = theme === 'light';
@@ -900,6 +1134,16 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [dynamicRtyData, setDynamicRtyData] = useState<RtySummaryDynamicData | null>(null);
+
+  useEffect(() => {
+    if (rtyRows && rtyRows.length > 0) {
+      const parsed = parseRowsToRtySummaryData(rtyRows);
+      if (parsed && parsed.dayLabels.length > 0) {
+        setDynamicRtyData(parsed);
+        idbSetCacheSummary(IDB_KEY_RTY_SUMMARY_DATA, JSON.stringify(parsed)).catch(() => {});
+      }
+    }
+  }, [rtyRows]);
 
   useEffect(() => {
     (async () => {
@@ -1622,7 +1866,10 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
                 reader.onload = async (evt) => {
                   try {
                     const data = new Uint8Array(evt.target!.result as ArrayBuffer);
-                    const XLSX = await import('xlsx');
+                    // EPCC (rty-upload-xlsx-global-missing): dùng thẳng XLSX đã import
+                    // tĩnh ở đầu file, không cần `await import('xlsx')` nữa (trước đây
+                    // biến này chỉ tồn tại cục bộ trong callback, không giúp gì cho
+                    // parseWorkbookToRtySummaryData vì hàm đó đọc từ global).
                     const workbook = XLSX.read(data, { type: 'array', cellDates: true });
 
                     const dynamicResult = parseWorkbookToRtySummaryData(workbook);
@@ -1633,12 +1880,22 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
                       setStartDate(dynamicResult.dataMinDate);
                       setEndDate(dynamicResult.dataMaxDate);
                       await idbSetCacheSummary(IDB_KEY_RTY_SUMMARY_DATA, JSON.stringify(dynamicResult));
+                    } else {
+                      // EPCC (rty-upload-xlsx-global-missing): trước đây nhánh này im
+                      // lặng bỏ qua khiến người dùng tưởng đã cập nhật xong. Giờ báo rõ
+                      // để biết file đọc được nhưng không tìm thấy cột dữ liệu hợp lệ
+                      // (cần cột Model/Process + Date/Period + RTY, hoặc các cột dạng
+                      // ngày làm tiêu đề).
+                      alert(lang === 'vi'
+                        ? 'Đã đọc được tệp nhưng không tìm thấy dữ liệu RTY hợp lệ. Vui lòng kiểm tra lại cột Model/Process/Date/RTY trong file.'
+                        : 'File was read but no valid RTY data rows were found. Please check the Model/Process/Date/RTY columns.');
                     }
 
                     if (onFileSelected) {
                       onFileSelected(file, workbook);
                     }
                   } catch (err) {
+                    console.error('Lỗi đọc tệp Excel (RTY upload):', err);
                     alert('Lỗi đọc tệp Excel!');
                   } finally {
                     setTimeout(() => onSyncProgress?.(null), 1000);

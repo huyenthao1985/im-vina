@@ -180,13 +180,9 @@ export default function App() {
   const [activeViewId, setActiveViewId] = useState<string>('target_actual');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(true);
 
-  // Data state — 3 bucket độc lập. Bucket 'sales' (Mục 1 cũ) KHÔNG còn state
-  // local/hiển thị nữa — xem giải thích ở syncBucketToSupabase/parseSheet
-  // bên dưới: vẫn GHI 'Sales' lên Supabase khi upload không khớp
-  // Manpower/TargetActual (an toàn dữ liệu), nhưng không còn ĐỌC lại để
-  // hiển thị vì không còn dashboard nào tiêu thụ.
   const [manpowerRows, setManpowerRows] = useState<DataRow[]>([]);
   const [targetActualRows, setTargetActualRows] = useState<DataRow[]>([]);
+  const [rtyRows, setRtyRows] = useState<DataRow[]>([]);
   const hasHydratedRef = useRef(false);
   // Trạng thái đồng bộ Supabase khi upload thủ công — có thể dùng để hiện
   // badge "Đang đồng bộ..." / "Đã lên Cloud" / "Lỗi đồng bộ" trên UI nếu cần.
@@ -307,17 +303,13 @@ export default function App() {
               return null;
             });
 
-          type BucketKind = 'sales' | 'manpower' | 'target_actual';
+          type BucketKind = 'sales' | 'manpower' | 'target_actual' | 'rty';
 
-          // Áp filter đúng bucket lên 1 query builder Supabase (dùng lại
-          // cho cả head-count request và các trang range() bên dưới).
           const applyBucketFilter = (kind: BucketKind, q: any) => {
             if (kind === 'manpower') return q.eq('source_tag', 'Manpower');
             if (kind === 'target_actual') return q.eq('source_tag', 'TargetActual');
-            // Sales: KHÔNG mang source_tag Manpower/TargetActual (comment
-            // gốc ở bucketByTag() vẫn đúng — origin của Sales là dữ liệu
-            // xuất xứ thật, không bao giờ trùng 2 tag trên).
-            return q.not('source_tag', 'in', '("Manpower","TargetActual")');
+            if (kind === 'rty') return q.eq('source_tag', 'RTY');
+            return q.not('source_tag', 'in', '("Manpower","TargetActual","RTY")');
           };
 
           // Tải toàn bộ (tối đa MAX_PAGES trang) của 1 bucket.
@@ -450,32 +442,34 @@ export default function App() {
           // Supabase Free tier (mỗi bucket bên trong đã tự chạy CONCURRENCY=3).
           const manpowerResult = await fetchBucketRows('manpower');
           const targetActualResult = await fetchBucketRows('target_actual');
+          const rtyResult = await fetchBucketRows('rty');
 
-          if (manpowerResult === null && targetActualResult === null) {
-            // Cả 2 bucket đều lỗi/timeout → giữ cache đang hiển thị (nếu có).
+          if (manpowerResult === null && targetActualResult === null && rtyResult === null) {
             hasHydratedRef.current = true;
             return;
           }
 
           const manpower = manpowerResult ?? [];
           const targetActual = targetActualResult ?? [];
-          const allData = [...manpower, ...targetActual];
+          const rtyData = rtyResult ?? [];
+          const allData = [...manpower, ...targetActual, ...rtyData];
 
           if (manpowerResult === null) console.warn('Bucket Manpower tải thất bại — giữ dữ liệu Manpower cache cũ (nếu có), bucket khác vẫn cập nhật.');
           if (targetActualResult === null) console.warn('Bucket TargetActual tải thất bại — giữ dữ liệu TargetActual cache cũ (nếu có), bucket khác vẫn cập nhật.');
+          if (rtyResult === null) console.warn('Bucket RTY tải thất bại — giữ dữ liệu RTY cache cũ (nếu có), bucket khác vẫn cập nhật.');
 
           if (allData.length > 0) {
-            // Chỉ ghi đè bucket nào tải THÀNH CÔNG (khác null) — bucket lỗi
-            // giữ nguyên state hiện có, tránh xoá mất dữ liệu đang hiển thị.
             if (manpowerResult !== null) setManpowerRows(manpower);
             if (targetActualResult !== null) setTargetActualRows(targetActual);
+            if (rtyResult !== null) setRtyRows(rtyData);
             setScreen('dashboard');
-            idbSetCache('cached_dashboard_buckets', JSON.stringify({ manpower, targetActual }))
-              .catch(() => { /* IndexedDB không khả dụng — bỏ qua, dashboard vẫn dùng state React hiện tại */ });
+            idbSetCache('cached_dashboard_buckets', JSON.stringify({ manpower, targetActual, rty: rtyData }))
+              .catch(() => {});
             hasHydratedRef.current = true;
             console.log(
               'Đã đồng bộ dữ liệu mới nhất từ Supabase — Manpower:', manpower.length,
               '| TargetActual:', targetActual.length,
+              '| RTY:', rtyData.length,
               '| Tổng:', allData.length, 'rows'
             );
             return;
@@ -527,7 +521,7 @@ export default function App() {
 
   const syncBucketToSupabase = useCallback(async (
     rows: DataRow[],
-    bucketTag: 'Sales' | 'Manpower' | 'TargetActual'
+    bucketTag: 'Sales' | 'Manpower' | 'TargetActual' | 'RTY'
   ) => {
     if (!supabase) {
       console.warn('Supabase not configured — bỏ qua đồng bộ, dữ liệu chỉ lưu local.');
@@ -665,6 +659,21 @@ export default function App() {
             year:     Number(gv(r, 'year', 'Year') ?? guessYear(rawDate)),
             month:    String(rawDate).trim() || 'N/A',
             value:    Number(gv(r, 'value', 'Value') ?? 0),
+          };
+        });
+      } else if (bucketTag === 'RTY') {
+        taggedRows = rows.map(r => {
+          const rawDate = gv(r, 'date', 'Date', 'month', 'Month', 'period', 'Period', 'day', 'Day') ?? '';
+          return {
+            source_tag: 'RTY',
+            model:    String(gv(r, 'model', 'Model', 'SO', 'so') ?? '').trim() || 'N/A',
+            origin:   'RTY',
+            customer: String(gv(r, 'customer', 'Customer') ?? '').trim(),
+            type:     String(gv(r, 'type', 'Type') ?? '').trim() || 'Actual',
+            division: String(gv(r, 'process', 'Process', 'ITEM', 'Item') ?? '').trim() || 'RTY_TTL',
+            year:     Number(gv(r, 'year', 'Year') ?? guessYear(rawDate)),
+            month:    String(rawDate).trim() || 'N/A',
+            value:    Number(gv(r, 'rty', 'RTY', 'RTY %', 'RTY%', 'value', 'Value') ?? 0),
           };
         });
       } else {
@@ -1032,6 +1041,7 @@ export default function App() {
                 onToggleTheme={toggleTheme}
                 lang={lang}
                 setLang={setLang}
+                rtyRows={rtyRows}
                 onFileSelected={handleFileSelected}
                 onSyncProgress={setSyncProgress}
               />
