@@ -593,6 +593,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   const tealAccent  = isLightMode ? '#0f766e' : '#14b8a6';
 
   const [activeTab, setActiveTab] = useState<'summary' | 'rtyTotal' | 'merged'>('summary');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -1318,18 +1319,48 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+            <input 
+              ref={fileInputRef}
+              type="file" 
+              accept=".xlsx, .xls" 
+              style={{ display: 'none' }} 
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                onSyncProgress?.({ bucket: 'RTY', done: 0, total: 0 });
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                  try {
+                    const data = new Uint8Array(evt.target!.result as ArrayBuffer);
+                    const XLSX = await import('xlsx');
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    if (onFileSelected) {
+                      onFileSelected(file, workbook);
+                    }
+                  } catch (err) {
+                    alert('Lỗi đọc tệp Excel!');
+                  } finally {
+                    setTimeout(() => onSyncProgress?.(null), 1000);
+                  }
+                };
+                reader.readAsArrayBuffer(file);
+                e.target.value = '';
+              }} 
+            />
             <NeonButton
               className="btn btn-outline btn-sm"
-              disabled={!onFileSelected}
-              title={t.noSource}
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', width: '120px', fontSize: '13px', opacity: onFileSelected ? 1 : 0.55, cursor: onFileSelected ? 'pointer' : 'not-allowed' }}
+              onClick={() => fileInputRef.current?.click()}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', minWidth: '140px', padding: '0 14px', boxSizing: 'border-box', fontSize: '13px', cursor: 'pointer' }}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
                 <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
                 <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                <path d="M3 16v5h5" /><path d="M16 3h5v5" />
+                <path d="M3 16v5h5" />
+                <path d="M16 3h5v5" />
               </svg>
-              <span>{t.loadExcel}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {lang === 'vi' ? 'Tải tệp lên' : lang === 'ko' ? '파일 업로드' : 'Upload File'}
+              </span>
             </NeonButton>
           </div>
         </div>

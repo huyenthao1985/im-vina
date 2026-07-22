@@ -1020,6 +1020,7 @@ export default function App() {
                 onToggleTheme={toggleTheme}
                 lang={lang}
                 setLang={setLang}
+                onFileSelected={handleFileSelected}
                 onSyncProgress={setSyncProgress}
               />
             )}
