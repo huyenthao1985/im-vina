@@ -822,7 +822,17 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
           const modelStr = String(rawModel).trim();
           const processKey = normalizeProcess(String(rawProc));
           const typeStr = rawType ? String(rawType).trim().toLowerCase() : 'actual';
-          const isActual = typeStr.includes('actual') || typeStr.includes('thực tế') || typeStr.includes('act');
+          // EPCC (rty-isActual-detection-miss): mở rộng nhận dạng nhãn Actual:
+          // - tiếng Anh: 'actual', 'act', 'real', 'result'
+          // - tiếng Việt: 'thực tế', 'thực hiện', 'thực'
+          // - tiếng Hàn: '실적', '실제'
+          // - đặc biệt: nếu rawType không tồn tại (null) → mặc định là actual
+          //   (nhiều file RTY không có cột Type riêng, chỉ có 1 loại dữ liệu)
+          const isActual = !rawType // không có cột Type → mặc định là actual
+            || typeStr.includes('actual') || typeStr.includes('act')
+            || typeStr.includes('real') || typeStr.includes('result')
+            || typeStr.includes('thực tế') || typeStr.includes('thực hiện') || typeStr.includes('thực')
+            || typeStr.includes('실적') || typeStr.includes('실제');
 
           if (rawRty != null && rawDate != null) {
             const rtyVal = parseRtyVal(rawRty);
@@ -890,9 +900,20 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
       if (r.dateInfo.isoDate < dataMinDate) dataMinDate = r.dateInfo.isoDate;
     });
 
+    // EPCC (rty-isActual-detection-miss) - FALLBACK: nếu không có dòng actual nào
+    // (ví dụ: file chỉ có nhãn 'Target'/'Kế hoạch'/tiếng Hàn không nhận dạng được),
+    // dùng TOÀN BỘ parsedRows như thể chúng đều là actual. Điều này đúng với phần lớn
+    // file RTY thực tế chỉ chứa một loại dữ liệu (actual) dù Type có thể được gán
+    // nhãn khác nhau trong hệ thống của nhà máy.
+    const actualRows = parsedRows.filter(r => r.isActual);
+    const rowsForModelSeries = actualRows.length > 0 ? actualRows : parsedRows;
+    if (actualRows.length === 0 && parsedRows.length > 0) {
+      console.warn(`[RTY Parse] Không tìm thấy dòng nào có type='actual' trong ${parsedRows.length} dòng. Áp dụng fallback: côi toàn bộ dòng là Actual.`);
+    }
+
     const modelSeries: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>> = {};
 
-    parsedRows.filter(r => r.isActual).forEach(row => {
+    rowsForModelSeries.forEach(row => {
       if (!modelSeries[row.model]) modelSeries[row.model] = {};
       if (!modelSeries[row.model][row.processKey]) {
         modelSeries[row.model][row.processKey] = {
@@ -966,16 +987,31 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          if (parsed && parsed.modelSummary && parsed.dayLabels) {
+          // EPCC (rty-empty-array-falsy-bug): chỉ dùng cache khi modelSummary CÓ models
+          // thực sự. Cache cũ (từ lần upload lỗi trước đây) có thể có modelSummary=[]
+          // → gây 0/0 KPI. Bỏ qua cache rỗng, để activeModelSummary fallback về static.
+          if (parsed && parsed.modelSummary && Array.isArray(parsed.modelSummary)
+              && parsed.modelSummary.length > 0 && parsed.dayLabels) {
             setDynamicRtyData(parsed);
+          } else if (parsed && parsed.dayLabels && (!parsed.modelSummary || parsed.modelSummary.length === 0)) {
+            console.warn('[RTY IDB] Cache có dayLabels nhưng modelSummary rỗng — bỏ qua cache hỏng, dùng dữ liệu tĩnh.');
+            // Xóa luôn cache hỏng để lần sau không load lại nữa.
+            await idbSetCacheSummary(IDB_KEY_RTY_SUMMARY_DATA, '');
           }
         } catch { /* ignore */ }
       }
     })();
   }, []);
 
-  const activeModelSummary = dynamicRtyData?.modelSummary || MODEL_SUMMARY;
-  const activeModelSeries  = dynamicRtyData?.modelSeries  || MODEL_SERIES;
+  // EPCC (rty-empty-array-falsy-bug): operator `||` không fallback khi giá trị
+  // là mảng rỗng `[]` ([] là TRUTHY trong JS). Phải kiểm tra length ạnh hưởng đến
+  // cả modelSummary và modelSeries: nếu mảng rỗng/object rỗng, fallback về data tĩnh.
+  const activeModelSummary = (dynamicRtyData?.modelSummary && dynamicRtyData.modelSummary.length > 0)
+    ? dynamicRtyData.modelSummary
+    : MODEL_SUMMARY;
+  const activeModelSeries  = (dynamicRtyData?.modelSeries && Object.keys(dynamicRtyData.modelSeries).length > 0)
+    ? dynamicRtyData.modelSeries
+    : MODEL_SERIES;
   const activeDayLabels    = dynamicRtyData?.dayLabels    || DAY_LABELS;
   const activeWeekLabels   = dynamicRtyData?.weekLabels   || WEEK_LABELS;
   const activeMonthLabels  = dynamicRtyData?.monthLabels  || MONTH_LABELS;
@@ -1736,11 +1772,21 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
                     const dynamicResult = parseWorkbookToRtySummaryData(workbook);
                     if (dynamicResult && dynamicResult.dayLabels.length > 0) {
                       setDynamicRtyData(dynamicResult);
-                      const sortedBest = [...dynamicResult.modelSummary].sort((a, b) => (b.ttl.actual - b.ttl.target) - (a.ttl.actual - a.ttl.target))[0]?.model || '';
-                      setSelectedModel(sortedBest);
+                      // EPCC (rty-empty-array-falsy-bug): nếu modelSummary rỗng sau parse
+                      // (vẫn xảy ra khi file hoàn toàn không có Process/RTY column đúng chuẩn),
+                      // KHÔNG đặt selectedModel về '' (gây 0/0 KPI) — giữ nguyên model đang chọn.
+                      // Chỉ cập nhật selectedModel khi thực sự có model mới từ upload.
+                      if (dynamicResult.modelSummary.length > 0) {
+                        const sortedBest = [...dynamicResult.modelSummary].sort((a, b) => (b.ttl.actual - b.ttl.target) - (a.ttl.actual - a.ttl.target))[0]?.model || activeBestModel;
+                        setSelectedModel(sortedBest);
+                      }
                       setStartDate(dynamicResult.dataMinDate);
                       setEndDate(dynamicResult.dataMaxDate);
-                      await idbSetCacheSummary(IDB_KEY_RTY_SUMMARY_DATA, JSON.stringify(dynamicResult));
+                      // Chỉ lưu cache khi có model data thực sự (tránh ghi đè cache hợp lệ
+                      // bằng cache rỗng rồi gây 0/0 KPI ở lần reload tiếp theo).
+                      if (dynamicResult.modelSummary.length > 0) {
+                        await idbSetCacheSummary(IDB_KEY_RTY_SUMMARY_DATA, JSON.stringify(dynamicResult));
+                      }
                     } else {
                       // EPCC (rty-upload-xlsx-global-missing): trước đây nhánh này im
                       // lặng bỏ qua khiến người dùng tưởng đã cập nhật xong. Giờ báo rõ
