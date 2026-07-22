@@ -763,12 +763,21 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
       if (val == null) return null;
       if (typeof val === 'number') {
         if (isNaN(val)) return null;
-        return val > 1 ? val / 100 : val;
+        // EPCC (rty-zero-corrupts-avg): RTY = 0.0 xuất hiện khi model không sản xuất
+        // (no-production day). Nếu tính vào getAvg sẽ kéo trung bình xuống cực thấp.
+        // Chuẩn hóa về scale 0-1 trước rồi mới kiểm tra ngưỡng.
+        const n = val > 1.5 ? val / 100 : val;
+        if (n <= 0.01) return null; // <= 1% → coi là không có dữ liệu
+        if (n > 1) return null;     // > 100% → không hợp lệ
+        return n;
       }
       if (typeof val === 'string') {
         const num = parseFloat(val.replace('%', '').trim());
         if (isNaN(num)) return null;
-        return num > 1 ? num / 100 : num;
+        const n = num > 1.5 ? num / 100 : num;
+        if (n <= 0.01) return null;
+        if (n > 1) return null;
+        return n;
       }
       return null;
     };
@@ -776,10 +785,18 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
     const normalizeProcess = (proc: string): string => {
       const p = proc.trim().toUpperCase();
       if (p.includes('TTL') || p.includes('TOTAL') || p === 'RTY' || p === 'RTY %') return 'RTY_TTL';
-      if (p.includes('MAIN FVI')) return 'MAIN_FVI';
-      if (p.includes('MAIN ASSY') || p.includes('ASSY')) return 'MAIN_ASSY';
-      if (p.includes('MAIN DRIVING') || p.includes('DRIVING')) return 'MAIN_DRIVING';
-      if (p.includes('MAIN TILT') || p.includes('TILT')) return 'MAIN_TILT';
+      // EPCC (rty-main-fvi-missing): bắt thêm 'FVI' standalone và các biến thể
+      // tiếng Hàn/tiếng Việt/viết tắt cho MAIN sub-processes.
+      if (p.includes('MAIN FVI') || p === 'FVI'
+          || p.includes('FINAL VISUAL') || p.includes('FINAL VI')
+          || p.includes('최종 VI') || p.includes('최종VI')
+          || p.includes('KT CUOI') || p.includes('KIEM TRA CUOI')) return 'MAIN_FVI';
+      if (p.includes('MAIN ASSY') || p.includes('ASSY')
+          || p.includes('어셈블리') || p.includes('조립')) return 'MAIN_ASSY';
+      if (p.includes('MAIN DRIVING') || p.includes('DRIVING') || p.includes('DRV')
+          || p.includes('구동')) return 'MAIN_DRIVING';
+      if (p.includes('MAIN TILT') || p.includes('TILT') || p.includes('TLT')
+          || p.includes('틸트')) return 'MAIN_TILT';
       if (p.includes('MAIN')) return 'RTY_MAIN';
       if (p.includes('SUB1 FPCB') || p.includes('FPCB')) return 'SUB1_FPCB';
       if (p.includes('SUB1 FVI')) return 'SUB1_FVI';
@@ -900,6 +917,21 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
       if (r.dateInfo.isoDate < dataMinDate) dataMinDate = r.dateInfo.isoDate;
     });
 
+    // EPCC (rty-proc-diagnostic): log tất cả process names thực tế trong file
+    // để giúp debug khi có process không khớp pattern. Chỉ log khi có dữ liệu.
+    if (parsedRows.length > 0) {
+      const rawProcMap: Record<string, string> = {};
+      parsedRows.forEach(r => { rawProcMap[r.processKey] = r.processKey; });
+      const procKeys = Object.keys(rawProcMap).sort();
+      console.log('[RTY Parse] ProcessKeys tìm thấy trong file:', procKeys);
+      console.log('[RTY Parse] Số dòng theo processKey:',
+        procKeys.reduce((acc, k) => {
+          acc[k] = parsedRows.filter(r => r.processKey === k).length;
+          return acc;
+        }, {} as Record<string, number>)
+      );
+    }
+
     // EPCC (rty-isActual-detection-miss) - FALLBACK: nếu không có dòng actual nào
     // (ví dụ: file chỉ có nhãn 'Target'/'Kế hoạch'/tiếng Hàn không nhận dạng được),
     // dùng TOÀN BỘ parsedRows như thể chúng đều là actual. Điều này đúng với phần lớn
@@ -966,25 +998,41 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
     }
 
     const modelsAll = Object.keys(modelSeries);
-    const modelSummary: ModelSummary[] = modelsAll.map(m => {
+    const modelSummary: ModelSummary[] = modelsAll
+      // EPCC (rty-phantom-model-filter): loại bỏ model không có bất kỳ dữ liệu RTY
+      // thực sự nào (tất cả giá trị đều null). Những model này không có sản xuất trong
+      // kỳ báo cáo — nếu giữ lại sẽ dùng fallback 0.95 (95%) < target 96.4% và làm
+      // cho "Tỷ lệ đạt RTY" hiển thị sai (VD: 1/10 thay vì 1/5 thực tế).
+      .filter(m => {
+        const hasMain  = (modelSeries[m]?.['RTY_MAIN']?.day  ?? []).some(v => v != null && v > 0.01);
+        const hasSub1  = (modelSeries[m]?.['RTY_SUB1']?.day  ?? []).some(v => v != null && v > 0.01);
+        const hasSub2  = (modelSeries[m]?.['RTY_SUB2']?.day  ?? []).some(v => v != null && v > 0.01);
+        const hasTtl   = (modelSeries[m]?.['RTY_TTL']?.day   ?? []).some(v => v != null && v > 0.01);
+        return hasMain || hasSub1 || hasSub2 || hasTtl;
+      })
+      .map(m => {
       const getAvg = (procKey: string) => {
         const arr = (modelSeries[m]?.[procKey]?.day || []).filter((v): v is number => v != null);
         if (arr.length === 0) return null;
         return arr.reduce((a, b) => a + b, 0) / arr.length;
       };
-      const sub1Act = getAvg('RTY_SUB1');
-      const sub2Act = getAvg('RTY_SUB2');
-      const mainAct = getAvg('RTY_MAIN');
-      const ttlAct  = getAvg('RTY_TTL') ?? mainAct ?? 0.95;
+        const sub1Act = getAvg('RTY_SUB1');
+        const sub2Act = getAvg('RTY_SUB2');
+        const mainAct = getAvg('RTY_MAIN');
+        // EPCC (rty-phantom-model-filter): bỏ fallback 0.95 — model đã được
+        // lọc ở trên (chỉ còn model có data thực), nên không cần giá trị "giả".
+        // Nếu ttlAct null (data bị lỗi), coi như model này không đạt target
+        // thay vì cứng 95% mà không phản ánh thực tế.
+        const ttlAct  = getAvg('RTY_TTL') ?? mainAct;
 
-      return {
-        model: m,
-        ...(sub1Act != null ? { sub1: { target: 0.992, actual: sub1Act } } : {}),
-        ...(sub2Act != null ? { sub2: { target: 0.988, actual: sub2Act } } : {}),
-        ...(mainAct != null ? { main: { target: 0.983, actual: mainAct } } : {}),
-        ttl: { target: 0.964, actual: ttlAct },
-      };
-    });
+        return {
+          model: m,
+          ...(sub1Act != null ? { sub1: { target: 0.992, actual: sub1Act } } : {}),
+          ...(sub2Act != null ? { sub2: { target: 0.988, actual: sub2Act } } : {}),
+          ...(mainAct != null ? { main: { target: 0.983, actual: mainAct } } : {}),
+          ttl: { target: 0.964, actual: ttlAct ?? 0 },
+        };
+      });
 
     return {
       modelSummary,
