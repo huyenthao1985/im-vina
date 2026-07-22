@@ -932,6 +932,39 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
       if (monthIdx >= 0) modelSeries[row.model][row.processKey].month[monthIdx] = row.rty;
     });
 
+    // EPCC (rty-ttl-missing-compute): nếu file không có cột Process 'TTL' riêng,
+    // RTY_TTL sẽ bị rỗng → line TTL trên biểu đồ không hiện.
+    // Tính tự động theo công thức RTY chuẩn trong sản xuất:
+    //   RTY_TTL = RTY_MAIN × RTY_SUB1 × RTY_SUB2
+    // Áp dụng cho từng điểm thời gian (day/week/month) riêng biệt.
+    // Nếu model đã có RTY_TTL (từ file), bỏ qua — không ghi đè.
+    const computeRtyTtl = (
+      m: string,
+      mode: 'day' | 'week' | 'month'
+    ): (number | null)[] => {
+      const main  = modelSeries[m]?.['RTY_MAIN']?.[mode]  ?? [];
+      const sub1  = modelSeries[m]?.['RTY_SUB1']?.[mode]  ?? [];
+      const sub2  = modelSeries[m]?.['RTY_SUB2']?.[mode]  ?? [];
+      const len = Math.max(main.length, sub1.length, sub2.length);
+      return Array.from({ length: len }, (_, i) => {
+        const values = [main[i], sub1[i], sub2[i]].filter((v): v is number => v != null && v > 0);
+        if (values.length === 0) return null;
+        return values.reduce((a, b) => a * b, 1);
+      });
+    };
+    for (const m of Object.keys(modelSeries)) {
+      const hasExplicitTTL = (modelSeries[m]?.['RTY_TTL']?.day ?? []).some(v => v != null);
+      if (!hasExplicitTTL) {
+        const ttlDay   = computeRtyTtl(m, 'day');
+        const ttlWeek  = computeRtyTtl(m, 'week');
+        const ttlMonth = computeRtyTtl(m, 'month');
+        const hasAny = ttlDay.some(v => v != null) || ttlWeek.some(v => v != null) || ttlMonth.some(v => v != null);
+        if (hasAny) {
+          modelSeries[m]['RTY_TTL'] = { day: ttlDay, week: ttlWeek, month: ttlMonth };
+        }
+      }
+    }
+
     const modelsAll = Object.keys(modelSeries);
     const modelSummary: ModelSummary[] = modelsAll.map(m => {
       const getAvg = (procKey: string) => {
