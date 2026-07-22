@@ -375,12 +375,15 @@ const getSeriesValueForModel = (
   model: string,
   key: string,
   mode: 'day' | 'week' | 'month',
-  rawIndex: number
+  rawIndex: number,
+  customSeriesMap?: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>>
 ): number | null => {
   const m = model || HERO_MODEL;
-  const series = MODEL_SERIES[m];
+  const series = customSeriesMap?.[m] || MODEL_SERIES[m];
   if (!series || !series[key]) return null;
-  const v = (series[key][mode] as (number | null)[])[rawIndex];
+  const arr = (series[key] as any)?.[mode] as (number | null)[];
+  if (!arr) return null;
+  const v = arr[rawIndex];
   return v == null ? null : v;
 };
 
@@ -413,35 +416,29 @@ const getSpiderValueWithFallback = (
   processType: 'TTL' | 'MAIN',
   mode: 'day' | 'week' | 'month',
   rawIndex: number,
-  currentLabel: string
+  currentLabel: string,
+  customSummary?: ModelSummary[],
+  customSeriesMap?: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>>
 ): SpiderPoint => {
   const seriesKey = processType === 'TTL' ? 'RTY_TTL' : 'RTY_MAIN';
 
-  // Mức 1 — đúng mốc hiện tại (ưu tiên cao nhất, luôn dùng nếu có).
-  const exact = getSeriesValueForModel(model, seriesKey, mode, rawIndex);
+  const exact = getSeriesValueForModel(model, seriesKey, mode, rawIndex, customSeriesMap);
   if (exact != null) return { value: exact, source: 'exact' };
 
-  // Mức 2 — rơi Ngày → Tháng tương ứng. Label ngày có dạng 'MM/DD' nên suy
-  // thẳng ra chỉ số tháng (không cần bảng ánh xạ riêng). KHÔNG áp dụng cho
-  // Tuần vì WEEK_LABELS ('W01'..'W28') không có ánh xạ 1-1 đáng tin cậy
-  // sang tháng — tránh gán nhầm tuần vào sai tháng.
   if (mode === 'day') {
     const mm = parseInt(currentLabel.split('/')[0], 10);
     const monthIdx = mm - 1;
-    if (Number.isFinite(monthIdx) && monthIdx >= 0 && monthIdx < MONTH_LABELS.length) {
-      const monthVal = getSeriesValueForModel(model, seriesKey, 'month', monthIdx);
+    if (Number.isFinite(monthIdx) && monthIdx >= 0) {
+      const monthVal = getSeriesValueForModel(model, seriesKey, 'month', monthIdx, customSeriesMap);
       if (monthVal != null) return { value: monthVal, source: 'month' };
     }
   }
 
-  // Mức 3 — rơi về Tổng hợp cả giai đoạn (MODEL_SUMMARY), mức thô nhất,
-  // luôn có sẵn cho cả 10 model trong dropdown.
-  const summary = MODEL_SUMMARY.find(s => s.model === model);
+  const list = customSummary || MODEL_SUMMARY;
+  const summary = list.find(s => s.model === model);
   const agg = processType === 'TTL' ? summary?.ttl : summary?.main;
   if (agg != null) return { value: agg.actual, source: 'summary' };
 
-  // Chỉ còn null nếu model hoàn toàn không có trong MODEL_SUMMARY (không
-  // nên xảy ra với 10 model chuẩn của dropdown).
   return { value: null, source: 'none' };
 };
 
@@ -585,6 +582,270 @@ const RtyLegendItem: React.FC<RtyLegend> = ({ type, label, color }) => {
   );
 };
 
+const IDB_KEY_RTY_SUMMARY_DATA = 'rty_summary_dynamic_v2';
+
+function idbOpenSummary(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('imvina_dashboard_db', 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('cache')) {
+        db.createObjectStore('cache');
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGetCacheSummary(key: string): Promise<string | null> {
+  try {
+    const db = await idbOpenSummary();
+    return new Promise((resolve) => {
+      const tx = db.transaction('cache', 'readonly');
+      const store = tx.objectStore('cache');
+      const req = store.get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function idbSetCacheSummary(key: string, val: string): Promise<void> {
+  try {
+    const db = await idbOpenSummary();
+    return new Promise((resolve) => {
+      const tx = db.transaction('cache', 'readwrite');
+      const store = tx.objectStore('cache');
+      store.put(val, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    // ignore
+  }
+}
+
+interface RtySummaryDynamicData {
+  modelSummary: ModelSummary[];
+  modelSeries: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>>;
+  dayLabels: string[];
+  weekLabels: string[];
+  monthLabels: string[];
+  lastUpdateLabel: string;
+  dataMaxDate: string;
+  dataMinDate: string;
+}
+
+function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
+  try {
+    const XLSX_lib = (window as any).XLSX || (globalThis as any).XLSX;
+    if (!XLSX_lib) return null;
+    const sheetNames = wb.SheetNames || [];
+    let allRows: any[] = [];
+    sheetNames.forEach((sName: string) => {
+      const sheet = wb.Sheets[sName];
+      if (!sheet) return;
+      const rows = XLSX_lib.utils.sheet_to_json(sheet, { defval: null }) as any[];
+      if (rows && rows.length > 0) {
+        allRows = allRows.concat(rows);
+      }
+    });
+
+    if (allRows.length === 0) return null;
+
+    const gv = (r: any, ...keys: string[]) => {
+      for (const k of keys) {
+        if (r[k] !== undefined && r[k] !== null) return r[k];
+        const lowerK = k.toLowerCase();
+        for (const rk of Object.keys(r)) {
+          if (rk.trim().toLowerCase() === lowerK && r[rk] !== undefined && r[rk] !== null) {
+            return r[rk];
+          }
+        }
+      }
+      return null;
+    };
+
+    const parseDateInfo = (val: any) => {
+      if (val == null) return null;
+      let d: Date | null = null;
+      if (val instanceof Date) {
+        d = val;
+      } else if (typeof val === 'number') {
+        d = new Date(Math.round((val - 25569) * 86400 * 1000));
+      } else if (typeof val === 'string') {
+        const str = val.trim();
+        if (str.includes('-')) {
+          const parts = str.split('-');
+          if (parts.length === 3) d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        } else if (str.includes('/')) {
+          const parts = str.split('/');
+          if (parts.length === 2) d = new Date(2026, Number(parts[0]) - 1, Number(parts[1]));
+          else if (parts.length === 3) d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        }
+      }
+      if (!d || isNaN(d.getTime())) return null;
+      const yyyy = d.getFullYear();
+      const mmNum = d.getMonth() + 1;
+      const ddNum = d.getDate();
+      const mm = String(mmNum).padStart(2, '0');
+      const dd = String(ddNum).padStart(2, '0');
+      const formattedDay = `${mm}/${dd}`;
+      const isoDate = `${yyyy}-${mm}-${dd}`;
+      const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      const monthLabel = monthNames[d.getMonth()] || 'JAN';
+      const startOfYear = new Date(yyyy, 0, 1);
+      const weekNum = Math.ceil((((d.getTime() - startOfYear.getTime()) / 86400000) + startOfYear.getDay() + 1) / 7);
+      const weekLabel = `W${String(weekNum).padStart(2, '0')}`;
+      return { timestamp: d.getTime(), formattedDay, isoDate, monthLabel, weekLabel };
+    };
+
+    const parseRtyVal = (val: any): number | null => {
+      if (val == null) return null;
+      if (typeof val === 'number') {
+        return val > 1 ? val / 100 : val;
+      }
+      if (typeof val === 'string') {
+        const num = parseFloat(val.replace('%', '').trim());
+        if (isNaN(num)) return null;
+        return num > 1 ? num / 100 : num;
+      }
+      return null;
+    };
+
+    const normalizeProcess = (proc: string): string => {
+      const p = proc.trim().toUpperCase();
+      if (p.includes('TTL') || p.includes('TOTAL')) return 'RTY_TTL';
+      if (p.includes('MAIN FVI')) return 'MAIN_FVI';
+      if (p.includes('MAIN ASSY') || p.includes('ASSY')) return 'MAIN_ASSY';
+      if (p.includes('MAIN DRIVING') || p.includes('DRIVING')) return 'MAIN_DRIVING';
+      if (p.includes('MAIN TILT') || p.includes('TILT')) return 'MAIN_TILT';
+      if (p.includes('MAIN')) return 'RTY_MAIN';
+      if (p.includes('SUB1 FPCB') || p.includes('FPCB')) return 'SUB1_FPCB';
+      if (p.includes('SUB1 FVI')) return 'SUB1_FVI';
+      if (p.includes('SUB1')) return 'RTY_SUB1';
+      if (p.includes('SUB2 HOOK') || p.includes('HOOK')) return 'SUB2_HOOK';
+      if (p.includes('SUB2 OVEN') || p.includes('OVEN')) return 'SUB2_OVEN';
+      if (p.includes('SUB2 INDEX') || p.includes('INDEX')) return 'SUB2_INDEX';
+      if (p.includes('SUB2')) return 'RTY_SUB2';
+      return 'RTY_TTL';
+    };
+
+    const parsedRows: Array<{
+      model: string;
+      processKey: string;
+      isActual: boolean;
+      rty: number;
+      dateInfo: NonNullable<ReturnType<typeof parseDateInfo>>;
+    }> = [];
+
+    allRows.forEach(r => {
+      const rawModel = gv(r, 'model', 'Model', 'MODEL');
+      const rawProc  = gv(r, 'process', 'Process', 'PROCESS', 'Item', 'ITEM');
+      const rawType  = gv(r, 'type', 'Type', 'TYPE');
+      const rawDate  = gv(r, 'date', 'Date', 'DATE', 'Period', 'PERIOD');
+      const rawRty   = gv(r, 'rty', 'RTY', 'RTY %', 'RTY%', 'value', 'Value', 'VALUE');
+
+      if (!rawModel || !rawProc) return;
+      const modelStr = String(rawModel).trim();
+      const processKey = normalizeProcess(String(rawProc));
+      const typeStr = rawType ? String(rawType).trim().toLowerCase() : 'actual';
+      const isActual = typeStr.includes('actual') || typeStr.includes('thực tế') || typeStr.includes('act');
+      const rtyVal = parseRtyVal(rawRty);
+      const dateInfo = parseDateInfo(rawDate);
+
+      if (rtyVal != null && dateInfo != null) {
+        parsedRows.push({ model: modelStr, processKey, isActual, rty: rtyVal, dateInfo });
+      }
+    });
+
+    if (parsedRows.length === 0) return null;
+
+    const dayMap = new Map<string, number>();
+    parsedRows.forEach(r => {
+      if (!dayMap.has(r.dateInfo.formattedDay) || r.dateInfo.timestamp < dayMap.get(r.dateInfo.formattedDay)!) {
+        dayMap.set(r.dateInfo.formattedDay, r.dateInfo.timestamp);
+      }
+    });
+    const dayEntries = Array.from(dayMap.entries()).sort((a, b) => a[1] - b[1]);
+    const dayLabels = dayEntries.map(e => e[0]);
+
+    const weekLabels: string[] = [];
+    const monthLabels: string[] = [];
+    parsedRows.forEach(r => {
+      if (!weekLabels.includes(r.dateInfo.weekLabel)) weekLabels.push(r.dateInfo.weekLabel);
+      if (!monthLabels.includes(r.dateInfo.monthLabel)) monthLabels.push(r.dateInfo.monthLabel);
+    });
+
+    const lastUpdateLabel = dayLabels[dayLabels.length - 1] || '07/08';
+    let dataMaxDate = '2026-07-09';
+    let dataMinDate = '2026-01-02';
+    parsedRows.forEach(r => {
+      if (r.dateInfo.isoDate > dataMaxDate) dataMaxDate = r.dateInfo.isoDate;
+      if (r.dateInfo.isoDate < dataMinDate) dataMinDate = r.dateInfo.isoDate;
+    });
+
+    const modelSeries: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>> = {};
+
+    parsedRows.filter(r => r.isActual).forEach(row => {
+      if (!modelSeries[row.model]) modelSeries[row.model] = {};
+      if (!modelSeries[row.model][row.processKey]) {
+        modelSeries[row.model][row.processKey] = {
+          day: new Array(dayLabels.length).fill(null),
+          week: new Array(weekLabels.length).fill(null),
+          month: new Array(monthLabels.length).fill(null),
+        };
+      }
+      const dayIdx = dayLabels.indexOf(row.dateInfo.formattedDay);
+      if (dayIdx >= 0) modelSeries[row.model][row.processKey].day[dayIdx] = row.rty;
+
+      const weekIdx = weekLabels.indexOf(row.dateInfo.weekLabel);
+      if (weekIdx >= 0) modelSeries[row.model][row.processKey].week[weekIdx] = row.rty;
+
+      const monthIdx = monthLabels.indexOf(row.dateInfo.monthLabel);
+      if (monthIdx >= 0) modelSeries[row.model][row.processKey].month[monthIdx] = row.rty;
+    });
+
+    const modelsAll = Object.keys(modelSeries);
+    const modelSummary: ModelSummary[] = modelsAll.map(m => {
+      const getAvg = (procKey: string) => {
+        const arr = (modelSeries[m]?.[procKey]?.day || []).filter((v): v is number => v != null);
+        if (arr.length === 0) return null;
+        return arr.reduce((a, b) => a + b, 0) / arr.length;
+      };
+      const sub1Act = getAvg('RTY_SUB1');
+      const sub2Act = getAvg('RTY_SUB2');
+      const mainAct = getAvg('RTY_MAIN');
+      const ttlAct  = getAvg('RTY_TTL') ?? mainAct ?? 0.95;
+
+      return {
+        model: m,
+        ...(sub1Act != null ? { sub1: { target: 0.992, actual: sub1Act } } : {}),
+        ...(sub2Act != null ? { sub2: { target: 0.988, actual: sub2Act } } : {}),
+        ...(mainAct != null ? { main: { target: 0.983, actual: mainAct } } : {}),
+        ttl: { target: 0.964, actual: ttlAct },
+      };
+    });
+
+    return {
+      modelSummary,
+      modelSeries,
+      dayLabels,
+      weekLabels,
+      monthLabels,
+      lastUpdateLabel,
+      dataMaxDate,
+      dataMinDate,
+    };
+  } catch (err) {
+    console.error('Error parsing RTY summary workbook:', err);
+    return null;
+  }
+}
+
 export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   theme, onToggleTheme: _onToggleTheme, lang, setLang: _setLang, onFileSelected, onSyncProgress,
 }) => {
@@ -594,6 +855,37 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
 
   const [activeTab, setActiveTab] = useState<'summary' | 'rtyTotal' | 'merged'>('summary');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [dynamicRtyData, setDynamicRtyData] = useState<RtySummaryDynamicData | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const cached = await idbGetCacheSummary(IDB_KEY_RTY_SUMMARY_DATA);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.modelSummary && parsed.dayLabels) {
+            setDynamicRtyData(parsed);
+          }
+        } catch { /* ignore */ }
+      }
+    })();
+  }, []);
+
+  const activeModelSummary = dynamicRtyData?.modelSummary || MODEL_SUMMARY;
+  const activeModelSeries  = dynamicRtyData?.modelSeries  || MODEL_SERIES;
+  const activeDayLabels    = dynamicRtyData?.dayLabels    || DAY_LABELS;
+  const activeWeekLabels   = dynamicRtyData?.weekLabels   || WEEK_LABELS;
+  const activeMonthLabels  = dynamicRtyData?.monthLabels  || MONTH_LABELS;
+  const activeLastUpdate   = dynamicRtyData?.lastUpdateLabel || LAST_DATA_UPDATE_LABEL;
+  const activeDataMaxDate  = dynamicRtyData?.dataMaxDate  || '2026-07-09';
+  const activeDataMinDate  = dynamicRtyData?.dataMinDate  || '2026-01-02';
+
+  const activeModelSummarySorted = useMemo(
+    () => [...activeModelSummary].sort((a, b) => (b.ttl.actual - b.ttl.target) - (a.ttl.actual - a.ttl.target)),
+    [activeModelSummary]
+  );
+  const activeBestModel = activeModelSummarySorted[0]?.model || BEST_MODEL;
 
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -620,49 +912,20 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
     return () => clearInterval(id);
   }, [plotlyReady]);
 
-  // ── Filter state — Ngày bắt đầu / Ngày kết thúc MẶC ĐỊNH KHÔNG còn giới
-  //    hạn trong "tháng hiện tại" nữa (bản trước dùng NGÀY ĐẦU/CUỐI THÁNG
-  //    HIỆN TẠI, gây lỗi: đổi sang Tuần/Tháng chỉ còn 1-2 giai đoạn nằm lọt
-  //    trong đúng tháng đó — không đúng nguyên tắc "8 giai đoạn gần nhất").
-  //    FIX (period-window-not-current-month, EPCC): mặc định Ngày bắt đầu/
-  //    kết thúc = TOÀN BỘ khoảng dữ liệu có thật (DATA_MIN_DATE→DATA_MAX_DATE).
-  //    Việc "chỉ lấy 8 giai đoạn gần nhất" giờ hoàn toàn do
-  //    filterAndTakeLast8() quyết định (xem bên dưới) — không còn bị cắt bớt
-  //    bởi khoảng ngày mặc định hẹp. Ngày bắt đầu/kết thúc vẫn có thể chỉnh
-  //    tay để thu hẹp thêm nếu người dùng muốn.
-  const DATA_MIN_DATE = '2026-01-02';
-  const DATA_MAX_DATE = '2026-07-09';
+  const getDefaultStartDate = (): string => activeDataMinDate;
+  const getDefaultEndDate = (): string => activeDataMaxDate;
 
-  const getDefaultStartDate = (): string => DATA_MIN_DATE;
-  const getDefaultEndDate = (): string => DATA_MAX_DATE;
-
-  // State lưu legend ĐỘNG của 2 biểu đồ mạng nhện (TTL/MAIN) — vì các mốc
-  // (07/01, 07/02...) và màu tương ứng thay đổi theo bộ lọc Ngày/Tuần/Tháng
-  // đang chọn, không thể khai báo tĩnh như legends của 4 biểu đồ cột+đường
-  // bên dưới. Được set trong plotSpiderPanel() mỗi lần vẽ lại chart, rồi
-  // render ra thanh tiêu đề (giống hệt cách 4 biểu đồ dưới hiển thị legend)
-  // thay vì dùng legend nội bộ của Plotly — nhường toàn bộ không gian bên
-  // trong ô chart cho biểu đồ mạng nhện to hết cỡ.
   const [spiderLegendTTL, setSpiderLegendTTL] = useState<{ label: string; color: string }[]>([]);
   const [spiderLegendMAIN, setSpiderLegendMAIN] = useState<{ label: string; color: string }[]>([]);
 
-  // MẶC ĐỊNH: chọn sẵn model có hiệu suất RTY tốt nhất (BEST_MODEL) thay vì
-  // "Tất cả" — để 4 thẻ KPI lúc vào trang thể hiện đúng model đang làm tốt
-  // nhất, thay vì số trung bình gộp bị kéo yếu bởi các model khác. Người
-  // dùng vẫn có thể mở dropdown Model để xem "Tất cả" hoặc bất kỳ model
-  // nào khác — số liệu sẽ nhảy theo lựa chọn (xem filteredModels/kpi).
-  const [selectedModel, setSelectedModel] = useState<string>(BEST_MODEL);
+  const [selectedModel, setSelectedModel] = useState<string>(activeBestModel);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
   const [startDate, setStartDate] = useState<string>(getDefaultStartDate);
   const [endDate,   setEndDate]   = useState<string>(getDefaultEndDate);
-  // FIX (unify-with-TargetActualDashboard): đổi từ màu phụ thuộc theme
-  // sang màu CỐ ĐỊNH '#C0EF6A' — copy nguyên văn từ TargetActualDashboard
-  // để nhãn filter (NGÀY BẮT ĐẦU/NGÀY KẾT THÚC/MODEL/XEM THEO) có cùng
-  // màu xanh-vàng chanh ở cả 2 dashboard, không đổi màu theo light/dark.
   const filterLabelColor = '#C0EF6A';
 
   const _resetFilters = () => {
-    setSelectedModel(BEST_MODEL); setViewMode('day');
+    setSelectedModel(activeBestModel); setViewMode('day');
     setStartDate(getDefaultStartDate()); setEndDate(getDefaultEndDate());
   }; void _resetFilters;
 
@@ -741,11 +1004,11 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   ], []);
 
   const { xs, idxs } = useMemo(() => {
-    const labelsForMode = viewMode === 'day' ? DAY_LABELS : viewMode === 'week' ? WEEK_LABELS : MONTH_LABELS;
+    const labelsForMode = viewMode === 'day' ? activeDayLabels : viewMode === 'week' ? activeWeekLabels : activeMonthLabels;
     const idxsVal = filterAndTakeLast8(labelsForMode, viewMode);
     const xsVal   = idxsVal.map(i => labelsForMode[i]);
     return { xs: xsVal, idxs: idxsVal };
-  }, [viewMode, startDate, endDate]);
+  }, [viewMode, startDate, endDate, activeDayLabels, activeWeekLabels, activeMonthLabels]);
 
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const paginationBarRef = useRef<HTMLDivElement | null>(null);
@@ -789,7 +1052,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
 
       const getYs = (key: string): (number | null)[] =>
         idxs.map(i => {
-          const v = getSeriesValueForModel(selectedModel, key, viewMode, i);
+          const v = getSeriesValueForModel(selectedModel, key, viewMode, i, activeModelSeries);
           return v == null ? null : parseFloat((v * 100).toFixed(2));
         });
 
@@ -985,15 +1248,11 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
       if (!el) return;
 
       const seriesKey = processType === 'TTL' ? 'RTY_TTL' : 'RTY_MAIN';
-      const modelsAll = MODEL_SUMMARY.map(m => m.model);
+      const modelsAll = activeModelSummary.map(m => m.model);
 
-      // Mốc ứng viên: vẫn tôn trọng Ngày bắt đầu/kết thúc + Xem theo (xs/idxs),
-      // nhưng chỉ giữ lại mốc có ít nhất 1 model có SỐ LIỆU THẬT đúng mốc đó
-      // (không tính giá trị đã rơi mức) — giống hệt `labelsWithData` bên
-      // PerCapitaTab — rồi mới lấy 8 mốc gần nhất.
       const candidates = xs.map((label, i) => ({ label, rawIndex: idxs[i] }));
       const labelsWithData = candidates.filter(({ rawIndex }) =>
-        modelsAll.some(m => getSeriesValueForModel(m, seriesKey, viewMode, rawIndex) != null)
+        modelsAll.some(m => getSeriesValueForModel(m, seriesKey, viewMode, rawIndex, activeModelSeries) != null)
       );
       const selected = labelsWithData.slice(-8);
 
@@ -1005,16 +1264,13 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
         return;
       }
 
-      // Model có real data (mức 1: đúng Ngày/Tuần/Tháng, hoặc mức 2: Ngày→
-      // Tháng tương ứng) ở ÍT NHẤT 1 trong các mốc đã chọn — model nào không
-      // đạt bị loại hẳn khỏi trục, không dùng "Tổng hợp" để lấp chỗ trống.
       const hasRealDataAtAnySelectedPeriod = (m: string) => selected.some(({ label, rawIndex }) => {
-        if (getSeriesValueForModel(m, seriesKey, viewMode, rawIndex) != null) return true;
+        if (getSeriesValueForModel(m, seriesKey, viewMode, rawIndex, activeModelSeries) != null) return true;
         if (viewMode === 'day') {
           const mm = parseInt(label.split('/')[0], 10);
           const monthIdx = mm - 1;
-          if (Number.isFinite(monthIdx) && monthIdx >= 0 && monthIdx < MONTH_LABELS.length) {
-            if (getSeriesValueForModel(m, seriesKey, 'month', monthIdx) != null) return true;
+          if (Number.isFinite(monthIdx) && monthIdx >= 0 && monthIdx < activeMonthLabels.length) {
+            if (getSeriesValueForModel(m, seriesKey, 'month', monthIdx, activeModelSeries) != null) return true;
           }
         }
         return false;
@@ -1033,7 +1289,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
         // `models` ở trên đã lọc bỏ model không hề có data thật, mức "Tổng
         // hợp" (mức 3) ở đây chỉ còn bù cho các mốc LẺ TẺ thiếu của model đã
         // đủ điều kiện — không còn tạo cả 1 model từ hư không.
-        const points = models.map(m => getSpiderValueWithFallback(m, processType, viewMode, rawIndex, label));
+        const points = models.map(m => getSpiderValueWithFallback(m, processType, viewMode, rawIndex, label, activeModelSummary, activeModelSeries));
         const r = points.map(p => p.value != null ? parseFloat((p.value * 100).toFixed(2)) : null);
         const noteText = points.map(p => SPIDER_SOURCE_LABEL[p.source]);
         // FIX (radar-label-no-marker, EPCC): trước đây gắn thêm dấu "*" vào
@@ -1251,29 +1507,24 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px',
                 borderRadius: '999px', fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap',
-                background: selectedModel === BEST_MODEL ? 'rgba(16,185,129,0.22)' : 'rgba(14,165,233,0.22)',
-                color: selectedModel === BEST_MODEL ? '#34d399' : '#38bdf8',
+                background: selectedModel === activeBestModel ? 'rgba(16,185,129,0.22)' : 'rgba(14,165,233,0.22)',
+                color: selectedModel === activeBestModel ? '#34d399' : '#38bdf8',
               }}>
-                {selectedModel === BEST_MODEL && '⭐ '}
+                {selectedModel === activeBestModel && '⭐ '}
                 {selectedModel || t.allOption}
-                {selectedModel === BEST_MODEL && ` (${t.kpiBestLabel})`}
+                {selectedModel === activeBestModel && ` (${t.kpiBestLabel})`}
               </span>
             </div>
-            {/* FIX (add-last-data-update-label, EPCC): thêm dòng "Dữ liệu
-                cập nhật đến" ngay dưới badge model — đúng vị trí khoanh đỏ
-                trong ảnh yêu cầu. Giá trị lấy từ LAST_DATA_UPDATE_LABEL,
-                phản ánh mốc ngày cuối cùng thực sự có dữ liệu RTY trong
-                file tham chiếu Test4.xlsx (xem chú thích hằng số). */}
             <span style={{ fontSize: '11px', fontWeight: 600, color: '#22c55e', whiteSpace: 'nowrap' }}>
-              📅 {lang === 'vi' ? 'Dữ liệu cập nhật đến' : lang === 'ko' ? '데이터 업데이트 기준일' : 'Data updated to'}: {LAST_DATA_UPDATE_LABEL}
+              📅 {lang === 'vi' ? 'Dữ liệu cập nhật đến' : lang === 'ko' ? '데이터 업데이트 기준일' : 'Data updated to'}: {activeLastUpdate}
             </span>
           </div>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flex: 1, margin: '0 24px', alignItems: 'center' }}>
             <input
               type="date"
               value={startDate}
-              min={DATA_MIN_DATE}
-              max={DATA_MAX_DATE}
+              min={activeDataMinDate}
+              max={activeDataMaxDate}
               onChange={e => setStartDate(e.target.value)}
               className="filter-date-input"
               style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
@@ -1281,8 +1532,8 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
             <input
               type="date"
               value={endDate}
-              min={DATA_MIN_DATE}
-              max={DATA_MAX_DATE}
+              min={activeDataMinDate}
+              max={activeDataMaxDate}
               onChange={e => setEndDate(e.target.value)}
               className="filter-date-input"
               style={{ width: '130px', minWidth: '130px', height: '38px', boxSizing: 'border-box', textAlign: 'center', padding: '8px 4px' }}
@@ -1290,13 +1541,9 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
             <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
               className="header-filter-select" style={{ width: '160px', height: '38px' }}>
               <option value="">{t.allOption}</option>
-              {/* FIX (model-dropdown-sort-desc, EPCC): dùng MODEL_SUMMARY_SORTED
-                  thay vì MODEL_SUMMARY gốc — model hiệu suất tốt nhất (gap
-                  Actual-Target TTL cao nhất) hiện lên đầu danh sách, lùi dần
-                  xuống model yếu nhất, thay vì theo thứ tự trích xuất Excel. */}
-              {MODEL_SUMMARY_SORTED.map(m => (
+              {activeModelSummarySorted.map(m => (
                 <option key={m.model} value={m.model}>
-                  {m.model === BEST_MODEL ? `⭐ ${m.model}` : m.model}
+                  {m.model === activeBestModel ? `⭐ ${m.model}` : m.model}
                 </option>
               ))}
             </select>
@@ -1334,6 +1581,17 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
                     const data = new Uint8Array(evt.target!.result as ArrayBuffer);
                     const XLSX = await import('xlsx');
                     const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+
+                    const dynamicResult = parseWorkbookToRtySummaryData(workbook);
+                    if (dynamicResult && dynamicResult.dayLabels.length > 0) {
+                      setDynamicRtyData(dynamicResult);
+                      const sortedBest = [...dynamicResult.modelSummary].sort((a, b) => (b.ttl.actual - b.ttl.target) - (a.ttl.actual - a.ttl.target))[0]?.model || '';
+                      setSelectedModel(sortedBest);
+                      setStartDate(dynamicResult.dataMinDate);
+                      setEndDate(dynamicResult.dataMaxDate);
+                      await idbSetCacheSummary(IDB_KEY_RTY_SUMMARY_DATA, JSON.stringify(dynamicResult));
+                    }
+
                     if (onFileSelected) {
                       onFileSelected(file, workbook);
                     }
