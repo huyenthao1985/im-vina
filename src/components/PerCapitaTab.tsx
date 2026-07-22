@@ -1287,7 +1287,7 @@ function buildChart5(
 ) {
   const models = data.activeModels;
   if (models.length === 0 || displayLabels.length === 0) {
-    return { traces: [], layout: {} };
+    return { traces: [], layout: {}, legend: [] as { label: string; color: string }[] };
   }
 
   // FIX (spider-data-source, EPCC): trước đây luôn ưu tiên pcByModelLabel — map
@@ -1322,7 +1322,7 @@ function buildChart5(
   const modelsWithData = models.filter(m =>
     selectedLabels.some(lbl => (activeDataMap[m]?.[lbl] ?? 0) > 0)
   );
-  if (modelsWithData.length === 0) return { traces: [], layout: {} };
+  if (modelsWithData.length === 0) return { traces: [], layout: {}, legend: [] as { label: string; color: string }[] };
 
   // Đóng vòng radar: thêm model đầu vào cuối
   const modelsClosed = [...modelsWithData, modelsWithData[0]];
@@ -1343,18 +1343,45 @@ function buildChart5(
       r: rVals,
       theta: modelsClosed,
       fill: 'toself',
-      fillcolor: radarColors[i % radarColors.length] + '22', // 13% opacity
+      // EPCC (percapita-radar-unify-rtytotal) - FIX theo yêu cầu người dùng
+      // "lấy cách làm của RTY Total... đồng nhất từ vòng ring trong lẫn phủ
+      // màu mờ bên trong": đổi alpha fillcolor từ '22' (~13%) sang '1A'
+      // (~10%), ĐÚNG giá trị `plotSpiderPanel()` dùng trong RtyTotalTab.tsx
+      // (`fillcolor: color + '1A'`) — cùng độ mờ lớp phủ, không còn lệch
+      // giữa 2 tab dùng chung "ngôn ngữ" biểu đồ nhện.
+      fillcolor: radarColors[i % radarColors.length] + '1A',
       line: { color: radarColors[i % radarColors.length], width: 2 },
       mode: 'lines+markers+text',
       marker: { color: radarColors[i % radarColors.length], size: 5 },
       text: textVals,
       texttemplate: '%{text}',
       textposition: 'top center',
-      textfont: { color: radarColors[i % radarColors.length], size: 10, family: 'inherit' },
+      // EPCC (percapita-radar-unify-rtytotal): cỡ chữ nhãn số liệu 10→10.8,
+      // ĐÚNG `textfont.size` của plotSpiderPanel() trong RtyTotalTab.tsx.
+      textfont: { color: radarColors[i % radarColors.length], size: 10.8, family: 'inherit' },
       name: lbl,
       hovertemplate: `${lbl}<br>%{theta}: %{r}<extra></extra>`,
     };
   });
+
+  // EPCC (percapita-radar-unify-rtytotal) - THÊM MỚI: tự động "zoom" trục
+  // bán kính theo dữ liệu thực, ĐÚNG nguyên lý rMin/rMax của
+  // plotSpiderPanel() trong RtyTotalTab.tsx (radar RTY dùng ngưỡng cố định
+  // 0/50/75/85 vì luôn là thang % 0-100 — Chart 5 ở đây là số lượng
+  // sản phẩm/người, không có trần cố định, nên tổng quát hoá bằng cách chọn
+  // "bước tròn đẹp" (niceStep) theo độ lớn dữ liệu thay vì hard-code %).
+  // Mục đích giống hệt RTY: tránh toàn bộ đa giác dồn cụm sát viền ngoài khi
+  // các giá trị đều cao & gần nhau, giúp đọc rõ khác biệt giữa các model hơn
+  // (đúng vấn đề "vòng ring trong" người dùng phản ánh ở ảnh 1 — trục luôn cố
+  // định 0→250 dù dữ liệu thật dồn hết ở nửa ngoài).
+  const allR = traces.flatMap(tr => (tr.r as number[])).filter(v => v > 0);
+  const minR = allR.length ? Math.min(...allR) : 0;
+  const maxR = allR.length ? Math.max(...allR) : 100;
+  const niceStep = maxR > 500 ? 100 : maxR > 200 ? 50 : maxR > 80 ? 20 : maxR > 20 ? 10 : 5;
+  const rMin = Math.max(0, Math.floor((minR * 0.9) / niceStep) * niceStep);
+  const rMax = Math.ceil((maxR * 1.08) / niceStep) * niceStep;
+
+  const legend = selectedLabels.map((lbl, i) => ({ label: lbl, color: radarColors[i % radarColors.length] }));
 
   const layout = {
     paper_bgcolor: 'transparent',
@@ -1362,21 +1389,33 @@ function buildChart5(
       bgcolor: 'transparent',
       radialaxis: {
         visible: true,
+        range: [rMin, rMax],
         color: textColor,
         gridcolor: textColor + '30',
-        tickfont: { size: 12, color: textColor },
+        // EPCC (percapita-radar-unify-rtytotal): cỡ chữ trục bán kính
+        // 12→9.6 + thêm `angle: 90`, ĐÚNG `radialaxis` của plotSpiderPanel()
+        // trong RtyTotalTab.tsx.
+        tickfont: { size: 9.6, color: textColor },
+        angle: 90,
       },
       angularaxis: {
-        tickfont: { size: 13, color: textColor },
+        // EPCC (percapita-radar-unify-rtytotal): cỡ chữ trục góc (tên model)
+        // 13→10.8, ĐÚNG `angularaxis.tickfont.size` của plotSpiderPanel().
+        tickfont: { size: 10.8, color: textColor },
         gridcolor: textColor + '20',
       },
     },
-    font: { color: textColor, size: 13 },
-    margin: { t: 25, r: 85, b: 25, l: 45 },
-    legend: { orientation: 'v', x: 1.05, y: 0.5, xanchor: 'left', yanchor: 'middle', font: { size: 13, color: textColor } },
-    showlegend: true,
+    font: { color: textColor, size: 11.4 },
+    // EPCC (percapita-radar-unify-rtytotal): margin thu gọn về
+    // {t:20,r:20,b:20,l:20} + tắt legend nội bộ Plotly (showlegend:false),
+    // ĐÚNG layout của plotSpiderPanel() — legend giờ hiển thị ở header panel
+    // (component ngoài Plotly) bằng PCLegendItem, cùng kiểu RtyLegendItem
+    // RTY Total đang dùng, thay vì legend dọc bên phải chiếm nhiều chỗ như
+    // trước (margin.r từng phải để 85).
+    margin: { t: 20, r: 20, b: 20, l: 20 },
+    showlegend: false,
   };
-  return { traces, layout };
+  return { traces, layout, legend };
 }
 
 // ─── Production (DAY / NIGHT / TTL) data & charts ──────────────────────────
@@ -1666,6 +1705,13 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
   const [granularity, setGranularity] = useState<'day'|'week'|'month'|'year'>('day');
   const [modelFilter, setModelFilter] = useState<string>('all');
   const [dateError, setDateError] = useState<string | null>(null);
+  // EPCC (percapita-radar-unify-rtytotal) - THÊM MỚI: legend động của Chart 5
+  // (Spider), set bên trong effect vẽ Plotly sau khi buildChart5() tính ra
+  // selectedLabels/màu — ĐÚNG pattern `spiderLegendTTL` (state do
+  // plotSpiderPanel() set) đã dùng ở RtyTotalTab.tsx, để header panel hiển
+  // thị legend bằng component ngoài (PCLegendItem) thay vì legend nội bộ
+  // của Plotly.
+  const [chart5Legend, setChart5Legend] = useState<{ label: string; color: string }[]>([]);
 
   // FIX: đồng hồ realtime đã bị bỏ khỏi Mục 3 sheet 2 theo yêu cầu — không
   // còn cần state/interval/formatter riêng cho clock ở đây nữa.
@@ -1824,6 +1870,7 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
 
         const ch5 = buildChart5(data, labels, textColor, gridColor, lang);
         window.Plotly.react(ids.current.c5, ch5.traces, ch5.layout, { displayModeBar: false, responsive: true });
+        setChart5Legend(ch5.legend);
       } catch (err) {
         console.warn('[PerCapitaTab] Plotly render error (ignored):', err);
       }
@@ -2318,6 +2365,18 @@ export const PerCapitaTab: React.FC<PerCapitaTabProps> = ({
                 <span style={{ fontSize: '11px', color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center' }}>
                   {lang === 'vi' ? 'Tối đa 10 giai đoạn gần nhất' : lang === 'ko' ? '최근 10기간' : 'Up to last 10 periods'}
                 </span>
+                {/* EPCC (percapita-radar-unify-rtytotal) - THÊM MỚI: legend
+                    động ngoài Plotly (đúng "cách vẽ" plotSpiderPanel() của
+                    RtyTotalTab.tsx — showlegend:false trong layout, legend
+                    thật hiển thị ở header panel bằng component riêng, ở đây
+                    tái sử dụng PCLegendItem sẵn có thay vì tạo mới). */}
+                {chart5Legend.length > 0 && (
+                  <div style={{ display: 'flex', gap: '10px', rowGap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {chart5Legend.map((lg, i) => (
+                      <PCLegendItem key={i} type="line" color={lg.color} label={lg.label} />
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="chart-holder">
                 <div id={ids.current.c5} style={{ minHeight: '450px' }} />

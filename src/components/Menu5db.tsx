@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { NeonButton } from './NeonButton';
 
@@ -707,7 +707,7 @@ const SALES_CHART1_COLORS = {
 
 const TEXT: Record<Lang, Record<string, string>> = {
   vi: {
-    title: 'HIỆU SUẤT SẢN XUẤT THEO MODEL',
+    title: 'TÌNH HÌNH DOANH THU - F-COST',
     tabOverview: 'TÌNH HÌNH F-COST',
     tabDetail: 'Chi tiết & dữ liệu',
     // EPCC (menu5-revenue-tab) - THÊM MỚI tab "TÌNH HÌNH DOANH THU", nhân bản
@@ -741,9 +741,14 @@ const TEXT: Record<Lang, Record<string, string>> = {
     // title này để hiển thị liền 1 dòng đúng như ảnh vẽ.
     revChart5Title: 'RTV THEO THÁNG NĂM', revChart5Sub: 'RTV theo tháng trong năm',
     revChart6Title: 'RTV THEO MODEL', revChart6Sub: 'RTV theo model',
-    revTableTitle: 'Top 15 Model theo Doanh số',
+    revTableTitle: 'Toàn bộ Model theo Doanh số',
     revColModel: 'MODEL', revColCustomer: 'KHÁCH HÀNG', revColType: 'TYPE',
     revColProd: 'SẢN XUẤT (K)', revColShip: 'XUẤT HÀNG (K)', revColSales: 'DOANH SỐ (K$)', revColRatio: 'TỶ LỆ XH/SX',
+    revColRtv: 'RTV (K)', revColRtvRate: '% RATE', revColGrowth: 'TĂNG TRƯỞNG DOANH SỐ', revColScrap: 'SCRAP (K)',
+    revColPeriod: 'NĂM/KỲ',
+    revFilterModelLabel: 'Model:', revFilterYearLabel: 'Năm:', revFilterQuarterLabel: 'Quý:',
+    revFilterMonthLabel: 'Tháng:', revFilterCustomerLabel: 'Khách hàng:',
+    revFilterSearchPlaceholder: 'Tìm kiếm Model, Đối tác, Khách hàng',
     revLegendShip: 'XUẤT HÀNG (K)', revLegendProd: 'SẢN XUẤT (K)', revLegendSales: 'DOANH SỐ (K$)', revLegendYoy: 'Tr.trưởng YoY',
     revLegendShipKea: 'SHIPMENT(KEA)', revLegendRtvKea: 'RTV(KEA)', revLegendRtvRate: '% Rate',
     revYoyPanelTitle: 'Tăng giảm giữa\ncác năm (K$)',
@@ -777,7 +782,7 @@ const TEXT: Record<Lang, Record<string, string>> = {
     // MỞ HỘP THOẠI CHỌN FILE ĐỂ TẢI LÊN (import), không phải xuất/tải xuống
     // báo cáo. Tên cũ "exportExcel" gắn với handleExport() (ghi file mới)
     // gây hiểu sai đúng như người dùng phản ánh — xem chỗ dùng ở toolbar.
-    importExcelBtn: 'Tải Excel',
+    importExcelBtn: 'Tải tệp lên',
     updatedToLabel: 'DỮ LIỆU CẬP NHẬT ĐẾN',
     kpi1: 'F-COST TB',
     kpi2: 'SCRAP AMT',
@@ -810,7 +815,7 @@ const TEXT: Record<Lang, Record<string, string>> = {
     dataUpdatedAt: '✅ Đã cập nhật lúc',
   },
   en: {
-    title: 'MODEL PRODUCTION PERFORMANCE',
+    title: 'REVENUE - F-COST STATUS',
     tabOverview: 'Overview',
     tabDetail: 'Detail & Data',
     tabRevenue: 'Revenue Overview',
@@ -824,9 +829,14 @@ const TEXT: Record<Lang, Record<string, string>> = {
     revChart4Title: 'SHARE BY CUSTOMER', revChart4Sub: 'Customer share',
     revChart5Title: 'RTV BY MONTH/YEAR', revChart5Sub: 'RTV by month in year',
     revChart6Title: 'RTV BY MODEL', revChart6Sub: 'RTV by model',
-    revTableTitle: 'Top 15 Models by Sales',
+    revTableTitle: 'All Models by Sales',
     revColModel: 'MODEL', revColCustomer: 'CUSTOMER', revColType: 'TYPE',
     revColProd: "PROD'N (K)", revColShip: 'SHIPMENT (K)', revColSales: 'SALES (K$)', revColRatio: 'SHIP/PROD RATIO',
+    revColRtv: 'RTV (K)', revColRtvRate: '% RATE', revColGrowth: 'SALES GROWTH', revColScrap: 'SCRAP (K)',
+    revColPeriod: 'YEAR/PERIOD',
+    revFilterModelLabel: 'Model:', revFilterYearLabel: 'Year:', revFilterQuarterLabel: 'Quarter:',
+    revFilterMonthLabel: 'Month:', revFilterCustomerLabel: 'Customer:',
+    revFilterSearchPlaceholder: 'Search Model, Partner, Customer',
     revLegendShip: 'SHIPMENT (K)', revLegendProd: "PROD'N (K)", revLegendSales: 'SALES AMT (K$)', revLegendYoy: 'YoY Growth',
     revLegendShipKea: 'SHIPMENT(KEA)', revLegendRtvKea: 'RTV(KEA)', revLegendRtvRate: '% Rate',
     revYoyPanelTitle: 'Change between\nyears (K$)',
@@ -842,7 +852,7 @@ const TEXT: Record<Lang, Record<string, string>> = {
     byMonth: 'Month',
     byQuarter: 'Quarter',
     byYear: 'Year',
-    importExcelBtn: 'Import Excel',
+    importExcelBtn: 'Upload File',
     updatedToLabel: 'DATA UPDATED TO',
     kpi1: 'AVG F-COST',
     kpi2: 'SCRAP AMT',
@@ -876,7 +886,7 @@ const TEXT: Record<Lang, Record<string, string>> = {
     dataUpdatedAt: '✅ Updated at',
   },
   ko: {
-    title: '모델별 생산 실적',
+    title: '매출 - F-COST 현황',
     tabOverview: '전체 현황',
     tabDetail: '상세 데이터',
     tabRevenue: '매출 현황',
@@ -890,9 +900,14 @@ const TEXT: Record<Lang, Record<string, string>> = {
     revChart4Title: '고객사별 비중', revChart4Sub: '고객사 비중',
     revChart5Title: '월별 RTV', revChart5Sub: '연중 월별 RTV',
     revChart6Title: '모델별 RTV', revChart6Sub: '모델별 RTV',
-    revTableTitle: '매출 상위 15개 모델',
+    revTableTitle: '전체 모델 매출 현황',
     revColModel: '모델', revColCustomer: '고객사', revColType: '타입',
     revColProd: '생산 (K)', revColShip: '출하 (K)', revColSales: '매출 (K$)', revColRatio: '출하/생산 비율',
+    revColRtv: 'RTV (K)', revColRtvRate: '% RATE', revColGrowth: '매출 성장', revColScrap: 'SCRAP (K)',
+    revColPeriod: '연도/기간',
+    revFilterModelLabel: '모델:', revFilterYearLabel: '연도:', revFilterQuarterLabel: '분기:',
+    revFilterMonthLabel: '월:', revFilterCustomerLabel: '고객사:',
+    revFilterSearchPlaceholder: '모델, 파트너, 고객 검색',
     revLegendShip: '출하 (K)', revLegendProd: '생산 (K)', revLegendSales: '매출 (K$)', revLegendYoy: '전년 대비 증감',
     revLegendShipKea: 'SHIPMENT(KEA)', revLegendRtvKea: 'RTV(KEA)', revLegendRtvRate: '% Rate',
     revYoyPanelTitle: '연도별 증감\n(K$)',
@@ -909,7 +924,7 @@ const TEXT: Record<Lang, Record<string, string>> = {
     byMonth: '월',
     byQuarter: '분기',
     byYear: '년',
-    importExcelBtn: '엑셀 불러오기',
+    importExcelBtn: '파일 업로드',
     updatedToLabel: '데이터 업데이트 기준일',
     kpi1: '평균 F-Cost',
     kpi2: 'SCRAP 금액',
@@ -1242,6 +1257,22 @@ function computeAutoMaxV(series: { values: (number | null)[] }[]): number {
   return Math.max(step, Math.ceil((dataMax * 1.1) / step) * step);
 }
 
+// EPCC (menu5-chart234-dual-y-axis-5pct) - FIX theo yêu cầu người dùng "tại
+// Chart2,3,4 đối với các giá trị model nào lớn hơn 5% hãy chuyển sang trục Y
+// [phụ] rồi thể hiện ra trục Y": trước đây CHỈ CÓ 1 trục Y bên trái dùng
+// chung cho MỌI model — model nào có đỉnh vượt trần (VD SO1C2EH ~28% ở Chart
+// 2 trần 3.5%, hay 68.4%/28.1% ở SPL) đều bị KẸP (clamp) sát mép trên, mất
+// hẳn hình dạng đường và không đọc được số thật trên trục. Fix: bất kỳ model
+// nào có ÍT NHẤT 1 điểm dữ liệu > 5% (SECONDARY_AXIS_THRESHOLD) được coi là
+// "model biến động lớn" — TOÀN BỘ đường của model đó chuyển hẳn sang đo theo
+// TRỤC Y PHỤ bên phải (thang riêng, tự tính theo đúng giá trị thật lớn nhất
+// của riêng nhóm này, không còn bị kẹp), trục Y CHÍNH bên trái giữ nguyên
+// hành vi cũ (fixedMaxV nếu có, hoặc auto) chỉ tính theo các model còn lại
+// (≤5%) — nhờ vậy nhóm model chiếm đa số (0-5%) không còn bị dồn sát đáy.
+// Trục phụ chỉ được VẼ RA (đường trục + nhãn %) khi có ít nhất 1 model thuộc
+// nhóm này, để không đổi giao diện các trường hợp không có biến động lớn.
+const SECONDARY_AXIS_THRESHOLD = 0.05;
+
 function MultiLineChart({
   categories, series, height = 220, theme, maxV: fixedMaxV,
 }: {
@@ -1263,10 +1294,24 @@ function MultiLineChart({
   // 0.05); nếu KHÔNG truyền (Chart 6/SPL) thì tự tính auto từ dữ liệu thực
   // qua `computeAutoMaxV()` bên dưới, để điểm đột biến (VD SPL 33.7%) không
   // còn bị kẹp mất ở mép 3.5% như trước.
+  // EPCC (menu5-chart234-dual-y-axis-5pct) - `fixedMaxV` giờ CHỈ áp dụng cho
+  // trục CHÍNH (model ≤5%); trục PHỤ (model >5%) luôn tự tính auto theo đúng
+  // dữ liệu thật của riêng nhóm đó (xem `maxV2` bên dưới), không nhận prop
+  // cố định vì mỗi chart có mức đột biến khác nhau, không có 1 trần chung
+  // hợp lý.
   maxV?: number;
 }) {
   const axisTextColor = theme === 'light' ? '#000000' : '#e5e7eb';
   const width = 620;
+  // EPCC (menu5-chart234-dual-y-axis-5pct) - tách series thành 2 nhóm theo
+  // ngưỡng SECONDARY_AXIS_THRESHOLD: nhóm `secondary` (có ít nhất 1 điểm
+  // >5%) đo theo trục phụ bên phải, nhóm `primary` (còn lại) đo theo trục
+  // chính bên trái như hành vi cũ. `hasSecondary` quyết định có vẽ trục phụ
+  // (đường trục + nhãn %) hay không — giữ nguyên giao diện cũ khi mọi model
+  // đều ≤5%.
+  const secondarySeries = series.filter(s => s.values.some(v => v != null && v > SECONDARY_AXIS_THRESHOLD));
+  const primarySeries = series.filter(s => !secondarySeries.includes(s));
+  const hasSecondary = secondarySeries.length > 0;
   // EPCC (menu5-chart1-2-restore-axis-gutter) - giống Chart 1: chỉ cần
   // gutter TRÁI cho nhãn % (chart này không có trục phải) — padR giữ gần 0
   // vì không có nhãn nào cần chỗ bên phải, đường dữ liệu vẫn kéo gần sát mép
@@ -1274,7 +1319,11 @@ function MultiLineChart({
   // EPCC (menu5-chart1-2-axis-label-clip-fix) - cùng nguyên nhân/cách fix
   // như Chart 1 (xem comment chi tiết ở ComboBarDualLineChart): tăng padL
   // 30→42 để nhãn % dài hơn (VD '11.1%') không bị cắt mất ký tự đầu.
-  const padL = 42, padR = 6, padT = 16, padB = 24;
+  // EPCC (menu5-chart234-dual-y-axis-5pct) - khi có trục phụ, padR cần đủ
+  // rộng (42, bằng padL) để chứa nhãn % của trục phải; khi không có trục phụ
+  // giữ nguyên padR=6 như cũ (không đổi giao diện các chart không cần trục
+  // phụ).
+  const padL = 42, padR = hasSecondary ? 42 : 6, padT = 16, padB = 24;
   const innerW = width - padL - padR;
   const innerH = height - padT - padB;
   const n = Math.max(1, categories.length);
@@ -1291,9 +1340,22 @@ function MultiLineChart({
   // EPCC (menu5-chart34-y-axis-fixed-vs-auto) - giờ chỉ CÒN LÀ TRẦN MẶC ĐỊNH
   // khi không có chart nào truyền `maxV` hay dữ liệu rỗng; Chart 2/5 truyền
   // hẳn số cố định riêng, Chart 6 bỏ trống để rơi vào nhánh auto bên dưới.
-  const maxV = fixedMaxV ?? computeAutoMaxV(series);
+  // EPCC (menu5-chart234-dual-y-axis-5pct) - trần trục CHÍNH giờ chỉ tính
+  // trên `primarySeries` (model ≤5%) — vì nhóm >5% đã tách sang trục phụ,
+  // không còn kéo giãn trần trục chính lên nữa. Nếu KHÔNG có model nào ≤5%
+  // (hiếm, toàn bộ đều >5%) thì rơi về tính trên `series` gốc để tránh chia
+  // cho 0 / trục chính trống vô nghĩa.
+  const maxV = fixedMaxV ?? computeAutoMaxV(primarySeries.length ? primarySeries : series);
+  // EPCC (menu5-chart234-dual-y-axis-5pct) - trần trục PHỤ luôn tự tính auto
+  // theo đúng dữ liệu thật của nhóm >5% (không nhận fixedMaxV, không kẹp).
+  const maxV2 = hasSecondary ? computeAutoMaxV(secondarySeries) : 1;
   const xOf = (i: number) => padL + step * i;
   const yOf = (v: number) => Math.max(padT, padT + innerH - (v / maxV) * innerH);
+  const yOf2 = (v: number) => Math.max(padT, padT + innerH - (v / maxV2) * innerH);
+  // EPCC (menu5-chart234-dual-y-axis-5pct) - chọn đúng hàm quy đổi toạ độ Y
+  // (trục chính hay trục phụ) cho từng series, dựa trên việc series đó có
+  // nằm trong nhóm `secondarySeries` hay không.
+  const yOfForSeries = (s: any) => (secondarySeries.includes(s) ? yOf2 : yOf);
 
   return (
     // EPCC (menu5-chart1-2-svg-aspect-ratio-gap) - cùng nguyên nhân/cách fix
@@ -1312,11 +1374,27 @@ function MultiLineChart({
           {(maxV * tt * 100).toFixed(1)}%
         </text>
       ))}
+      {/* EPCC (menu5-chart234-dual-y-axis-5pct) - TRỤC Y PHỤ bên phải, chỉ vẽ
+          khi `hasSecondary` (có model >5%). Dùng đường trục riêng (nét đứt để
+          phân biệt với trục chính) + nhãn % lấy theo `maxV2` (thang riêng của
+          nhóm model biến động lớn), đặt sát mép phải khung vẽ
+          (`width - padR`). */}
+      {hasSecondary && (
+        <>
+          <line x1={width - padR} x2={width - padR} y1={padT} y2={padT + innerH} stroke="var(--text-2, #9aa3b2)" strokeWidth={1} strokeDasharray="2,2" />
+          {[0, 0.25, 0.5, 0.75, 1].map((tt, i) => (
+            <text key={`yl2-${i}`} x={width - padR + 6} y={padT + innerH * (1 - tt) + 3} fontSize={10.2} fontWeight={700} textAnchor="start" fill={axisTextColor}>
+              {(maxV2 * tt * 100).toFixed(1)}%
+            </text>
+          ))}
+        </>
+      )}
       {series.map((s, si) => (
-        <path key={si} d={buildSmoothLinePath(s.values, xOf, yOf)} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+        <path key={si} d={buildSmoothLinePath(s.values, xOf, yOfForSeries(s))} fill="none" stroke={s.color} strokeWidth={1.8}
+          strokeLinejoin="round" strokeLinecap="round" strokeDasharray={secondarySeries.includes(s) ? '6,3' : undefined} />
       ))}
       {series.map((s, si) => s.values.map((v, i) => v == null ? null : (
-        <circle key={`${si}-${i}`} cx={xOf(i)} cy={yOf(v)} r={2.5} fill={s.color} />
+        <circle key={`${si}-${i}`} cx={xOf(i)} cy={yOfForSeries(s)(v)} r={2.5} fill={s.color} />
       )))}
       {/* EPCC (menu5-chart2-point-value-labels) - FIX theo yêu cầu người
           dùng "cho hiển thị số liệu của các biểu đồ đường này": trước đây
@@ -1328,7 +1406,7 @@ function MultiLineChart({
           thay vì 11.7) vì Chart 2 có tới 8 đường cùng lúc, cần tiết kiệm
           không gian để tránh chồng chéo quá mức. */}
       {series.map((s, si) => s.values.map((v, i) => v == null ? null : (
-        <text key={`vl${si}-${i}`} x={xOf(i)} y={yOf(v) - 6} fontSize={8.5} fontWeight={700}
+        <text key={`vl${si}-${i}`} x={xOf(i)} y={yOfForSeries(s)(v) - 6} fontSize={8.5} fontWeight={700}
           textAnchor="middle" fill={s.color}>
           {(v * 100).toFixed(2)}%
         </text>
@@ -1365,6 +1443,27 @@ function RadarChart({
   rings?: number;
 }) {
   const axisTextColor = theme === 'light' ? '#000000' : '#e5e7eb';
+  // EPCC (menu5-radar-lightmode-grid-visible) - FIX ROOT CAUSE "đường tròn
+  // nhện gần như biến mất ở light mode": lưới cũ dùng thẳng biến CSS
+  // `var(--border-soft, #2a2f3a)` — biến này được định nghĩa để hợp với nền
+  // TỐI của các dashboard khác trong app, nhưng card F-Cost (ChartCard) có
+  // nền TRẮNG ở light mode, khiến `--border-soft` (vốn đã nhạt) gần như
+  // trong suốt trên nền trắng. Tách riêng màu lưới cho radar theo `theme`
+  // (không phụ thuộc `--border-soft`), cùng quy ước "đen mờ ở light / trắng
+  // mờ ở dark" như `axisTextColor` phía trên — đảm bảo đổi theme vẫn đúng
+  // màu ở cả 2 chế độ.
+  const gridStroke = theme === 'light' ? 'rgba(15,23,42,0.28)' : 'rgba(226,232,240,0.22)';
+  const gridStrokeOuter = theme === 'light' ? 'rgba(15,23,42,0.42)' : 'rgba(226,232,240,0.34)';
+  const axisLineColor = theme === 'light' ? 'rgba(15,23,42,0.32)' : 'rgba(226,232,240,0.26)';
+  // EPCC (menu5-radar-inner-wash) - THÊM MỚI lớp phủ mờ phía trong (như ảnh
+  // tham chiếu RTY Total) — ĐÂY LÀ NỀN TRANG TRÍ TĨNH, không tính từ dữ liệu
+  // (khác RTY Total, nơi hiệu ứng "nền nhạt" tự nhiên sinh ra từ nhiều
+  // series dữ liệu cao/đều chồng lớp — xem giải thích trước đó). Dùng
+  // radial gradient nhạt dần ra biên, theo đúng yêu cầu người dùng "có thể
+  // làm phủ mờ nền phía trong", màu trung tính đổi theo theme.
+  const washColor = theme === 'light' ? 'rgba(99,102,241,0.07)' : 'rgba(129,140,248,0.11)';
+  const gradientIdRef = useRef(`radarWash-${Math.random().toString(36).slice(2)}`);
+  const gradientId = gradientIdRef.current;
   const cx = size / 2, cy = size / 2;
   // padding đủ rộng để chứa nhãn tháng (category) + nhãn % ở các vòng lưới,
   // cùng nguyên tắc padL/padR của MultiLineChart (chừa chỗ cho text, không để
@@ -1389,54 +1488,97 @@ function RadarChart({
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   };
 
-  // Các vòng lưới đồng tâm (đa giác, không phải hình tròn — đúng chuẩn radar
-  // chart nhiều trục) tại 25/50/75/100% + nhãn % dọc theo trục đầu tiên
-  // (category[0], hướng lên đỉnh), cùng vị trí nhãn trục Y của MultiLineChart.
+  // EPCC (menu5-radar-circular-grid) - FIX theo yêu cầu người dùng "phân
+  // tích tại sao vẫn không giống hình 2 có nền màu nhạt bên trong và có
+  // vòng tròn bên ngoài": nguyên nhân gốc là lưới cũ vẽ dạng ĐA GIÁC khớp
+  // đúng số trục (7 cạnh cho 7 trục TTL+6 tháng), trong khi Plotly
+  // `radialaxis` (dùng ở RTY Total, plotSpiderPanel()) MẶC ĐỊNH vẽ lưới là
+  // VÒNG TRÒN ĐỒNG TÂM THẬT SỰ bất kể số trục — khiến 2 chart nhìn khác hẳn
+  // dù cùng là "radar". Đổi ringLevels sang vẽ bằng <circle> (đường tròn
+  // hoàn chỉnh) thay vì <polygon>, đúng hành vi mặc định của Plotly.
   const ringLevels = Array.from({ length: rings }, (_, ri) => (ri + 1) / rings);
 
   return (
     <svg viewBox={`0 0 ${size} ${size}`} width="100%" height={size} role="img">
-      {/* Lưới đa giác đồng tâm */}
-      {ringLevels.map((lv, ri) => {
-        const pts = categories.map((_, i) => pointAt(i, radius * lv).join(',')).join(' ');
-        return (
-          <polygon key={ri} points={pts} fill="none" stroke="var(--border-soft, #2a2f3a)" strokeWidth={1} strokeDasharray="3,4" />
-        );
-      })}
+      <defs>
+        <radialGradient id={gradientId} cx="50%" cy="50%" r="65%">
+          <stop offset="0%" stopColor={washColor} stopOpacity={1} />
+          <stop offset="100%" stopColor={washColor} stopOpacity={0} />
+        </radialGradient>
+      </defs>
+      {/* Lớp phủ mờ nền phía trong — vẽ TRƯỚC lưới/trục/dữ liệu (nằm dưới cùng) */}
+      <circle cx={cx} cy={cy} r={radius} fill={`url(#${gradientId})`} />
+      {/* Lưới vòng tròn đồng tâm (không còn là đa giác) — các vòng phụ bên
+          trong vẫn nét đứt mảnh như cũ. */}
+      {ringLevels.map((lv, ri) => (
+        <circle key={ri} cx={cx} cy={cy} r={radius * lv} fill="none"
+          stroke={gridStroke} strokeWidth={1} strokeDasharray="3,4" />
+      ))}
+      {/* Vòng ngoài cùng — nét liền đậm hơn, làm viền khung radar (đúng
+          "vòng tròn bên ngoài" trong ảnh tham chiếu RTY Total), tách biệt
+          rõ với các vòng lưới phụ nét đứt bên trong. */}
+      <circle cx={cx} cy={cy} r={radius} fill="none" stroke={gridStrokeOuter} strokeWidth={1.4} />
       {/* Trục tia từ tâm ra từng category */}
       {categories.map((_, i) => {
         const [x2, y2] = pointAt(i, radius);
-        return <line key={i} x1={cx} y1={cy} x2={x2} y2={y2} stroke="var(--text-2, #9aa3b2)" strokeWidth={1} />;
+        return <line key={i} x1={cx} y1={cy} x2={x2} y2={y2} stroke={axisLineColor} strokeWidth={1} />;
       })}
       {/* Nhãn % dọc trục đầu tiên (giống cột nhãn trục Y bên trái của Chart 2) */}
       {ringLevels.map((lv, ri) => {
         const [x, y] = pointAt(0, radius * lv);
         return (
-          <text key={`rl${ri}`} x={x + 6} y={y - 4} fontSize={9.5} fontWeight={700} textAnchor="start" fill={axisTextColor}>
+          <text key={`rl${ri}`} x={x + 6} y={y - 4} fontSize={9.6} fontWeight={700} textAnchor="start" fill={axisTextColor}>
             {(maxV * lv * 100).toFixed(1)}%
           </text>
         );
       })}
       {/* Đa giác dữ liệu từng model — giá trị thiếu (null, model chưa có số
           liệu tháng đó) coi như 0 để đa giác vẫn khép kín, đồng dạng cách
-          RoseChart xử lý model không có dữ liệu ở top-N kỳ hiện tại. */}
+          RoseChart xử lý model không có dữ liệu ở top-N kỳ hiện tại.
+          EPCC (menu5-radar-unify-rtytotal-style) - FIX theo yêu cầu người
+          dùng "lấy cách vẽ biểu đồ nhện từ RTY Total để làm giống": đồng bộ
+          fillOpacity 0.08→0.1 và strokeWidth 1.8→2, đúng thông số
+          plotSpiderPanel() trong RtyTotalTab.tsx (fillcolor `${color}1A`
+          ≈ alpha 0.10, line.width: 2). */}
       {series.map((s, si) => {
         const pts = s.values.map((v, i) => pointAt(i, radiusOf(v ?? 0)).join(',')).join(' ');
         return (
-          <polygon key={si} points={pts} fill={s.color} fillOpacity={0.08} stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" />
+          <polygon key={si} points={pts} fill={s.color} fillOpacity={0.1} stroke={s.color} strokeWidth={2} strokeLinejoin="round" />
         );
       })}
-      {/* Chấm tròn + nhãn % tại từng điểm có dữ liệu thật (bỏ qua null) */}
+      {/* Chấm tròn tại từng điểm có dữ liệu thật (bỏ qua null) — marker.size
+          đồng bộ RTY Total (r=3 ~ tương đương marker size 5-6px của Plotly). */}
       {series.map((s, si) => s.values.map((v, i) => {
         if (v == null) return null;
         const [x, y] = pointAt(i, radiusOf(v));
-        return <circle key={`${si}-${i}`} cx={x} cy={y} r={2.5} fill={s.color} />;
+        return <circle key={`${si}-${i}`} cx={x} cy={y} r={3} fill={s.color} stroke="var(--surface, #0f1420)" strokeWidth={0.8} />;
+      }))}
+      {/* EPCC (menu5-radar-unify-rtytotal-style) - THÊM MỚI nhãn số liệu ngay
+          tại từng điểm dữ liệu, đúng "cách vẽ" plotSpiderPanel() trong
+          RtyTotalTab.tsx (Plotly scatterpolar dùng
+          `mode: 'lines+markers+text', textposition: 'top center'`, màu chữ
+          = màu series). SVG không có textposition tự động nên mô phỏng bằng
+          cách đặt nhãn lùi ra xa tâm thêm 1 khoảng cố định (labelGap) dọc
+          đúng trục tia của điểm đó — cùng hướng "hướng ra ngoài" như Plotly
+          "top center" trên biểu đồ cực. Chỉ vẽ khi có dữ liệu thật (v != null),
+          giữ đúng quy tắc "0/thiếu dữ liệu không vẽ" đã áp dụng cho polygon/marker. */}
+      {series.map((s, si) => s.values.map((v, i) => {
+        if (v == null) return null;
+        const labelGap = size * 0.032;
+        const [lx, ly] = pointAt(i, radiusOf(v) + labelGap);
+        return (
+          <text key={`lbl-${si}-${i}`} x={lx} y={ly} fontSize={9.5} fontWeight={700}
+            textAnchor="middle" dominantBaseline="middle" fill={s.color}
+            style={{ paintOrder: 'stroke', stroke: 'var(--surface, #0f1420)', strokeWidth: 2.5, strokeLinejoin: 'round' }}>
+            {(v * 100).toFixed(1)}
+          </text>
+        );
       }))}
       {/* Nhãn category (TTL/tháng) tại đầu mút mỗi trục */}
       {categories.map((c, i) => {
         const [x, y] = pointAt(i, radius + size * 0.06);
         return (
-          <text key={`cl${i}`} x={x} y={y} fontSize={12} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={axisTextColor}>
+          <text key={`cl${i}`} x={x} y={y} fontSize={10.8} fontWeight={700} textAnchor="middle" dominantBaseline="middle" fill={axisTextColor}>
             {c}
           </text>
         );
@@ -2184,87 +2326,62 @@ function RevenueCustomerStackedChart({
 //     mặt cầu thay vì dán phẳng lên trên.
 // `uid` (từ `useId()`) đảm bảo id gradient/filter không trùng nếu component
 // được render nhiều lần trên cùng 1 trang.
-function DonutCenterNetworkIcon({ cx, cy, r, theme }: { cx: number; cy: number; r: number; theme: ThemeMode }) {
-  const uid = useId().replace(/[:]/g, '');
-  const nodes = [
-    { x: 0, y: 0, rr: 1 },      // nút trung tâm, to nhất — đóng vai trò "nguồn sáng"
-    { x: -0.55, y: -0.42, rr: 0.62 },
-    { x: 0.58, y: -0.38, rr: 0.62 },
-    { x: -0.62, y: 0.4, rr: 0.55 },
-    { x: 0.6, y: 0.44, rr: 0.55 },
-    { x: 0, y: -0.78, rr: 0.5 },
-    { x: 0, y: 0.8, rr: 0.5 },
-    { x: -0.85, y: 0, rr: 0.42 },
-    { x: 0.85, y: 0, rr: 0.42 },
-  ];
-  const pt = (n: typeof nodes[number]) => [cx + n.x * r * 0.72, cy + n.y * r * 0.72];
-  const edges: [number, number][] = [
-    [0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [0, 7], [0, 8],
-    [1, 5], [2, 5], [3, 6], [4, 6], [1, 7], [3, 7], [2, 8], [4, 8],
-  ];
-  // Toạ độ nguồn sáng giả lập — góc trên-trái, chuẩn quy ước "ánh sáng từ
-  // trên xuống" của mọi hiệu ứng 3D/skeuomorphic phổ biến.
-  const lightX = cx - r * 0.35, lightY = cy - r * 0.4;
-  const edgeColor = '#38bdf8';
-  const nodeCoreColor = '#f0faff';
+// EPCC (menu5-donut-center-im-logo) - FIX theo yêu cầu người dùng "cho chữ
+// logo đúng như ảnh 1 vào vị trí khoanh đỏ, bỏ icon đó đi và thay bằng logo
+// này": bỏ HẲN icon "mạng lưới nút 3D" cũ (DonutCenterNetworkIcon, xem lịch
+// sử EPCC phía trên) — thay bằng logo "iM" (oval viền xanh navy, chữ "iM"
+// đậm màu xanh navy, dấu chấm chữ i tách rời) đúng theo ảnh logo công ty
+// người dùng cung cấp. Vẽ lại bằng SVG thuần (không dùng ảnh/icon bên thứ
+// ba) để giữ nét sắc nét ở mọi kích thước donut — nền tròn trắng (đổi màu
+// theo `theme` để tương phản đủ với nền dashboard tối), oval viền dày vẽ
+// bằng <ellipse> chỉ có stroke (không fill) đúng dạng viền rỗng của logo
+// gốc, chữ "iM" đặt giữa oval bằng font đậm; dấu chấm chữ "i" tách thành 1
+// <circle> riêng (không dùng dấu chấm mặc định của font) để khớp hình khối
+// tròn đặc trưng trong logo gốc thay vì chấm nhỏ thông thường.
+function DonutCenterLogo({ cx, cy, r, theme }: { cx: number; cy: number; r: number; theme: ThemeMode }) {
+  // EPCC (menu5-donut-logo-exact-font-color) - (lịch sử fix trước) đo màu
+  // navy trực tiếp từ ảnh gốc → `#04508f`.
+  // EPCC (menu5-donut-logo-industrial-rounded-font) - FIX theo yêu cầu người
+  // dùng "sửa chữ theo đúng phong cách kiểu chữ: Industrial Geometric
+  // Rounded Logotype": bản trước ưu tiên `'Century Gothic'` — ĐÚNG là 1 font
+  // hình học (geometric) nhưng góc/đầu nét lại KHÁ SẮC (không "rounded"),
+  // không đúng 3 tiêu chí người dùng nêu ra cùng lúc (industrial + geometric
+  // + rounded). Đổi hẳn thứ tự ưu tiên font sang nhóm font ĐÚNG cả 3 tiêu
+  // chí — "industrial geometric rounded logotype" là mô tả kinh điển của
+  // dòng font logo công nghiệp châu Âu thập niên 70-90 (VAG Rounded, dùng
+  // cho logo Volkswagen/Audi cũ, Eurostile Rounded — dùng nhiều cho logo
+  // hãng xe/công nghiệp/công nghệ): thân chữ dày đều tăm tắp (industrial),
+  // khung chữ dựng trên hình khối tròn/vuông đơn giản (geometric), mọi đầu
+  // nét và góc đều bo tròn thay vì vuông sắc (rounded) — ĐÚNG 3 đặc điểm đã
+  // thấy ở ảnh logo gốc. Thứ tự fallback mới: `'VAG Rounded'` (khớp nhất cả
+  // 3 tiêu chí, phổ biến trên máy có cài font hãng) → `'Eurostile Rounded'`
+  // → `'Century Gothic'` (geometric, fallback gần nhất nếu máy không có 2
+  // font trên) → `'Segoe UI Rounded'`/`'SF Pro Rounded'` (rounded, có sẵn
+  // theo hệ điều hành Windows/macOS) → `Verdana`/sans-serif (an toàn cuối).
+  // Thêm `letterSpacing` nhẹ cho chữ "M" — đặc trưng thường thấy ở logotype
+  // công nghiệp (chữ giãn nhẹ, không sát khít như văn bản thường); bo tròn
+  // thêm góc thân chữ "i" (tăng `rx` bo góc) cho khớp cảm giác "rounded"
+  // đồng bộ với oval viền ngoài.
+  const logoBlue = '#04508f';
+  const logoFont = "'VAG Rounded', 'Eurostile Rounded', 'Century Gothic', 'Segoe UI Rounded', 'SF Pro Rounded', Verdana, sans-serif";
+  const rx = r * 0.98;
+  const ry = r * 0.6;
+  const strokeW = Math.max(ry * 0.16, 1.4);
   return (
     <g>
-      <defs>
-        {/* Gradient quả cầu nền: highlight sáng lệch góc trên-trái, tối dần ra
-            rìa + thêm 1 lớp navy sẫm ngoài cùng để tạo viền "chân trời" cong. */}
-        <radialGradient id={`donutSphere-${uid}`} cx={(lightX - (cx - r)) / (2 * r)} cy={(lightY - (cy - r)) / (2 * r)} r="0.9">
-          <stop offset="0%" stopColor={theme === 'light' ? '#3b6ea8' : '#2c4a72'} />
-          <stop offset="45%" stopColor={theme === 'light' ? '#16273f' : '#0f1d33'} />
-          <stop offset="100%" stopColor="#050a14" />
-        </radialGradient>
-        {/* Gradient viền kim loại (bezel) — sáng/tối xen kẽ quanh mép để giả
-            lập ánh sáng phản chiếu vòng ngoài, thay cho viền 1 màu phẳng. */}
-        <linearGradient id={`donutBezel-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#7dd3fc" />
-          <stop offset="35%" stopColor="#1e3a5f" />
-          <stop offset="70%" stopColor="#0c1a2e" />
-          <stop offset="100%" stopColor="#38bdf8" />
-        </linearGradient>
-        {/* Gradient cho từng nút — tâm sáng rực, rìa nhạt dần, tạo hình khối
-            cầu nhỏ thay vì chấm phẳng. */}
-        <radialGradient id={`donutNode-${uid}`} cx="35%" cy="30%" r="75%">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="40%" stopColor="#7dd3fc" />
-          <stop offset="100%" stopColor="#0369a1" />
-        </radialGradient>
-        {/* Glow mềm cho nút trung tâm + đường nối, tăng cảm giác "phát sáng
-            nổi khối" thay vì hình vẽ dẹt tĩnh. */}
-        <filter id={`donutGlow-${uid}`} x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation={Math.max(r * 0.06, 0.6)} result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      {/* Viền bezel kim loại — vòng ngoài cùng, dày ~10% bán kính */}
-      <circle cx={cx} cy={cy} r={r} fill={`url(#donutBezel-${uid})`} />
-      {/* Quả cầu nền (thân icon) — nhỏ hơn viền bezel 1 chút để lộ viền sáng quanh mép */}
-      <circle cx={cx} cy={cy} r={r * 0.9} fill={`url(#donutSphere-${uid})`} stroke="#1e3a5f" strokeWidth={0.6} />
-      {/* Vệt sáng phản chiếu (specular highlight) hình elip lệch góc trên-trái
-          — chi tiết kinh điển để mắt đọc ra bề mặt cong bóng, không dùng ở
-          bản phẳng trước đây. */}
-      <ellipse cx={lightX} cy={lightY} rx={r * 0.32} ry={r * 0.2} fill="#ffffff" opacity={0.22} transform={`rotate(-30 ${lightX} ${lightY})`} />
-      <g filter={`url(#donutGlow-${uid})`}>
-        {edges.map(([a, b], i) => {
-          const [x1, y1] = pt(nodes[a]);
-          const [x2, y2] = pt(nodes[b]);
-          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={edgeColor} strokeWidth={0.9} opacity={0.65} />;
-        })}
-        {nodes.map((n, i) => {
-          const [x, y] = pt(n);
-          const nr = Math.max(r * 0.11 * n.rr, 1.8);
-          return (
-            <circle key={i} cx={x} cy={y} r={i === 0 ? nr * 1.15 : nr}
-              fill={i === 0 ? nodeCoreColor : `url(#donutNode-${uid})`} opacity={i === 0 ? 1 : 0.95} />
-          );
-        })}
-      </g>
+      {/* Nền tròn phía sau oval — trắng ở theme light, xám xanh rất tối ở
+          theme dark để oval trắng-navy vẫn nổi rõ trên nền dashboard tối. */}
+      <circle cx={cx} cy={cy} r={r} fill={theme === 'light' ? '#ffffff' : '#101826'} />
+      {/* Oval viền — chỉ có stroke, không fill, đúng kiểu logo gốc */}
+      <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill="none" stroke={logoBlue} strokeWidth={strokeW} />
+      {/* Chữ "M" */}
+      <text x={cx + rx * 0.24} y={cy + ry * 0.42} fontSize={ry * 1.5} fontWeight={900}
+        fontFamily={logoFont} letterSpacing={ry * 0.02} fill={logoBlue} textAnchor="middle">M</text>
+      {/* Thân chữ "i" (không dùng dấu chấm mặc định của font) — góc bo tròn
+          hơn để khớp phong cách "rounded" của font logotype công nghiệp */}
+      <rect x={cx - rx * 0.34 - ry * 0.09} y={cy - ry * 0.18} width={ry * 0.18} height={ry * 0.7} rx={ry * 0.09} fill={logoBlue} />
+      {/* Dấu chấm chữ "i" — chấm tròn đặc, tách rời phía trên thân chữ */}
+      <circle cx={cx - rx * 0.34} cy={cy - ry * 0.52} r={ry * 0.16} fill={logoBlue} />
     </g>
   );
 }
@@ -2320,7 +2437,7 @@ function RevenueDonutChart({
           </g>
         );
       })}
-      <DonutCenterNetworkIcon cx={cx} cy={cy} r={rInner * 0.86} theme={theme} />
+      <DonutCenterLogo cx={cx} cy={cy} r={rInner * 0.86} theme={theme} />
     </svg>
   );
 }
@@ -2482,7 +2599,7 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
   // Màu nhãn toolbar — lấy nguyên văn từ TargetActualDashboard.tsx
   // (filterLabelColor) để 2 dashboard đồng bộ, không tự bịa màu mới.
   const filterLabelColor = '#C0EF6A';
-  const [tab, setTab] = useState<'overview' | 'detail' | 'revenue'>('overview');
+  const [tab, setTab] = useState<'overview' | 'detail' | 'revenue'>('revenue');
   const [viewBy, setViewBy] = useState<ViewBy>('month');
 
   // EPCC (menu5-header-tabs-match-rty) - FIX ROOT CAUSE "thanh header/tab
@@ -2704,6 +2821,22 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
   // EPCC (menu5-revenue-custom-filter) - state cho bộ lọc CUSTOM mới, mặc
   // định "Tất cả" (không lọc gì, giữ nguyên hành vi cũ của Chart 3/4).
   const [selectedCustom, setSelectedCustom] = useState<string>(ALL_CUSTOM_VALUE);
+  // EPCC (menu5-revenue-table-full-list-filters) - THÊM MỚI theo yêu cầu
+  // người dùng "liệt kê tất cả số liệu có từ file excel lên và trên đầu Card
+  // top để dạng có lựa chọn như ảnh 1 tham chiếu": 6 state lọc RIÊNG cho bảng
+  // "Toàn bộ Model theo Doanh số" (KHÔNG dùng chung `selectedModel`/
+  // `selectedCustom` ở toolbar trên cùng — 2 bộ lọc đó chi phối TOÀN BỘ 2 tab
+  // F-COST/DOANH THU, trong khi bảng này cần lọc ĐỘC LẬP y hệt ảnh tham chiếu
+  // "Toàn bộ Cơ sở Dữ liệu từ Excel": Model/Năm/Quý/Tháng/Khách hàng dạng
+  // dropdown riêng + 1 ô tìm kiếm tự do theo tên). Mặc định "Tất cả" cho mọi
+  // dropdown và chuỗi rỗng cho ô tìm kiếm — hiển thị TOÀN BỘ dữ liệu ngay khi
+  // mở tab, đúng tinh thần "liệt kê tất cả số liệu".
+  const [revTableModel, setRevTableModel] = useState<string>(ALL_MODEL_VALUE);
+  const [revTableYear, setRevTableYear] = useState<string>(ALL_CUSTOM_VALUE);
+  const [revTableQuarter, setRevTableQuarter] = useState<string>(ALL_CUSTOM_VALUE);
+  const [revTableMonth, setRevTableMonth] = useState<string>(ALL_CUSTOM_VALUE);
+  const [revTableCustomer, setRevTableCustomer] = useState<string>(ALL_CUSTOM_VALUE);
+  const [revTableSearch, setRevTableSearch] = useState<string>('');
   const [startYm, setStartYm] = useState<number>(globalBounds.minYm);
   const [endYm, setEndYm] = useState<number>(globalBounds.maxYm);
 
@@ -2738,6 +2871,38 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
     setEndYm(Math.min(ym(y, 12), globalBounds.maxYm));
   }
 
+  // EPCC (menu5-detail-table-sync-top-toolbar-filters) - FIX theo yêu cầu
+  // người dùng "khi lựa chọn theo các năm hoặc model [ở 3 ô MODEL/CUSTOM/NĂM
+  // khoanh đỏ trên toolbar chính] thì dòng dữ liệu phía dưới [bảng Toàn bộ
+  // Model theo Doanh số ở tab Chi tiết & dữ liệu] thay đổi theo sự lựa chọn
+  // đó": trước đây 3 ô này (`selectedModel`/`selectedCustom`/
+  // `selectedYearFilterValue`, dùng chung cho toàn trang) hoàn toàn KHÔNG
+  // liên quan tới bộ lọc RIÊNG của bảng (`revTableModel`/`revTableCustomer`/
+  // `revTableYear`) — đổi Model/Custom/Năm ở toolbar chính không hề ảnh
+  // hưởng bảng bên dưới. Đồng bộ MỘT CHIỀU (toolbar chính → bộ lọc bảng):
+  // đổi ở toolbar chính sẽ tự cập nhật bộ lọc bảng theo, nhưng người dùng
+  // vẫn có thể tự tay đổi RIÊNG bộ lọc của bảng (Model/Năm/Quý/Tháng/Khách
+  // hàng) để tinh chỉnh sâu hơn (VD xem thêm Quý/Tháng) mà không bị toolbar
+  // chính ghi đè lại — chỉ đồng bộ khi CHÍNH toolbar chính thay đổi.
+  // `ALL_MODEL_VALUE`/`ALL_CUSTOM_VALUE` là 2 sentinel "Tất cả" DÙNG CHUNG
+  // giữa 2 nơi nên copy thẳng giá trị, không cần map lại. Riêng NĂM:
+  // `selectedYearFilterValue` trả về 'all' (map sang sentinel `ALL_CUSTOM_VALUE`
+  // của bảng), 1 chuỗi năm cụ thể (dùng thẳng, cùng định dạng chuỗi với
+  // `revTableYear`), hoặc '' khi người dùng tự kéo khoảng THÁNG BẮT ĐẦU/KẾT
+  // THÚC tuỳ ý (không khớp trọn năm nào) — trường hợp này KHÔNG đồng bộ (giữ
+  // nguyên lựa chọn Năm hiện tại của bảng) vì không có 1 năm rõ ràng nào để
+  // gán.
+  useEffect(() => {
+    setRevTableModel(selectedModel);
+  }, [selectedModel]);
+  useEffect(() => {
+    setRevTableCustomer(selectedCustom);
+  }, [selectedCustom]);
+  useEffect(() => {
+    if (selectedYearFilterValue === 'all') setRevTableYear(ALL_CUSTOM_VALUE);
+    else if (selectedYearFilterValue) setRevTableYear(selectedYearFilterValue);
+  }, [selectedYearFilterValue]);
+
   // EPCC (menu5-reset-filter-on-new-source) - khi upload file mới hoặc khôi
   // phục mẫu, danh sách model/khoảng thời gian có thể khác hẳn dữ liệu cũ →
   // phải reset lại filter, tránh selectedModel trỏ tới model không tồn tại
@@ -2770,31 +2935,12 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
     return allModels.find(m => m.model === selectedModel) ?? null;
   }, [allModels, selectedModel, allModelsAggregate]);
 
-  function seriesInRange(item: string): { y: number; m: number; v: number }[] {
-    if (!modelData) return [];
-    return (modelData.series[item] ?? [])
-      .filter(p => ym(p.y, p.m) >= startYm && ym(p.y, p.m) <= endYm)
-      .sort((a, b) => ym(a.y, a.m) - ym(b.y, a.m));
-  }
 
 
 
 
-  const shipmentPts = seriesInRange(ITEM_SHIPMENT);
-  const prodPts = seriesInRange(ITEM_PRODUCTION);
-  const salesPts = seriesInRange(ITEM_SALES);
-  const scrapPts = seriesInRange(ITEM_SCRAP);
-  const fcostPts = seriesInRange(ITEM_FCOST);
-  // EPCC (menu5-table-fcost-lookup-by-ym) - FIX ROOT CAUSE "bảng chi tiết có
-  // thể hiện SAI cột F-Cost % lệch hàng sau khi fix menu5-fcost-zero-as-
-  // missing": bảng cũ tra `fcostPts[i]` THEO VỊ TRÍ INDEX, ngầm giả định
-  // shipmentPts/prodPts/salesPts/scrapPts/fcostPts LUÔN cùng độ dài và cùng
-  // thứ tự tháng — đúng trước đây vì mọi ITEM đều đủ 12 tháng/năm. Từ khi
-  // các tháng F-Cost%=0 giả bị loại khỏi `monthly` (không còn là 1 phần tử
-  // trong mảng fcostPts), fcostPts có thể NGẮN HƠN shipmentPts → từ tháng bị
-  // loại trở đi, `fcostPts[i]` sẽ trỏ NHẦM sang giá trị của tháng kế tiếp.
-  // Fix: tra theo khoá (năm,tháng) thực sự thay vì theo index.
-  const fcostByYm = new Map(fcostPts.map(p => [ym(p.y, p.m), p.v]));
+
+
 
   // ── Năm đang truy vấn (dùng chung cho 4 thẻ KPI + Chart 1-4) ────────────
   // EPCC (menu5-kpi-link-year-query) - FIX theo yêu cầu người dùng "4 Card
@@ -3069,10 +3215,60 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
   // xuống cuối (coi như -Infinity) thay vì gây lỗi so sánh. Khi chỉ có 1
   // model (đã chọn cụ thể ở dropdown MODEL) thì slice(0, 10) không ảnh hưởng
   // gì — vẫn giữ nguyên hành vi cũ.
+  // EPCC (menu5-chart256-recent-priority-top10) - FIX ROOT CAUSE "chọn
+  // MODEL=Tất cả + NĂM=Tất cả, biểu đồ Mass F-Cost% (Chart 3, vị trí thứ 3)
+  // không hiển thị dữ liệu ở 2025/2026 dù trục X vẫn hiện đủ nhãn 2 năm đó":
+  // categories (trục X) được tính từ TOÀN BỘ model thật TRƯỚC KHI lọc Top
+  // 10 (xem `perModelYearVals`/`yearsWithData` ở buildFcostByModelChart) —
+  // nên chỉ cần 1 model bất kỳ (kể cả model sắp bị loại khỏi Top 10) có dữ
+  // liệu ở 2025/2026 là nhãn năm đó vẫn hiện. Trong khi đó, hàm này (chạy
+  // SAU, quyết định model nào thực sự được VẼ) trước đây xếp hạng Top 10
+  // theo `values[0]` = TRUNG BÌNH F-Cost% CẢ GIAI ĐOẠN đang lọc — model có
+  // Mass F-Cost% đột biến cao ở các năm CŨ (VD SO1C21 = 103% NHƯNG DUY NHẤT
+  // Ở NĂM 2020, không hề có dữ liệu năm nào khác) vẫn kéo trung bình lên rất
+  // cao, luôn giữ suất Top 10; ngược lại các model ĐANG hoạt động thật ở
+  // 2025/2026 (Mass F-Cost% chỉ quanh 1-3%) bị đẩy ra khỏi Top 10 vì thấp
+  // hơn nhiều. ĐÃ ĐỐI CHIẾU TRỰC TIẾP với Test5.xlsx gốc (pivot MODEL x YEAR
+  // của dòng MONTH=TTL, ITEM='Mass F-Cost %') — xác nhận ĐÚNG 10 model xuất
+  // hiện trong legend ảnh chụp người dùng gửi (SO1C21, SI2900, SO1G70/M,
+  // SO1A00, SO1940, SO1E60, SO1E60H, SO1961, SO1923G, SO1G71) chính là 10
+  // model có TRUNG BÌNH cao nhất theo công thức cũ — và ĐÚNG LÀ không model
+  // nào trong 10 model đó có dòng dữ liệu ở 2025 hoặc 2026, trong khi Excel
+  // gốc CÓ 13 model khác với dữ liệu Mass F-Cost% 2025/2026 (SO1B01,
+  // SO1C2EF, SO1C2EH, SO1C2G... quanh 1-3%) nhưng bị loại hết khỏi Top 10.
+  // Kết quả: trục X vẫn hiện nhãn 2025/2026 nhưng KHÔNG model nào trong danh
+  // sách được vẽ có điểm dữ liệu ở đó → nhìn như "mất dữ liệu 2025/2026".
+  // LẦN SỬA ĐẦU (đã revert) chỉ đổi tiêu chí sang "giá trị tại kỳ CUỐI CÙNG
+  // có dữ liệu của mỗi model" — SAI, vì với SO1C21 kỳ cuối cùng có dữ liệu
+  // VẪN LÀ năm 2020 (không có năm nào sau đó), giá trị tại đó vẫn là 103% →
+  // vẫn thắng và vẫn đứng Top 1, không giải quyết được gì (đã tự kiểm chứng
+  // lại bằng script đối chiếu Excel, thấy top-10 không đổi). Fix ĐÚNG: phải
+  // ưu tiên theo **NĂM/KỲ của điểm dữ liệu cuối cùng** (recency) LÀM TIÊU CHÍ
+  // CHÍNH — model nào có dữ liệu ở kỳ CÀNG GẦN kỳ cuối trong vùng lọc càng
+  // được ưu tiên xếp trên, bất kể giá trị cao/thấp — chỉ dùng giá trị tại kỳ
+  // đó làm tiêu chí PHỤ để phá thế hoà giữa các model có cùng kỳ gần nhất.
+  // Áp dụng NHẤT QUÁN cho cả Chart 2/5/6 (dùng chung hàm này).
   function filterModelsWithDataInRange<T extends { values: (number | null)[] }>(list: T[]): (T & { color: string })[] {
+    // periodVals bỏ cột TTL ở đầu (values[0]), chỉ xét từng kỳ thật theo
+    // đúng thứ tự thời gian TĂNG DẦN (đã đúng ở cả 3 nhánh year/quarter/
+    // month của buildFcostByModelChart) — recencyIndex = vị trí kỳ cuối
+    // cùng CÓ dữ liệu (càng lớn = càng gần hiện tại), recentValue = giá trị
+    // tại đúng kỳ đó.
+    const recencyOf = (s: T): { recencyIndex: number; recentValue: number } => {
+      const periodVals = s.values.slice(1);
+      for (let i = periodVals.length - 1; i >= 0; i--) {
+        const v = periodVals[i];
+        if (v != null) return { recencyIndex: i, recentValue: v };
+      }
+      return { recencyIndex: -1, recentValue: -Infinity };
+    };
     return list
       .filter(s => s.values.slice(1).some(v => v != null))
-      .sort((a, b) => (b.values[0] ?? -Infinity) - (a.values[0] ?? -Infinity))
+      .sort((a, b) => {
+        const ra = recencyOf(a), rb = recencyOf(b);
+        if (rb.recencyIndex !== ra.recencyIndex) return rb.recencyIndex - ra.recencyIndex;
+        return rb.recentValue - ra.recentValue;
+      })
       .slice(0, CHART_TOP_N_MODELS)
       .map((s, idx) => ({ ...s, color: CHART_PALETTE_9[idx % CHART_PALETTE_9.length] }));
   }
@@ -3290,7 +3486,7 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
     return Array.from(ys).sort((a, b) => a - b);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allModelsAggregate]);
-  const revenueLastYear = revenueYears.length ? revenueYears[revenueYears.length - 1] : null;
+
 
   // 4 thẻ KPI: TỔNG DOANH SỐ / TỔNG XUẤT HÀNG / TỔNG SẢN XUẤT / TĂNG TRƯỞNG
   // DOANH SỐ (YoY).
@@ -3726,28 +3922,116 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allModelsAggregate, revenueYears]);
 
-  // Bảng "Top 15 Model theo Doanh số": khách hàng/type chủ đạo của mỗi model
-  // suy ra từ radarCustom/radarType (giá trị SHIPMENT cao nhất — model IM-VINA
-  // hầu như chỉ gắn với 1 khách hàng/1 type chủ đạo trong thực tế sản xuất).
+  // Bảng "Toàn bộ Model theo Doanh số": liệt kê TOÀN BỘ số liệu có trong file
+  // Excel (mọi model × mọi năm, không còn giới hạn "năm gần nhất" như trước),
+  // kèm 1 thanh bộ lọc riêng phía trên card (Model/Năm/Quý/Tháng/Khách hàng +
+  // ô tìm kiếm tự do) — nhân bản đúng kiểu bố cục "Toàn bộ Cơ sở Dữ liệu từ
+  // Excel" trong ảnh tham chiếu người dùng cung cấp.
+  // EPCC (menu5-revenue-table-full-list-filters) - FIX theo yêu cầu người
+  // dùng "hãy liệt kê tất cả số liệu có từ file excel lên và trên đầu Card
+  // top để dạng có lựa chọn như ảnh 1 tham chiếu": trước đây bảng CHỈ tính 1
+  // dòng/model tại ĐÚNG năm gần nhất (`revenueLastYear`) — chỉ là 1 lát cắt
+  // nhỏ của dữ liệu, không phải "tất cả số liệu". Đổi sang duyệt MỌI (model,
+  // năm) có dữ liệu thật (dùng `ttlOf`, đúng nguồn TTL gốc từ Excel) thành
+  // nhiều dòng/model — 1 dòng cho mỗi năm. Khi người dùng chọn cụ thể Quý/
+  // Tháng ở bộ lọc mới, "khoan sâu" xuống đúng kỳ đó bằng cách cộng dồn trực
+  // tiếp từ `m.series[item]` (dữ liệu THÁNG gốc, đã đọc sẵn khi parse Excel —
+  // xem SeriesPoint{y,m,v}), y hệt cách Chart 5 (RTV THEO THÁNG NĂM) đã làm ở
+  // trên (sumByQuarterOf/byMonthOf), không tạo nguồn dữ liệu mới. Cột "Tăng
+  // trưởng doanh số" giờ luôn so với ĐÚNG kỳ cùng loại của năm liền trước
+  // (năm→năm, quý→quý, tháng→tháng — so YoY tại kỳ đang xem, tránh lệch mùa
+  // vụ nếu so quý này với quý trước liền kề).
+  const revTableGranularity: 'year' | 'quarter' | 'month' =
+    revTableMonth !== ALL_CUSTOM_VALUE ? 'month' : revTableQuarter !== ALL_CUSTOM_VALUE ? 'quarter' : 'year';
+  // EPCC (menu5-detail-merge-revenue-table-add-fcost) - màu cột F-Cost % cho
+  // bảng đã gộp, tái dùng đúng bảng NEON có sẵn (không bịa màu mới) — nhân
+  // bản quy ước màu cũ của bảng "Chi tiết & dữ liệu" (Tháng=#4EB09B, Quý=
+  // NEON.amber, Năm=NEON.violet), chỉ đổi từ tính theo `viewBy` (toolbar
+  // chính) sang tính theo `revTableGranularity` (bộ lọc riêng của bảng này).
+  const revTableFcostColor = revTableGranularity === 'quarter' ? NEON.amber : revTableGranularity === 'year' ? NEON.violet : '#4EB09B';
+  // EPCC (menu5-detail-merge-revenue-table-add-fcost) - FIX theo yêu cầu
+  // người dùng "gộp luôn dữ liệu tại sheet tình hình doanh thu sang sheet
+  // chi tiết và dữ liệu thêm phần Scrap và F-cost% hiển thị ra nữa": bảng
+  // này giờ được HIỂN THỊ Ở TAB "Chi tiết & dữ liệu" (thay cho bảng đơn giản
+  // cũ chỉ có 1 model/tháng — xem JSX nhánh `tab === 'detail'` bên dưới),
+  // nên cần thêm F-Cost% — CHỈ CÒN THIẾU so với 6 cột gốc của bảng cũ
+  // (THÁNG/SHIPMENT/PROD'N/SALES AMT/SCRAP/F-COST%; cột SCRAP đã có sẵn ở
+  // đây dưới tên "RTV(K)" — cùng 1 nguồn dữ liệu `ITEM_SCRAP`, không tạo cột
+  // trùng lặp). F-Cost% là TỶ LỆ (không cộng dồn được như số lượng), nên ở
+  // mức Quý phải lấy TRUNG BÌNH các tháng có dữ liệu trong quý (`avgByQuarterFcost`),
+  // khác hẳn `sumByQuarter` (cộng dồn) dùng cho Sản xuất/Xuất hàng/Doanh số/
+  // RTV phía trên.
+  const avgByQuarterFcost = (m: ModelEntry, year: number, quarter: number): number | null => {
+    const pts = (m.series[ITEM_FCOST] ?? []).filter(p => p.y === year && Math.ceil(p.m / 3) === quarter);
+    return pts.length ? pts.reduce((a, p) => a + p.v, 0) / pts.length : null;
+  };
   const revenueTopModelsTable = useMemo(() => {
-    if (revenueLastYear == null) return [];
+    if (!revenueYears.length) return [];
     const topOf = <T extends { value: number }>(entries: T[]): T | null =>
       entries.length ? entries.reduce((a, b) => (b.value > a.value ? b : a)) : null;
-    return realModelsForAgg
-      .map(m => {
-        const sales = ttlOf(m, ITEM_SALES, revenueLastYear);
-        if (sales == null || sales <= 0) return null;
-        const prod = ttlOf(m, ITEM_PRODUCTION, revenueLastYear) ?? 0;
-        const ship = ttlOf(m, ITEM_SHIPMENT, revenueLastYear) ?? 0;
-        const customer = topOf(m.radarCustom)?.custom ?? '—';
-        const type = topOf(m.radarType)?.type ?? '—';
-        return { model: m.model, customer, type, prod, ship, sales, ratio: prod > 0 ? (ship / prod) * 100 : null };
-      })
-      .filter((x): x is NonNullable<typeof x> => x != null)
-      .sort((a, b) => b.sales - a.sales)
-      .slice(0, 15);
+
+    const sumByQuarter = (m: ModelEntry, item: string, year: number, quarter: number): number | null => {
+      const pts = (m.series[item] ?? []).filter(p => p.y === year && Math.ceil(p.m / 3) === quarter);
+      return pts.length ? pts.reduce((a, p) => a + p.v, 0) : null;
+    };
+    const sumByMonth = (m: ModelEntry, item: string, year: number, month: number): number | null => {
+      const pt = (m.series[item] ?? []).find(p => p.y === year && p.m === month);
+      return pt ? pt.v : null;
+    };
+    const valueOf = (m: ModelEntry, item: string, year: number): number | null => {
+      if (revTableGranularity === 'month') return sumByMonth(m, item, year, Number(revTableMonth));
+      if (revTableGranularity === 'quarter') return sumByQuarter(m, item, year, Number(revTableQuarter));
+      return ttlOf(m, item, year);
+    };
+
+    const searchQ = revTableSearch.trim().toLowerCase();
+    const candidateModels = realModelsForAgg.filter(m => {
+      if (revTableModel !== ALL_MODEL_VALUE && m.model !== revTableModel) return false;
+      const customer = topOf(m.radarCustom)?.custom ?? '—';
+      if (revTableCustomer !== ALL_CUSTOM_VALUE && customer !== revTableCustomer) return false;
+      if (searchQ) {
+        const type = topOf(m.radarType)?.type ?? '';
+        if (!m.model.toLowerCase().includes(searchQ) && !customer.toLowerCase().includes(searchQ) && !type.toLowerCase().includes(searchQ)) return false;
+      }
+      return true;
+    });
+    const years = revTableYear !== ALL_CUSTOM_VALUE ? [Number(revTableYear)] : revenueYears;
+
+    const rows: Array<{
+      key: string; model: string; period: string; year: number; customer: string; type: string;
+      prod: number; ship: number; sales: number; rtv: number; rtvRatePct: number | null;
+      growth: number | null; growthPct: number | null; fcostPct: number | null;
+    }> = [];
+    for (const m of candidateModels) {
+      const customer = topOf(m.radarCustom)?.custom ?? '—';
+      const type = topOf(m.radarType)?.type ?? '—';
+      for (const y of years) {
+        const sales = valueOf(m, ITEM_SALES, y);
+        if (sales == null) continue; // không có dữ liệu ở đúng kỳ này — bỏ qua, không suy diễn.
+        const prod = valueOf(m, ITEM_PRODUCTION, y) ?? 0;
+        const ship = valueOf(m, ITEM_SHIPMENT, y) ?? 0;
+        const rtv = valueOf(m, ITEM_SCRAP, y) ?? 0;
+        const rtvRatePct = ship > 0 ? (rtv / ship) * 100 : null;
+        const fcostPct = revTableGranularity === 'month' ? sumByMonth(m, ITEM_FCOST, y, Number(revTableMonth))
+          : revTableGranularity === 'quarter' ? avgByQuarterFcost(m, y, Number(revTableQuarter))
+          : ttlOf(m, ITEM_FCOST, y);
+        const prevYear = y - 1;
+        const prevSales = revTableGranularity === 'month' ? sumByMonth(m, ITEM_SALES, prevYear, Number(revTableMonth))
+          : revTableGranularity === 'quarter' ? sumByQuarter(m, ITEM_SALES, prevYear, Number(revTableQuarter))
+          : ttlOf(m, ITEM_SALES, prevYear);
+        const growth = prevSales != null ? sales - prevSales : null;
+        const growthPct = prevSales != null && prevSales > 0 ? (growth! / prevSales) * 100 : null;
+        const period = revTableGranularity === 'month' ? `T${revTableMonth}/${y}`
+          : revTableGranularity === 'quarter' ? `Q${revTableQuarter}/${y}` : `${y}`;
+        rows.push({
+          key: `${m.model}-${period}`, model: m.model, period, year: y, customer, type,
+          prod, ship, sales, rtv, rtvRatePct, growth, growthPct, fcostPct,
+        });
+      }
+    }
+    return rows.sort((a, b) => a.model.localeCompare(b.model) || b.year - a.year);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [realModelsForAgg, revenueLastYear]);
+  }, [realModelsForAgg, revenueYears, revTableModel, revTableCustomer, revTableSearch, revTableYear, revTableQuarter, revTableMonth, revTableGranularity]);
 
   // EPCC (menu5-toolbar-import-not-export) - FIX ROOT CAUSE "nút toolbar tên
   // 'Tải Excel' lại gọi handleExport() và GHI FILE MỚI RA MÁY thay vì NHẬP
@@ -3925,12 +4209,18 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
 
       {/* ── 3 Tab (copy nguyên văn RtyDashboard.tsx, thêm tab thứ 3 "TÌNH HÌNH
           DOANH THU" — EPCC menu5-revenue-tab) ── */}
+      {/* EPCC (menu5-revenue-tab-move-first) - FIX theo yêu cầu người dùng
+          "đổi sheet tình hình doanh thu lên phía trước và luôn hiện phía
+          trước": đổi thứ tự nút bấm — tab DOANH THU giờ đứng ĐẦU TIÊN (trước
+          F-COST), và đổi luôn tab MẶC ĐỊNH khi mở trang từ 'overview'
+          (F-COST) sang 'revenue' (xem khai báo `useState<...>('revenue')`
+          phía trên) để tab này LUÔN hiện ra trước, không cần bấm chọn. */}
       <div className="tab-container">
-        <button className={`tab-btn ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>
-          📊 {t.tabOverview}
-        </button>
         <button className={`tab-btn ${tab === 'revenue' ? 'active' : ''}`} onClick={() => setTab('revenue')}>
           💰 {t.tabRevenue}
+        </button>
+        <button className={`tab-btn ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>
+          📊 {t.tabOverview}
         </button>
         <button className={`tab-btn ${tab === 'detail' ? 'active' : ''}`} onClick={() => setTab('detail')}>
           📋 {t.tabDetail}
@@ -4075,11 +4365,18 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
               </select>
             </div>
 
-            {/* Cụm phải: nút "Tải Excel" — NÚT NHẬP (import) file .xlsx, dùng
-                lại đúng fileInputRef/handleUploadFile đã có sẵn cho màn hình
-                rỗng ban đầu. Icon mũi tên xoay tròn (refresh/reload), KHÔNG
-                phải icon mũi tên xuống (download), để tránh gây hiểu nhầm
-                đây là nút xuất dữ liệu. */}
+            {/* Cụm phải: nút "Tải tệp lên" — NÚT NHẬP (import) file .xlsx,
+                dùng lại đúng fileInputRef/handleUploadFile đã có sẵn cho màn
+                hình rỗng ban đầu.
+                EPCC (menu5-import-btn-upload-icon-label) - FIX theo yêu cầu
+                người dùng "thay chữ đúng như ảnh 1 tham chiếu (nút 'Tải tệp
+                lên') vào chỗ vị trí ảnh 2 (nút 'Tải Excel')": đổi text (xem
+                t.importExcelBtn ở TEXT) TỪ "Tải Excel" (dùng icon mũi tên
+                xoay tròn refresh/reload) SANG "Tải tệp lên" — icon cũng đổi
+                theo, từ icon xoay tròn sang icon mũi tên hướng lên + gạch
+                chân (icon "upload") đúng khớp với icon trong ảnh 1 tham
+                chiếu, không còn dùng icon reload cũ (dễ gây hiểu nhầm là nút
+                làm mới trang thay vì nút chọn file để tải lên). */}
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
               <input
                 ref={fileInputRef}
@@ -4095,13 +4392,12 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
                 className="btn btn-outline btn-sm"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isParsing}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', width: '120px', boxSizing: 'border-box', fontSize: '13px' }}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', height: '38px', width: '132px', boxSizing: 'border-box', fontSize: '13px' }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15" style={{ flexShrink: 0 }}>
-                  <path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.74-2.74L3 16" />
-                  <path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                  <path d="M3 16v5h5" />
-                  <path d="M16 3h5v5" />
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <path d="M17 8l-5-5-5 5" />
+                  <path d="M12 3v12" />
                 </svg>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {isParsing ? t.parsing : t.importExcelBtn}
@@ -4523,7 +4819,29 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
                 headerExtra={
                   revenueChart3.series.length ? (
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {revenueChart3.series.map(s => <LegendDot key={s.label} color={s.color} label={s.label} theme={theme} />)}
+                      {/* EPCC (menu5-revchart3-legend-autohide-no-data) - FIX
+                          theo yêu cầu người dùng "khi lựa chọn model, tháng,
+                          năm nếu không có nhóm Custom nào thì hãy để chế độ
+                          tự ẩn đi, khi nào có lại hiện ra": trước đây legend
+                          LUÔN liệt kê ĐỦ mọi khách hàng có trong toàn bộ
+                          Test5.xlsx (`revenueCustomersFiltered`), bất kể
+                          khách hàng đó có SALES AMT > 0 ở đúng kỳ Tháng/Quý/
+                          Năm đang chọn (`viewBy` + `rangeYears`/
+                          `lastRangeYear`) hay không — dẫn tới các chip như
+                          HUAWEI/SOMC/XIAOMI vẫn hiện dù cột biểu đồ hoàn
+                          toàn không có phần màu tương ứng (khách hàng đó
+                          không phát sinh doanh số trong kỳ đang xem). Thêm
+                          `.filter(s => s.values.some(v => v > 0))` NGAY
+                          TRƯỚC khi map ra `LegendDot` — chỉ giữ lại khách
+                          hàng có ÍT NHẤT 1 giá trị > 0 trong mảng `values`
+                          (đã tự ứng với kỳ đang chọn, tính lại mỗi khi đổi
+                          bộ lọc qua `useMemo` của `revenueChart3`) — khách
+                          hàng không có dữ liệu tự ẩn khỏi legend, và tự hiện
+                          lại ngay khi đổi bộ lọc sang kỳ có dữ liệu của họ,
+                          không cần đụng gì tới phần vẽ cột chồng bên dưới
+                          (khách hàng 0 giá trị vốn đã không chiếm phần màu
+                          nào trên cột, chỉ riêng legend là hiện thừa). */}
+                      {revenueChart3.series.filter(s => s.values.some(v => v > 0)).map(s => <LegendDot key={s.label} color={s.color} label={s.label} theme={theme} />)}
                     </div>
                   ) : undefined
                 }
@@ -4613,85 +4931,121 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
                 ) : <NoData text={t.noData} />}
               </ChartCard>
             </div>
-
-            {/* Bảng Top 15 Model theo Doanh số — cùng style bảng với tab
-                "Chi tiết & dữ liệu" (border/background/table token). */}
-            <div style={{ marginTop: 12, background: 'var(--surface)', border: '1px solid var(--border-soft)', borderRadius: 12, overflow: 'auto' }}>
-              <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border-soft)' }}>
-                {t.revTableTitle}
+          </>
+        ) : (
+          <>
+            {/* EPCC (menu5-detail-merge-revenue-table) - FIX theo yêu cầu
+                người dùng "gộp luôn dữ liệu tại sheet tình hình doanh thu
+                sang sheet chi tiết và dữ liệu thêm phần Scrap và F-cost%
+                hiển thị ra nữa": bảng đơn giản cũ ở tab này (chỉ 1 model/
+                tháng, dùng `shipmentPts`/`prodPts`/`salesPts`/`scrapPts`/
+                `fcostByYm`) đã được THAY THẾ bằng bảng tổng hợp "Toàn bộ
+                Model theo Doanh số" (trước đây chỉ hiện ở tab TÌNH HÌNH
+                DOANH THU) — chuyển nguyên khối filter bar + bảng sang ĐÂY,
+                không còn hiện ở tab Doanh thu nữa (tab đó giờ chỉ còn 6
+                biểu đồ). Bảng này vốn ĐÃ có cột "RTV (K)" (chính là cột
+                SCRAP trong Excel, dùng chung 1 nguồn `ITEM_SCRAP` — không
+                tạo thêm cột trùng lặp cùng số liệu dưới 2 tên khác nhau),
+                nay bổ sung thêm cột "F-Cost %" (tính TTL theo năm khi xem
+                Năm, TRUNG BÌNH các tháng trong quý khi xem Quý — vì đây là
+                TỶ LỆ, không cộng dồn được như số lượng — hoặc giá trị đúng
+                tháng khi xem Tháng) để đủ 6 cột gốc của bảng cũ
+                (SHIPMENT/PROD'N/SALES AMT/SCRAP/F-COST%) cộng thêm phần
+                Model/Khách hàng/Type/Tăng trưởng/%Rate vốn có sẵn. */}
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border-soft)', borderRadius: 12, padding: '10px 14px', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' }}>
+                <span>{t.revTableTitle}</span>
+                <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 12 }}>{formattedTime}</span>
               </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                {[
+                  { label: t.revFilterModelLabel, value: revTableModel, onChange: setRevTableModel,
+                    options: [{ value: ALL_MODEL_VALUE, label: t.modelFilterAll }, ...realModelsForAgg.map(m => ({ value: m.model, label: m.model }))] },
+                  { label: t.revFilterYearLabel, value: revTableYear, onChange: setRevTableYear,
+                    options: [{ value: ALL_CUSTOM_VALUE, label: t.yearFilterAll }, ...revenueYears.slice().reverse().map(y => ({ value: String(y), label: String(y) }))] },
+                  { label: t.revFilterQuarterLabel, value: revTableQuarter, onChange: setRevTableQuarter,
+                    options: [{ value: ALL_CUSTOM_VALUE, label: t.yearFilterAll }, ...[1, 2, 3, 4].map(q => ({ value: String(q), label: `Q${q}` }))] },
+                  { label: t.revFilterMonthLabel, value: revTableMonth, onChange: setRevTableMonth,
+                    options: [{ value: ALL_CUSTOM_VALUE, label: t.yearFilterAll }, ...Array.from({ length: 12 }, (_, i) => i + 1).map(mo => ({ value: String(mo), label: String(mo) }))] },
+                  { label: t.revFilterCustomerLabel, value: revTableCustomer, onChange: setRevTableCustomer,
+                    options: [{ value: ALL_CUSTOM_VALUE, label: t.customFilterAll }, ...revenueCustomers.map(c => ({ value: c, label: c }))] },
+                ].map(f => (
+                  <label key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                    {f.label}
+                    <select value={f.value} onChange={e => f.onChange(e.target.value)}
+                      style={{ height: 30, borderRadius: 6, border: '1px solid var(--border-soft)', background: 'var(--surface)', color: 'var(--text-0)', padding: '0 6px', fontSize: 12 }}>
+                      {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </label>
+                ))}
+                <input
+                  value={revTableSearch}
+                  onChange={e => setRevTableSearch(e.target.value)}
+                  placeholder={t.revFilterSearchPlaceholder}
+                  style={{ height: 30, minWidth: 200, borderRadius: 6, border: '1px solid var(--border-soft)', background: 'var(--surface)', color: 'var(--text-0)', padding: '0 8px', fontSize: 12 }}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginTop: 8, background: 'var(--surface)', border: '1px solid var(--border-soft)', borderRadius: 12, overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: 'var(--border-soft)' }}>
                     <th style={{ padding: '8px 10px', textAlign: 'left' }}>{t.revColModel}</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>{t.revColPeriod}</th>
                     <th style={{ padding: '8px 10px', textAlign: 'left' }}>{t.revColCustomer}</th>
                     <th style={{ padding: '8px 10px', textAlign: 'left' }}>{t.revColType}</th>
                     <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t.revColProd}</th>
                     <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t.revColShip}</th>
                     <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t.revColSales}</th>
-                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t.revColRatio}</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t.revColGrowth}</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t.revColRtv}</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t.revColRtvRate}</th>
+                    {/* EPCC (menu5-detail-add-scrap-column-before-fcost) -
+                        THÊM MỚI cột "SCRAP (K)" theo yêu cầu người dùng "còn
+                        dòng Scrap chưa thấy hiển thị ra, hãy bổ sung thêm
+                        phía trước bên trái cột F-cost%": dùng ĐÚNG giá trị
+                        `row.rtv` (cùng nguồn `ITEM_SCRAP`, đã tính sẵn ở cột
+                        RTV (K) phía trước) — không tính lại, chỉ hiển thị
+                        thêm 1 lần dưới đúng tên gốc "SCRAP" trong Excel để
+                        khớp đúng thuật ngữ người dùng quen dùng. */}
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>{t.revColScrap}</th>
+                    {/* EPCC (menu5-detail-merge-revenue-table-add-fcost) -
+                        THÊM MỚI cột F-Cost % theo yêu cầu người dùng, tô màu
+                        theo `revTableGranularity` (Tháng/Quý/Năm) y hệt bảng
+                        cũ (`fcostColumnColor` trước đây tính theo `viewBy`
+                        của toolbar chính — nay đổi sang tính theo bộ lọc
+                        RIÊNG của bảng này cho nhất quán với chính bảng). */}
+                    <th style={{ padding: '8px 10px', textAlign: 'right', color: revTableFcostColor, fontWeight: 700 }}>{t.colFcost}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {revenueTopModelsTable.length ? revenueTopModelsTable.map(row => (
-                    <tr key={row.model} style={{ borderTop: '1px solid var(--border-soft)' }}>
+                    <tr key={row.key} style={{ borderTop: '1px solid var(--border-soft)' }}>
                       <td style={{ padding: '7px 10px', fontWeight: 700 }}>{row.model}</td>
+                      <td style={{ padding: '7px 10px' }}>{row.period}</td>
                       <td style={{ padding: '7px 10px' }}>{row.customer}</td>
                       <td style={{ padding: '7px 10px' }}>{row.type}</td>
                       <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmtNum(row.prod, 0)}</td>
                       <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmtNum(row.ship, 0)}</td>
                       <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700 }}>{fmtNum(row.sales, 0)}</td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>{row.ratio != null ? `${row.ratio.toFixed(1)}%` : '—'}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: row.growth == null ? 'var(--text-2)' : row.growth >= 0 ? '#22c55e' : NEON.pink }}>
+                        {row.growth != null
+                          ? `${row.growth >= 0 ? '+' : ''}${fmtNum(row.growth, 0)}${row.growthPct != null ? ` (${row.growthPct >= 0 ? '+' : ''}${row.growthPct.toFixed(1)}%)` : ''}`
+                          : '—'}
+                      </td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmtNum(row.rtv, 0)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>{row.rtvRatePct != null ? `${row.rtvRatePct.toFixed(1)}%` : '—'}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>{fmtNum(row.rtv, 0)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: revTableFcostColor, fontWeight: 700 }}>{row.fcostPct != null ? `${(row.fcostPct * 100).toFixed(2)}%` : '—'}</td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center' }}><NoData text={t.noData} /></td></tr>
+                    <tr><td colSpan={12} style={{ padding: 16, textAlign: 'center' }}><NoData text={t.noData} /></td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           </>
-        ) : (
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border-soft)', borderRadius: 12, overflow: 'auto' }}>
-            {/* EPCC (menu5-table-fcost-column-color-by-viewby) - FIX theo yêu
-                cầu người dùng "màu cột F-Cost % trong bảng cũng thay đổi theo
-                chế độ xem": trước đây cột F-Cost % LUÔN cố định 1 màu #4EB09B
-                bất kể `viewBy` (Tháng/Quý/Năm). Giờ tính màu theo `viewBy`,
-                tái dùng đúng bảng NEON có sẵn (không bịa màu mới) — Tháng giữ
-                nguyên #4EB09B (ảnh 1 người dùng cung cấp), Quý = NEON.amber
-                (cam), Năm = NEON.violet (tím) — dùng chung 1 biến cho cả
-                header lẫn từng ô dữ liệu để luôn đồng bộ. */}
-            {(() => {
-              const fcostColumnColor = viewBy === 'quarter' ? NEON.amber : viewBy === 'year' ? NEON.violet : '#4EB09B';
-              return (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: 'var(--border-soft)' }}>
-                  {[t.colYear, t.colMonth, t.colShipment, t.colProd, t.colSales, t.colScrap].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', color: 'var(--text-0)' }}>{h}</th>
-                  ))}
-                  <th style={{ padding: '8px 12px', textAlign: 'left', color: fcostColumnColor, fontWeight: 700 }}>{t.colFcost}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shipmentPts.map((p, i) => (
-                  <tr key={`${p.y}-${p.m}`} style={{ borderTop: '1px solid var(--border-soft)' }}>
-                    <td style={{ padding: '6px 12px', color: 'var(--text-2)' }}>{p.y}</td>
-                    <td style={{ padding: '6px 12px', color: 'var(--text-2)' }}>{p.m}</td>
-                    <td style={{ padding: '6px 12px', color: 'var(--text-0)' }}>{fmtNum(p.v)}</td>
-                    <td style={{ padding: '6px 12px', color: 'var(--text-0)' }}>{fmtNum(prodPts[i]?.v ?? 0)}</td>
-                    <td style={{ padding: '6px 12px', color: 'var(--text-0)' }}>{fmtNum(salesPts[i]?.v ?? 0)}</td>
-                    <td style={{ padding: '6px 12px', color: 'var(--text-0)' }}>{fmtNum(scrapPts[i]?.v ?? 0)}</td>
-                    <td style={{ padding: '6px 12px', color: fcostColumnColor, fontWeight: 700 }}>{fcostByYm.has(ym(p.y, p.m)) ? `${(fcostByYm.get(ym(p.y, p.m))! * 100).toFixed(2)}%` : '—'}</td>
-                  </tr>
-                ))}
-                {!shipmentPts.length && (
-                  <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--text-2)' }}>{t.noData}</td></tr>
-                )}
-              </tbody>
-            </table>
-              );
-            })()}
-          </div>
         )}
     </div>
   );

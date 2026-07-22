@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import type {
-  DataRow, ColumnMapping, FilterState, KPIData, ThemeMode, ScreenState
+  DataRow, ThemeMode, ScreenState
 } from './types';
 import { supabase } from './lib/supabase';
 import { useAuthGate, canAccessTab } from './lib/auth';
@@ -9,16 +9,11 @@ import { LoginGate } from './components/LoginGate';
 import { PendingApproval } from './components/PendingApproval';
 import { AccessDenied } from './components/AccessDenied';
 import { AdminUsersPanel } from './components/AdminUsersPanel';
-import {
-  detectColumns, toNumber, getDateBounds, resetChannelColors, parseRowToDate
-} from './utils';
-
-import { KPIGrid } from './components/KPIGrid';
-import { ChartsSection } from './components/ChartsSection';
-import { FilterBar } from './components/FilterBar';
-import { DetailTable } from './components/DetailTable';
+// EPCC (remove-menu1-overview) - FIX theo yêu cầu người dùng "xóa Mục 1 vì đã
+// có trong Mục 5": toNumber/getDateBounds/parseRowToDate trước đây CHỈ phục
+// vụ pipeline generic (computeKPI/applyFilters/dateBounds) nuôi riêng Mục 1 —
+// đã xóa cùng lúc, không dashboard nào khác dùng tới 3 hàm này.
 import { TargetActualDashboard } from './components/TargetActualDashboard';
-import { SalesDashboard } from './components/SalesDashboard';
 import { RtyDashboard } from './components/RtyDashboard';
 import Menu5ModelDashboard from './components/Menu5db';
 import { Sidebar } from './components/Sidebar';
@@ -30,8 +25,6 @@ import { ManpowerDashboard } from './components/ManpowerDashboard';
 // ─────────────────────────────────────────────────────
 import './App.css';
 import { NeonButton } from './components/NeonButton';
-
-const NONE = '__none__';
 
 // ── Khoá nghiệp vụ (business key) cho bảng sales_data ───────────────────────
 // Đây là bộ cột XÁC ĐỊNH DUY NHẤT 1 dòng dữ liệu (không tính `value` — value
@@ -99,19 +92,6 @@ async function idbSetCache(key: string, value: string): Promise<boolean> {
   });
 }
 
-async function idbDelCache(key: string): Promise<void> {
-  const db = await idbOpenCacheDb();
-  if (!db) return;
-  return new Promise(resolve => {
-    try {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).delete(key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    } catch (e) { resolve(); }
-  });
-}
-
 // ── Bucket routing helpers ───────────────────────────────────────────────
 // Root cause of "mất data khi chuyển tab" (Image 1): trước đây cả 3 dashboard
 // (Sales / Target-Actual / Manpower) dùng chung 1 mảng `allRows` duy nhất.
@@ -160,63 +140,13 @@ function detectBucket(headers: string[], rows: DataRow[]): 'sales' | 'manpower' 
 // nên không cần bước phân loại lại toàn bộ allData sau khi tải nữa.)
 // ─────────────────────────────────────────────────────────────────────────
 
-function computeKPI(rows: DataRow[], mapping: ColumnMapping): KPIData {
-  const hasRevenue = mapping.revenueCol !== NONE;
-  const hasCost = mapping.costCol !== NONE;
-  const hasCategory = mapping.categoryCol !== NONE;
-
-  const totalRevenue = hasRevenue ? rows.reduce((a, r) => a + toNumber(r[mapping.revenueCol]), 0) : 0;
-  const totalCost = hasCost ? rows.reduce((a, r) => a + toNumber(r[mapping.costCol]), 0) : 0;
-  const totalProfit = totalRevenue - totalCost;
-  const roi = totalCost > 0 ? ((totalProfit / totalCost) * 100) : 0;
-  const uniqueCategories = hasCategory
-    ? new Set(rows.map(r => r[mapping.categoryCol]).filter(v => v !== null && v !== undefined && v !== '')).size
-    : 0;
-
-  return {
-    totalRevenue,
-    totalCost,
-    totalProfit,
-    roi,
-    totalRows: rows.length,
-    uniqueCategories,
-    hasCost: hasCost && totalCost > 0,
-  };
-}
-
-function applyFilters(rows: DataRow[], mapping: ColumnMapping, filters: FilterState): DataRow[] {
-  let result = rows;
-  const hasDate = mapping.dateCol !== NONE;
-  const hasCategory = mapping.categoryCol !== NONE;
-
-  if (hasDate && filters.dateStart) {
-    const start = new Date(filters.dateStart);
-    result = result.filter(r => {
-      const d = parseRowToDate(r, mapping.dateCol);
-      return d !== null && d >= start;
-    });
-  }
-  if (hasDate && filters.dateEnd) {
-    const end = new Date(filters.dateEnd);
-    end.setHours(23, 59, 59, 999);
-    result = result.filter(r => {
-      const d = parseRowToDate(r, mapping.dateCol);
-      return d !== null && d <= end;
-    });
-  }
-  if (hasCategory && filters.categories.length > 0) {
-    result = result.filter(r => filters.categories.includes(String(r[mapping.categoryCol])));
-  }
-  return result;
-}
-
-function countActiveFilters(filters: FilterState): number {
-  let count = 0;
-  if (filters.dateStart) count++;
-  if (filters.dateEnd) count++;
-  if (filters.categories.length > 0) count++;
-  return count;
-}
+// EPCC (remove-menu1-overview) - FIX theo yêu cầu người dùng "xóa Mục 1 vì đã
+// có trong Mục 5": xóa computeKPI/applyFilters/countActiveFilters — 3 hàm
+// generic (KPI/lọc theo mapping/filters) CHỈ được gọi bởi state
+// kpi/filteredRows/activeFilterCount nuôi riêng SalesDashboard + màn hình
+// "Marketing Insights" fallback của Mục 1. Không dashboard nào khác
+// (Manpower/TargetActual/RTY/Menu5) dùng computeKPI/applyFilters/mapping/
+// filters — đã rà soát toàn bộ App.tsx trước khi xóa.
 
 export default function App() {
   // FIX (login-gate): toàn bộ trạng thái đăng nhập/phân quyền quản lý qua
@@ -232,22 +162,19 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [lang, setLang] = useState<'vi' | 'en' | 'ko'>('vi');
   const [screen, setScreen] = useState<ScreenState>('dashboard');
-  const [activeViewId, setActiveViewId] = useState<string>('overview');
+  // EPCC (remove-menu1-overview) - FIX theo yêu cầu người dùng "xóa Mục 1 vì
+  // đã có trong Mục 5": activeViewId mặc định đổi từ 'overview' sang
+  // 'target_actual' (mục đầu tiên còn lại sau khi xóa Mục 1).
+  const [activeViewId, setActiveViewId] = useState<string>('target_actual');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(true);
-  const [filename, setFilename] = useState('');
 
-  // Data state — 3 bucket độc lập thay vì 1 mảng allRows dùng chung.
-  const [salesRows, setSalesRows] = useState<DataRow[]>([]);
+  // Data state — 3 bucket độc lập. Bucket 'sales' (Mục 1 cũ) KHÔNG còn state
+  // local/hiển thị nữa — xem giải thích ở syncBucketToSupabase/parseSheet
+  // bên dưới: vẫn GHI 'Sales' lên Supabase khi upload không khớp
+  // Manpower/TargetActual (an toàn dữ liệu), nhưng không còn ĐỌC lại để
+  // hiển thị vì không còn dashboard nào tiêu thụ.
   const [manpowerRows, setManpowerRows] = useState<DataRow[]>([]);
   const [targetActualRows, setTargetActualRows] = useState<DataRow[]>([]);
-  // allRows: giữ lại cho pipeline generic cũ (marketing fallback, KPI/mapping
-  // tổng quát) — luôn phản ánh sheet được upload/tải gần nhất, KHÔNG dùng để
-  // render 3 dashboard chính nữa (chúng dùng bucket riêng ở trên).
-  const [allRows, setAllRows] = useState<DataRow[]>([]);
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [mapping, setMapping] = useState<ColumnMapping>({
-    dateCol: NONE, categoryCol: NONE, revenueCol: NONE, costCol: NONE, currency: 'VND',
-  });
   const hasHydratedRef = useRef(false);
   // Trạng thái đồng bộ Supabase khi upload thủ công — có thể dùng để hiện
   // badge "Đang đồng bộ..." / "Đã lên Cloud" / "Lỗi đồng bộ" trên UI nếu cần.
@@ -282,12 +209,6 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [syncStatus]);
 
-  // Cờ loading cho lần tải dữ liệu đầu tiên từ Supabase/cache. Trong lúc
-  // headers vẫn còn rỗng, dashboardMode sẽ mặc định rơi vào 'marketing' —
-  // nếu không có cờ này, người dùng sẽ thấy màn "Marketing Insights" (rỗng)
-  // lóe lên trước khi dashboard thật hiện ra. true = đang tải lần đầu.
-  const [isInitialDataLoading, setIsInitialDataLoading] = useState(true);
-
   // Persist 3 bucket ra cache (sau khi đã hydrate lần đầu) — cho phép reload
   // trang mà KHÔNG mất bucket nào, kể cả khi bucket đó chỉ tồn tại ở local
   // (chưa "Lên mây"). Dùng idbSetCache (IndexedDB) thay cho localStorage —
@@ -297,9 +218,9 @@ export default function App() {
   useEffect(() => {
     if (!hasHydratedRef.current) return;
     idbSetCache('cached_dashboard_buckets', JSON.stringify({
-      sales: salesRows, manpower: manpowerRows, targetActual: targetActualRows,
+      manpower: manpowerRows, targetActual: targetActualRows,
     })).catch(() => { /* IndexedDB không khả dụng (private mode...) — bỏ qua, không ảnh hưởng dashboard đang hiển thị */ });
-  }, [salesRows, manpowerRows, targetActualRows]);
+  }, [manpowerRows, targetActualRows]);
 
   // Load from Supabase on mount — Supabase luôn được ưu tiên.
   // Cache local chỉ là fallback khi Supabase không khả dụng.
@@ -323,20 +244,13 @@ export default function App() {
         const cachedBuckets = await idbGetCache('cached_dashboard_buckets');
         if (cancelled || !cachedBuckets) return;
         const parsed = JSON.parse(cachedBuckets);
-        const sales = parsed.sales || [];
         const manpower = parsed.manpower || [];
         const targetActual = parsed.targetActual || [];
-        const combined = [...sales, ...manpower, ...targetActual];
-        if (combined.length > 0) {
-          setSalesRows(sales);
+        if (manpower.length > 0 || targetActual.length > 0) {
           setManpowerRows(manpower);
           setTargetActualRows(targetActual);
-          setAllRows(combined);
-          setHeaders(Object.keys(combined[0]).map(k => k.trim()));
-          setFilename('Cached Local Database');
           setScreen('dashboard');
           hasHydratedRef.current = true;
-          setIsInitialDataLoading(false);
           console.log('Hiện ngay từ cache local (IndexedDB), đang đồng bộ Supabase ở nền...');
         }
       } catch (e) { /* ignore */ }
@@ -514,46 +428,41 @@ export default function App() {
             return bucketData;
           }
 
-          // Fetch 3 bucket độc lập — mỗi bucket có quota riêng, không tranh
-          // nhau. Chạy tuần tự để tránh dồn quá nhiều request cùng lúc lên
+          // EPCC (remove-menu1-overview) - FIX theo yêu cầu người dùng "xóa
+          // Mục 1 vì đã có trong Mục 5": bỏ fetchBucketRows('sales') — bucket
+          // này không còn dashboard nào tiêu thụ để hiển thị (Mục 1 đã xóa).
+          // Vẫn GHI 'Sales' lên Supabase ở syncBucketToSupabase/parseSheet
+          // bên dưới để không mất dữ liệu, chỉ ngừng ĐỌC LẠI bucket này mỗi
+          // lần tải trang — giảm 1 round-trip Supabase không cần thiết.
+          // Chạy tuần tự để tránh dồn quá nhiều request cùng lúc lên
           // Supabase Free tier (mỗi bucket bên trong đã tự chạy CONCURRENCY=3).
-          const salesResult = await fetchBucketRows('sales');
           const manpowerResult = await fetchBucketRows('manpower');
           const targetActualResult = await fetchBucketRows('target_actual');
 
-          if (salesResult === null && manpowerResult === null && targetActualResult === null) {
-            // Cả 3 bucket đều lỗi/timeout → giữ cache đang hiển thị (nếu có).
+          if (manpowerResult === null && targetActualResult === null) {
+            // Cả 2 bucket đều lỗi/timeout → giữ cache đang hiển thị (nếu có).
             hasHydratedRef.current = true;
-            setIsInitialDataLoading(false);
             return;
           }
 
-          const sales = salesResult ?? [];
           const manpower = manpowerResult ?? [];
           const targetActual = targetActualResult ?? [];
-          const allData = [...sales, ...manpower, ...targetActual];
+          const allData = [...manpower, ...targetActual];
 
-          if (salesResult === null) console.warn('Bucket Sales tải thất bại — giữ dữ liệu Sales cache cũ (nếu có), 2 bucket khác vẫn cập nhật.');
-          if (manpowerResult === null) console.warn('Bucket Manpower tải thất bại — giữ dữ liệu Manpower cache cũ (nếu có), 2 bucket khác vẫn cập nhật.');
-          if (targetActualResult === null) console.warn('Bucket TargetActual tải thất bại — giữ dữ liệu TargetActual cache cũ (nếu có), 2 bucket khác vẫn cập nhật.');
+          if (manpowerResult === null) console.warn('Bucket Manpower tải thất bại — giữ dữ liệu Manpower cache cũ (nếu có), bucket khác vẫn cập nhật.');
+          if (targetActualResult === null) console.warn('Bucket TargetActual tải thất bại — giữ dữ liệu TargetActual cache cũ (nếu có), bucket khác vẫn cập nhật.');
 
           if (allData.length > 0) {
             // Chỉ ghi đè bucket nào tải THÀNH CÔNG (khác null) — bucket lỗi
             // giữ nguyên state hiện có, tránh xoá mất dữ liệu đang hiển thị.
-            if (salesResult !== null) setSalesRows(sales);
             if (manpowerResult !== null) setManpowerRows(manpower);
             if (targetActualResult !== null) setTargetActualRows(targetActual);
-            setAllRows(allData);
-            setHeaders(Object.keys(allData[0]).map(k => k.trim()));
-            setFilename('Supabase Cloud Database');
             setScreen('dashboard');
-            idbSetCache('cached_dashboard_buckets', JSON.stringify({ sales, manpower, targetActual }))
+            idbSetCache('cached_dashboard_buckets', JSON.stringify({ manpower, targetActual }))
               .catch(() => { /* IndexedDB không khả dụng — bỏ qua, dashboard vẫn dùng state React hiện tại */ });
             hasHydratedRef.current = true;
-            setIsInitialDataLoading(false);
             console.log(
-              'Đã đồng bộ dữ liệu mới nhất từ Supabase — Sales:', sales.length,
-              '| Manpower:', manpower.length,
+              'Đã đồng bộ dữ liệu mới nhất từ Supabase — Manpower:', manpower.length,
               '| TargetActual:', targetActual.length,
               '| Tổng:', allData.length, 'rows'
             );
@@ -571,15 +480,11 @@ export default function App() {
       // xoá dashboard đang hiển thị — cứ để nguyên dữ liệu cache đó.
       // Nếu chưa hề có cache nào (lần đầu mở máy này) thì để trống.
       hasHydratedRef.current = true;
-      setIsInitialDataLoading(false);
     }
     readLocalCacheAndShow().finally(() => { if (!cancelled) loadSupabaseData(); });
     return () => { cancelled = true; };
   }, []);
 
-
-  // Filters
-  const [filters, setFilters] = useState<FilterState>({ dateStart: '', dateEnd: '', categories: [] });
 
   // Theme sync
   useEffect(() => {
@@ -922,22 +827,18 @@ export default function App() {
     return { headers: combinedHeaders, rows: combinedRows };
   }, []);
 
-  // Giữ tên `parseSheet` cho phần còn lại của pipeline (mapping, bucket
-  // routing...) không đổi — chỉ thay nguồn headers/rows đầu vào từ "1 sheet"
-  // sang "toàn bộ workbook đã gộp".
+  // Giữ tên `parseSheet` cho phần còn lại của pipeline (bucket routing)
+  // không đổi — chỉ thay nguồn headers/rows đầu vào từ "1 sheet" sang
+  // "toàn bộ workbook đã gộp".
+  // EPCC (remove-menu1-overview) - FIX theo yêu cầu người dùng "xóa Mục 1 vì
+  // đã có trong Mục 5": bỏ setHeaders/setAllRows/setMapping (chỉ nuôi
+  // pipeline generic của Mục 1, nay đã xóa). Nhánh fallback "else" (không
+  // khớp Manpower/TargetActual) VẪN gọi syncBucketToSupabase(..., 'Sales')
+  // để KHÔNG mất dữ liệu nếu người dùng lỡ upload nhầm file — chỉ không còn
+  // set state local hay tự chuyển sang tab 'overview' (đã xóa) nữa.
   const parseSheet = useCallback((wb: any) => {
     const { headers: filteredHeaders, rows: parsedRows } = parseWorkbook(wb);
-    const types = detectColumns(parsedRows, filteredHeaders);
 
-    setHeaders(filteredHeaders);
-    setAllRows(parsedRows);
-
-    // Route dữ liệu (đã gộp mọi sheet) vào ĐÚNG bucket của nó, KHÔNG đụng tới
-    // 2 bucket còn lại — đây là fix trực tiếp cho bug "upload Manpower thì
-    // Mục 1 mất data". Định tuyến data vào đúng bucket VÀ tự động chuyển
-    // sang tab phù hợp sau khi user upload thủ công. Supabase initial load
-    // KHÔNG tự chuyển (đã bỏ auto-switch effect) → trang luôn mở ở Mục 1
-    // mặc định.
     const bucket = detectBucket(filteredHeaders, parsedRows);
     if (bucket === 'manpower') {
       setManpowerRows(parsedRows);
@@ -948,114 +849,19 @@ export default function App() {
       setActiveViewId('target_actual');
       syncBucketToSupabase(parsedRows, 'TargetActual');
     } else {
-      setSalesRows(parsedRows);
-      setActiveViewId('overview');
+      // Không khớp Manpower/TargetActual — vẫn lưu lên Supabase (tag 'Sales')
+      // để an toàn dữ liệu, không hiển thị ở dashboard nào (Mục 1 đã xóa).
       syncBucketToSupabase(parsedRows, 'Sales');
     }
 
-    let autoDate = types.find(t => t.type === 'date')?.name || NONE;
-    // ... (rest of auto-detect mapping logic unchanged)
-    setMapping({
-      dateCol: autoDate,
-      categoryCol: NONE,
-      revenueCol: NONE,
-      costCol: NONE,
-      currency: 'VND',
-    });
     setScreen('dashboard');
   }, [parseWorkbook, syncBucketToSupabase]);
 
-  const handleFileSelected = useCallback((file: File, wb: any) => {
-    setFilename(file.name);
+  const handleFileSelected = useCallback((_file: File, wb: any) => {
     if (wb.SheetNames.length > 0) {
       parseSheet(wb);
     }
   }, [parseSheet]);
-
-  const handleReset = useCallback(() => {
-    setScreen('upload');
-    setAllRows([]);
-    setHeaders([]);
-    setSalesRows([]);
-    setManpowerRows([]);
-    setTargetActualRows([]);
-    resetChannelColors?.();
-    try {
-      localStorage.removeItem('cached_sales_data');
-      localStorage.removeItem('cached_dashboard_buckets');
-    } catch (e) { /* ignore */ }
-    idbDelCache('cached_dashboard_buckets').catch(() => { /* ignore */ });
-  }, []);
-
-  const dateBounds = useMemo(() => getDateBounds(allRows, mapping.dateCol), [allRows, mapping.dateCol]);
-
-  const filteredRows = useMemo(
-    () => applyFilters(allRows, mapping, filters),
-    [allRows, mapping, filters]
-  );
-
-  const kpi = useMemo(() => computeKPI(filteredRows, mapping), [filteredRows, mapping]);
-
-  const allCategories = useMemo(() => {
-    if (mapping.categoryCol === NONE) return [];
-    return Array.from(
-      new Set(allRows.map(r => r[mapping.categoryCol]).filter(v => v !== null && v !== undefined && v !== '').map(String))
-    ).sort();
-  }, [allRows, mapping.categoryCol]);
-
-  const activeFilterCount = useMemo(() => countActiveFilters(filters), [filters]);
-
-  const resetFilters = useCallback(() => {
-    setFilters({ dateStart: '', dateEnd: '', categories: [] });
-  }, []);
-
-  const isTargetActual = useMemo(() => {
-    const headersLower = headers.map(h => h.toLowerCase().trim());
-    const headersStr = headersLower.join(' ');
-    
-    const hasTarget = headersStr.includes('target') || headersStr.includes('목표');
-    const hasActual = headersStr.includes('actual') || headersStr.includes('실적');
-    if (hasTarget && hasActual) return true;
-
-    const hasModel = headersLower.includes('model');
-    const hasDivision = headersLower.includes('division');
-    const hasValue = headersLower.includes('value');
-    const hasDate = headersLower.includes('date');
-    const hasType = headersLower.includes('type') || headersLower.includes('type1');
-    const hasCustom = headersLower.includes('custom') || headersLower.includes('type2');
-
-    if (hasModel && hasDivision && hasValue && hasDate && hasType && hasCustom) {
-      return true;
-    }
-
-    return false;
-  }, [headers]);
-
-  // ── detect manpower data (Test_3 style) ─────────────────────────────────
-  // Test_3.xlsx: Type = "TTL ManPower AVG" → chứa "manpower" → route sang ManpowerDashboard.
-  // Per Capita (Tab 2) nằm trong ManpowerDashboard, không cần detect riêng.
-  const isManpower = useMemo(() => {
-    const headersLower = headers.map(h => h.toLowerCase().trim());
-    const hasModel = headersLower.includes('model');
-    const hasType  = headersLower.includes('type');
-    const hasDate  = headersLower.includes('date');
-    const hasValue = headersLower.includes('value');
-    if (hasModel && hasType && hasDate && hasValue) {
-      return allRows.some(r =>
-        String(r.type || r.Type || '').toLowerCase().includes('manpower')
-      );
-    }
-    return false;
-  }, [headers, allRows]);
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const dashboardMode = useMemo(() => {
-    if (isManpower) return 'manpower';
-    if (isTargetActual) return 'target_actual';
-    const headersStr = headers.join(' ').toLowerCase();
-    const isSales = headersStr.includes('division') || headersStr.includes('model') || headersStr.includes('qty') || headersStr.includes("q'ty") || headersStr.includes('value');
-    return isSales ? 'sales' : 'marketing';
-  }, [headers, isTargetActual, isManpower]);
 
   // ── Auto-switch: đã chuyển sang parseSheet (chỉ khi upload tay).
   //    KHÔNG còn auto-switch khi Supabase load → trang luôn mở ở Mục 1. ──
@@ -1168,27 +974,14 @@ export default function App() {
               hiện riêng cho Mục 4 (placeholder) đã ĐƯỢC GỘP vào Sidebar (hiển
               thị chung cho toàn bộ Mục 1-4), nên bỏ hẳn khối lặp lại này. */}
 
-            {/* ── MENU 1: Sales Dashboard ──
-                Chỉ render khi user chủ động chọn 'overview' (Mục 1).
-                KHÔNG dùng dashboardMode để quyết định — tránh bug hiện Mục 3 khi
-                allRows là Manpower nhưng user đang ở Mục 1. */}
-            {activeViewId === 'overview' && dashboardMode !== 'marketing' && (
-              <SalesDashboard
-                rows={salesRows}
-                mapping={mapping}
-                theme={theme}
-                onBack={() => {}}
-                onToggleTheme={toggleTheme}
-                filters={filters}
-                onFilterChange={setFilters}
-                minDate={dateBounds.min}
-                maxDate={dateBounds.max}
-                allCategories={allCategories}
-                lang={lang}
-                setLang={setLang}
-                onFileSelected={handleFileSelected}
-              />
-            )}
+            {/* EPCC (remove-menu1-overview) - FIX theo yêu cầu người dùng
+                "xóa Mục 1 vì đã có trong Mục 5": đã xóa hẳn khối render
+                SalesDashboard (activeViewId === 'overview'), khối spinner
+                riêng cho Mục 1, và khối fallback "Marketing Insights"
+                (FilterBar/KPIGrid/ChartsSection/DetailTable) — nội dung
+                doanh số tương ứng nay nằm trong tab "TÌNH HÌNH DOANH THU"
+                của Mục 5 (Menu5ModelDashboard bên dưới). Không đụng tới
+                Manpower/TargetActual/RTY/Menu5. */}
 
             {/* ── MENU 3: Manpower Dashboard (có Tab 2 Per Capita bên trong) ── */}
             {activeViewId === 'manpower' && (
@@ -1233,75 +1026,20 @@ export default function App() {
             {/* MENU 5: Dashboard Hiệu suất sản xuất theo Model — dữ liệu thật
                từ Test5.xlsx (đã tổng hợp sẵn ở data/test5Data.json), thay cho
                demo DashboardTemplate ban đầu. Bucket riêng, không đụng
-               sales/manpower/target_actual. */}
-            {activeViewId === 'my_new_dashboard' && (
+               sales/manpower/target_actual.
+               EPCC (menu5-real-id-fcost) - FIX theo yêu cầu người dùng "đổi
+               luôn trong app": đổi điều kiện từ id placeholder
+               'my_new_dashboard' sang id thật 'fcost', khớp CHÍNH XÁC với
+               `id: 'fcost'` mới sửa trong Sidebar.tsx ITEMS (mục 5, "DOANH SỐ
+               - FCOST"). Không đổi gì khác trong khối này — vẫn dùng đúng
+               component Menu5ModelDashboard/props như cũ. */}
+            {activeViewId === 'fcost' && (
               <Menu5ModelDashboard
                 theme={theme as 'dark' | 'light'}
                 onToggleTheme={toggleTheme}
                 lang={lang}
                 setLang={setLang}
               />
-            )}
-
-            {activeViewId === 'overview' && isInitialDataLoading && (
-              <div
-                style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  justifyContent: 'center', minHeight: '60vh', gap: '16px',
-                }}
-              >
-                <div className="spinner" style={{
-                  width: '36px', height: '36px', borderRadius: '50%',
-                  border: '3px solid var(--border-soft, #e5e7eb)',
-                  borderTopColor: 'var(--primary, #6366f1)',
-                  animation: 'spin 0.8s linear infinite',
-                }} />
-                <p style={{ color: 'var(--text-2)' }}>
-                  {lang === 'vi' ? 'Đang tải dữ liệu...' : lang === 'en' ? 'Loading data...' : '데이터 로딩 중...'}
-                </p>
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-              </div>
-            )}
-
-            {activeViewId === 'overview' && !isInitialDataLoading && dashboardMode === 'marketing' && (
-              <div className="dashboard-screen">
-                <header className="topbar">
-                  <div className="topbar-left">
-                    <div className="brandmark">
-                      <div className="brandmark-dot">📊</div>
-                      <span className="brandmark-text">Marketing Insights</span>
-                    </div>
-                  </div>
-                  <div className="topbar-right">
-                    <div className="filename-pill">
-                      <span>📁</span>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{filename}</span>
-                    </div>
-                    <NeonButton className="btn btn-ghost btn-sm" onClick={handleReset}>
-                      {"\u2190"} Tải file khác
-                    </NeonButton>
-                    <NeonButton className="theme-toggle" onClick={toggleTheme}>
-                      {theme === 'dark' ? '☀️' : '🌙'}
-                    </NeonButton>
-                  </div>
-                </header>
-
-                <main className="dash-body">
-                  <FilterBar
-                    filters={filters}
-                    onFilterChange={setFilters}
-                    categories={allCategories}
-                    minDate={dateBounds.min}
-                    maxDate={dateBounds.max}
-                    mapping={mapping}
-                    activeCount={activeFilterCount}
-                    onReset={resetFilters}
-                  />
-                  <KPIGrid kpi={kpi} mapping={mapping} />
-                  <ChartsSection rows={allRows} mapping={mapping} theme={theme} />
-                  <DetailTable rows={filteredRows} headers={headers} mapping={mapping} />
-                </main>
-              </div>
             )}
           </main>
         </div>

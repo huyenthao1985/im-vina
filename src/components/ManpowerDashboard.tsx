@@ -57,7 +57,7 @@ const T = {
   modelFilter: { vi: 'Model', en: 'Model', ko: '모델' },
   allModels: { vi: 'Tất cả Model', en: 'All Models', ko: '전체 모델' },
   uploadBtn: { vi: 'Tải tệp', en: 'Upload File', ko: '파일 업로드' },
-  exportBtn: { vi: 'Tải Excel', en: 'Export Excel', ko: '엑셀 다운로드' },
+  exportBtn: { vi: 'Tải tệp lên', en: 'Upload file', ko: '파일 업로드' },
   dateError: { vi: 'Từ ngày phải nhỏ hơn hoặc bằng Đến ngày', en: 'From Date must be <= To Date', ko: '시작일은 종료일보다 이전이어야 합니다' },
   viewBy: { vi: 'XEM THEO', en: 'VIEW BY', ko: '보기 방식' },
   day: { vi: 'Ngày', en: 'Day', ko: '일별' },

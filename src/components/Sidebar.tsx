@@ -34,36 +34,41 @@ interface SidebarProps {
   onOpenAdmin: () => void;
 }
 
+// EPCC (remove-menu1-overview) - FIX theo yêu cầu người dùng "xóa Mục 1 vì đã
+// có trong Mục 5": xóa hẳn item 'overview' (trước là index '1') — nội dung
+// "Tổng quan xuất hàng - doanh số" nay đã có trong tab "TÌNH HÌNH DOANH THU"
+// của Mục 5 (Menu5db.tsx). Đánh số lại 4 mục còn lại từ 1-4, không còn nhảy
+// cóc số. Không còn nơi nào khác trong Sidebar.tsx tham chiếu id 'overview'.
 const ITEMS = [
   {
-    id: 'overview',
-    index: '1',
-    name: { vi: 'TỔNG QUAN XUẤT HÀNG - DOANH SỐ', en: 'Production - Shipment - Sales', ko: '생산-출하-매출 개요' },
-  },
-  {
     id: 'target_actual',
-    index: '2',
+    index: '1',
     name: { vi: 'DOANH SỐ THEO THÁNG', en: 'Sales Target vs Actual', ko: '매출 목표 대비 실적' },
   },
   {
     // Mục 3 = Manpower + ProductionPerCapita gộp lại, dùng tab bên trong
     id: 'manpower',
-    index: '3',
+    index: '2',
     name: { vi: 'SẢN LƯỢNG ĐẦU NGƯỜI & NHÂN LỰC', en: 'Production Per Capita & Manpower', ko: '인당 생산수 & 근무 인력 현황' },
   },
   {
     id: 'placeholder',
-    index: '4',
+    index: '3',
     name: { vi: 'HIỆU SUẤT RTY', en: 'RTY Performance', ko: 'RTY 성과' },
   },
   {
     // FIX (add-template-dashboard-menu): mục mới trỏ tới DashboardTemplate.tsx
-    // (file mẫu EPCC) — đổi id 'my_new_dashboard' thành id thật khi nhân bản,
-    // và PHẢI khớp CHÍNH XÁC với điều kiện `activeViewId === '...'` đang thêm
-    // trong App.tsx (xem hướng dẫn 3 bước đã trao đổi ở lượt chat trước).
-    id: 'my_new_dashboard',
-    index: '5',
-    name: { vi: 'TÊN TRANG MỚI', en: 'New Page Name', ko: '새 페이지 이름' },
+    // (file mẫu EPCC) — id thật khớp CHÍNH XÁC với điều kiện
+    // `activeViewId === '...'` đang thêm trong App.tsx.
+    // EPCC (menu5-real-id-fcost) - FIX theo yêu cầu người dùng "đổi luôn
+    // trong app": dashboard này đã thực sự là Menu5db (F-Cost), không còn là
+    // trang mẫu DashboardTemplate nữa — đổi id 'my_new_dashboard' → 'fcost'
+    // (id thật), khớp CHÍNH XÁC với điều kiện `activeViewId === 'fcost'` mới
+    // sửa trong App.tsx. Không có nơi nào khác trong Sidebar.tsx/App.tsx
+    // tham chiếu tới id cũ ngoài 2 chỗ này (đã rà soát trước khi đổi).
+    id: 'fcost',
+    index: '4',
+    name: { vi: 'DOANH SỐ - FCOST', en: 'Sales - F-Cost', ko: '매출 - F-Cost' },
   },
 ];
 

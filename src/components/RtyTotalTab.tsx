@@ -510,7 +510,17 @@ export function RtyTotalTab({ theme, lang }: { theme: ThemeMode; lang: Lang }) {
           x: modelsWithData, y, name: ym, type: 'scatter' as const, mode: 'lines+markers+text' as const,
           line: { color, width: 2, shape: 'spline' as const, smoothing: 1 }, // spline = đường CONG mượt (smoothed)
           marker: { color, size: 6 },
-          text: y.map(v => v == null ? '' : v.toFixed(1)), textposition: 'top center' as const,
+          text: y.map(v => v == null ? '' : v.toFixed(1)),
+          // EPCC (rty-chart6-declutter-low-values) - FIX theo yêu cầu người
+          // dùng "những mục nào dưới 90% hãy di chuyển sang trục Y để trục X
+          // nhìn rõ hơn": các điểm < 90% thường dồn cụm ở nhóm model đầu bên
+          // trái (VD SO1C2ED/SO1B01 trong ảnh tham chiếu) — nhãn "top center"
+          // mặc định chồng lên nhau và đè xuống gần nhãn model trên trục X.
+          // Với riêng các điểm này, đẩy nhãn sang bên trái điểm (hướng về
+          // phía trục Y) bằng 'middle left' để tách nhãn ra khỏi cụm, không
+          // còn che nhãn trục X. Các điểm >= 90% giữ nguyên 'top center' như
+          // cũ. `textposition` hỗ trợ mảng theo từng điểm dữ liệu (arrayOK).
+          textposition: y.map(v => (v != null && v < 90 ? 'middle left' as const : 'top center' as const)),
           textfont: { color, size: 9.5, family: 'Arial Black, Arial, sans-serif' },
           connectgaps: false, cliponaxis: false,
           hovertemplate: `<b>${ym}</b><br>%{x}: %{y:.2f}%<extra></extra>`,
@@ -534,7 +544,11 @@ export function RtyTotalTab({ theme, lang }: { theme: ThemeMode; lang: Lang }) {
 
       window.Plotly.newPlot(elId, traces, {
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
-        font: { color: fontColor, size: 11 }, margin: { t: 20, r: 20, b: 44, l: 48 }, showlegend: false,
+        // EPCC (rty-chart6-declutter-low-values): margin trái tăng 48→64 vì
+        // nhãn 'middle left' của các điểm <90% (xem plotModelLinePanel phía
+        // trên) vươn ra bên trái điểm dữ liệu, dễ bị cắt sát mép trái khi
+        // điểm đó rơi đúng model đầu tiên trên trục X.
+        font: { color: fontColor, size: 11 }, margin: { t: 20, r: 20, b: 44, l: 64 }, showlegend: false,
         xaxis: { tickfont: { size: 10.2, color: fontColor }, gridcolor: gridColor, tickangle: -15 },
         yaxis: { gridcolor: gridColor, tickfont: { size: 10 }, range: [Math.max(0, minY - pad), maxY + pad], ticksuffix: '%' },
         hoverlabel: { font: { size: 10 } },
@@ -750,7 +764,17 @@ export function RtyTotalTab({ theme, lang }: { theme: ThemeMode; lang: Lang }) {
       {/* ── 4 biểu đồ Radar (TTL / MAIN / SUB1 / SUB2) — layout 2x2 giống ảnh mẫu.
           EPCC (rty-total-chart56-to-spider): Chart 5,6 (SUB1/SUB2) trước đây là
           dạng cột+đường, nay chuyển thành radar theo model y hệt Chart 1,2 —
-          tái sử dụng NGUYÊN VĂN plotSpiderPanel(), chỉ đổi stage='sub1'/'sub2'. ── */}
+          tái sử dụng NGUYÊN VĂN plotSpiderPanel(), chỉ đổi stage='sub1'/'sub2'.
+          EPCC (rty-total-restore-per-card-legend) - FIX ROOT CAUSE "đã tự ý
+          tách legend thành 1 khối riêng bên ngoài và chỉ lấy dữ liệu legend
+          của card đầu (TTL) dùng chung cho cả 4 card, sai với đúng vị trí
+          người dùng khoanh đỏ (mỗi card có legend RIÊNG ngay trong header của
+          chính nó)": trả lại legend riêng cho từng card — TTL dùng
+          spiderLegendTTL, MAIN dùng spiderLegendMAIN, SUB1 dùng
+          spiderLegendSUB1, SUB2 dùng spiderLegendSUB2 — chỉ chỉnh CSS
+          (whiteSpace: 'nowrap' + overflowX: 'auto', gap/font nhỏ hơn) để 7
+          mốc tháng nằm gọn 1 dòng trong header, không bị word-wrap xuống 2
+          dòng như bản gốc, đúng ý "thu gọn card lại". ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {([
           // FIX (unify-colors-with-rtydashboard, EPCC): đồng bộ accent + bg
@@ -768,11 +792,18 @@ export function RtyTotalTab({ theme, lang }: { theme: ThemeMode; lang: Lang }) {
           <div key={panel.id} className="panel chart-panel">
             <div className="card-header-styled" style={{
               background: panel.bg, borderLeft: `4px solid ${panel.accent}`,
-              color: isLightMode ? '#1f2937' : 'var(--text-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '6px 10px', fontWeight: 700, fontSize: 12, textTransform: 'uppercase', flexWrap: 'wrap', gap: 4,
+              color: isLightMode ? '#1f2937' : 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8,
+              padding: '5px 10px', fontWeight: 700, fontSize: 12, textTransform: 'uppercase',
             }}>
-              <span>{panel.title}</span>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', textTransform: 'none', fontWeight: 500 }}>
+              <span style={{ flexShrink: 0 }}>{panel.title}</span>
+              {/* EPCC (rty-total-legend-wrap-like-chart6): không đủ chỗ thì
+                  xuống dòng (flexWrap) — giống đúng cách panel "TTL RTY THEO
+                  MODEL (8 THÁNG GẦN NHẤT)" (chart 6) đang hiển thị, không dùng
+                  thanh cuộn ngang. */}
+              <div style={{
+                display: 'flex', gap: 2, flexWrap: 'wrap',
+                textTransform: 'none', fontWeight: 500, flex: 1,
+              }}>
                 {panel.legend.map((lg, i) => <RtyLegendItem key={i} type="line" label={lg.label} color={lg.color} />)}
               </div>
             </div>
