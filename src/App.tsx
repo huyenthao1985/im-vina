@@ -180,9 +180,13 @@ export default function App() {
   const [activeViewId, setActiveViewId] = useState<string>('target_actual');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(true);
 
+  // Data state — 3 bucket độc lập. Bucket 'sales' (Mục 1 cũ) KHÔNG còn state
+  // local/hiển thị nữa — xem giải thích ở syncBucketToSupabase/parseSheet
+  // bên dưới: vẫn GHI 'Sales' lên Supabase khi upload không khớp
+  // Manpower/TargetActual (an toàn dữ liệu), nhưng không còn ĐỌC lại để
+  // hiển thị vì không còn dashboard nào tiêu thụ.
   const [manpowerRows, setManpowerRows] = useState<DataRow[]>([]);
   const [targetActualRows, setTargetActualRows] = useState<DataRow[]>([]);
-  const [rtyRows, setRtyRows] = useState<DataRow[]>([]);
   const hasHydratedRef = useRef(false);
   // Trạng thái đồng bộ Supabase khi upload thủ công — có thể dùng để hiện
   // badge "Đang đồng bộ..." / "Đã lên Cloud" / "Lỗi đồng bộ" trên UI nếu cần.
@@ -303,13 +307,17 @@ export default function App() {
               return null;
             });
 
-          type BucketKind = 'sales' | 'manpower' | 'target_actual' | 'rty';
+          type BucketKind = 'sales' | 'manpower' | 'target_actual';
 
+          // Áp filter đúng bucket lên 1 query builder Supabase (dùng lại
+          // cho cả head-count request và các trang range() bên dưới).
           const applyBucketFilter = (kind: BucketKind, q: any) => {
             if (kind === 'manpower') return q.eq('source_tag', 'Manpower');
             if (kind === 'target_actual') return q.eq('source_tag', 'TargetActual');
-            if (kind === 'rty') return q.eq('source_tag', 'RTY');
-            return q.not('source_tag', 'in', '("Manpower","TargetActual","RTY")');
+            // Sales: KHÔNG mang source_tag Manpower/TargetActual (comment
+            // gốc ở bucketByTag() vẫn đúng — origin của Sales là dữ liệu
+            // xuất xứ thật, không bao giờ trùng 2 tag trên).
+            return q.not('source_tag', 'in', '("Manpower","TargetActual")');
           };
 
           // Tải toàn bộ (tối đa MAX_PAGES trang) của 1 bucket.
@@ -442,34 +450,32 @@ export default function App() {
           // Supabase Free tier (mỗi bucket bên trong đã tự chạy CONCURRENCY=3).
           const manpowerResult = await fetchBucketRows('manpower');
           const targetActualResult = await fetchBucketRows('target_actual');
-          const rtyResult = await fetchBucketRows('rty');
 
-          if (manpowerResult === null && targetActualResult === null && rtyResult === null) {
+          if (manpowerResult === null && targetActualResult === null) {
+            // Cả 2 bucket đều lỗi/timeout → giữ cache đang hiển thị (nếu có).
             hasHydratedRef.current = true;
             return;
           }
 
           const manpower = manpowerResult ?? [];
           const targetActual = targetActualResult ?? [];
-          const rtyData = rtyResult ?? [];
-          const allData = [...manpower, ...targetActual, ...rtyData];
+          const allData = [...manpower, ...targetActual];
 
           if (manpowerResult === null) console.warn('Bucket Manpower tải thất bại — giữ dữ liệu Manpower cache cũ (nếu có), bucket khác vẫn cập nhật.');
           if (targetActualResult === null) console.warn('Bucket TargetActual tải thất bại — giữ dữ liệu TargetActual cache cũ (nếu có), bucket khác vẫn cập nhật.');
-          if (rtyResult === null) console.warn('Bucket RTY tải thất bại — giữ dữ liệu RTY cache cũ (nếu có), bucket khác vẫn cập nhật.');
 
           if (allData.length > 0) {
+            // Chỉ ghi đè bucket nào tải THÀNH CÔNG (khác null) — bucket lỗi
+            // giữ nguyên state hiện có, tránh xoá mất dữ liệu đang hiển thị.
             if (manpowerResult !== null) setManpowerRows(manpower);
             if (targetActualResult !== null) setTargetActualRows(targetActual);
-            if (rtyResult !== null) setRtyRows(rtyData);
             setScreen('dashboard');
-            idbSetCache('cached_dashboard_buckets', JSON.stringify({ manpower, targetActual, rty: rtyData }))
-              .catch(() => {});
+            idbSetCache('cached_dashboard_buckets', JSON.stringify({ manpower, targetActual }))
+              .catch(() => { /* IndexedDB không khả dụng — bỏ qua, dashboard vẫn dùng state React hiện tại */ });
             hasHydratedRef.current = true;
             console.log(
               'Đã đồng bộ dữ liệu mới nhất từ Supabase — Manpower:', manpower.length,
               '| TargetActual:', targetActual.length,
-              '| RTY:', rtyData.length,
               '| Tổng:', allData.length, 'rows'
             );
             return;
@@ -521,6 +527,11 @@ export default function App() {
 
   const syncBucketToSupabase = useCallback(async (
     rows: DataRow[],
+    // EPCC (rty-cloud-sync-missing): thêm 'RTY' vào danh sách bucketTag hợp lệ.
+    // Trước đây type này chỉ có 3 giá trị, nên dù detectBucket() đã nhận diện
+    // đúng 'rty', không có nhánh nào trong parseSheet() gọi
+    // syncBucketToSupabase(rows, 'RTY') được (lỗi biên dịch nếu cố truyền) —
+    // buộc code phải rơi vào nhánh else chung và gắn nhầm tag 'Sales'.
     bucketTag: 'Sales' | 'Manpower' | 'TargetActual' | 'RTY'
   ) => {
     if (!supabase) {
@@ -662,18 +673,31 @@ export default function App() {
           };
         });
       } else if (bucketTag === 'RTY') {
+        // EPCC (rty-cloud-sync-missing) - FIX ROOT CAUSE "upload ở Mục 4 (RTY)
+        // không lên được Supabase": bucket 'rty' được detectBucket() nhận diện
+        // đúng, nhưng parseSheet() phía dưới trước đây KHÔNG có nhánh nào xử
+        // lý 'rty' nên rơi thẳng vào else chung -> gọi syncBucketToSupabase
+        // với tag 'Sales' -> XOÁ dữ liệu Sales thật rồi ghi đè bằng dữ liệu RTY
+        // map sai cột (value luôn = 0 vì RTY không có cột 'value'/'Q'TY/AMT').
+        // Bucket RTY dùng cột gốc Model/Process/Type/Date/RTY (không có
+        // origin/customer) -> map: type = Process, division = Target/Actual
+        // (từ cột Type), value = tỉ lệ RTY (0-1).
         taggedRows = rows.map(r => {
-          const rawDate = gv(r, 'date', 'Date', 'month', 'Month', 'period', 'Period', 'day', 'Day') ?? '';
+          const rawDate = gv(r, 'date', 'Date', 'period', 'Period', 'month', 'Month') ?? '';
+          const rawType = String(gv(r, 'type', 'Type') ?? '').trim().toLowerCase();
+          const isActual = rawType.includes('actual') || rawType.includes('thực tế') || rawType.includes('act');
+          const rawRty = gv(r, 'rty', 'RTY', "RTY %", 'RTY%', 'value', 'Value', 'rate', 'Rate');
+          const rtyNum = Number(rawRty ?? 0);
           return {
             source_tag: 'RTY',
-            model:    String(gv(r, 'model', 'Model', 'SO', 'so') ?? '').trim() || 'N/A',
+            model:    String(gv(r, 'model', 'Model', 'so', 'SO') ?? '').trim() || 'N/A',
             origin:   'RTY',
-            customer: String(gv(r, 'customer', 'Customer') ?? '').trim(),
-            type:     String(gv(r, 'type', 'Type') ?? '').trim() || 'Actual',
-            division: String(gv(r, 'process', 'Process', 'ITEM', 'Item') ?? '').trim() || 'RTY_TTL',
-            year:     Number(gv(r, 'year', 'Year') ?? guessYear(rawDate)),
+            customer: '',
+            type:     String(gv(r, 'process', 'Process', 'item', 'Item') ?? '').trim() || 'N/A',
+            division: isActual ? 'actual' : 'target',
+            year:     guessYear(rawDate),
             month:    String(rawDate).trim() || 'N/A',
-            value:    Number(gv(r, 'rty', 'RTY', 'RTY %', 'RTY%', 'value', 'Value') ?? 0),
+            value:    isNaN(rtyNum) ? 0 : (rtyNum > 1 ? rtyNum / 100 : rtyNum),
           };
         });
       } else {
@@ -869,8 +893,17 @@ export default function App() {
       setTargetActualRows(parsedRows);
       setActiveViewId('target_actual');
       syncBucketToSupabase(parsedRows, 'TargetActual');
+    } else if (bucket === 'rty') {
+      // EPCC (rty-cloud-sync-missing) - FIX ROOT CAUSE "upload Mục 4 (RTY)
+      // không lên được Supabase": trước đây thiếu hẳn nhánh này nên bucket
+      // 'rty' (đã được detectBucket nhận diện đúng) rơi vào else bên dưới và
+      // bị gắn NHẦM tag 'Sales' -> xoá mất dữ liệu Sales thật trên Supabase.
+      // Không set state local ở đây vì RtyDashboard tự quản lý state/hiển thị
+      // của nó qua onFileSelected + parseWorkbookToRtySummaryData riêng — ở
+      // đây chỉ lo phần đồng bộ lên cloud đúng bucket 'RTY'.
+      syncBucketToSupabase(parsedRows, 'RTY');
     } else {
-      // Không khớp Manpower/TargetActual — vẫn lưu lên Supabase (tag 'Sales')
+      // Không khớp Manpower/TargetActual/RTY — vẫn lưu lên Supabase (tag 'Sales')
       // để an toàn dữ liệu, không hiển thị ở dashboard nào (Mục 1 đã xóa).
       syncBucketToSupabase(parsedRows, 'Sales');
     }
@@ -1041,7 +1074,6 @@ export default function App() {
                 onToggleTheme={toggleTheme}
                 lang={lang}
                 setLang={setLang}
-                rtyRows={rtyRows}
                 onFileSelected={handleFileSelected}
                 onSyncProgress={setSyncProgress}
               />
