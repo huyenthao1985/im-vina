@@ -228,7 +228,7 @@ const TXT: Record<Lang, Record<string, string>> = {
   },
 };
 
-export function RtyTotalTab({ theme, lang }: { theme: ThemeMode; lang: Lang }) {
+export function RtyTotalTab({ theme, lang, onSyncProgress }: { theme: ThemeMode; lang: Lang; onSyncProgress?: (progress: { bucket: string; done: number; total: number } | null) => void }) {
   const t = TXT[lang];
   const isLightMode = theme === 'light';
   const tealAccent = isLightMode ? '#0f766e' : '#14b8a6';
@@ -310,17 +310,22 @@ export function RtyTotalTab({ theme, lang }: { theme: ThemeMode; lang: Lang }) {
 
   const handleUploadFile = async (file: File) => {
     setIsParsing(true); setUploadError(null);
+    onSyncProgress?.({ bucket: 'RTY', done: 0, total: 0 });
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array' });
       const parsed = aggregateWorkbookToRtyData(wb);
+      const rows = parsed.months?.length || 0;
+      onSyncProgress?.({ bucket: 'RTY', done: rows, total: rows });
       setData(parsed);
       await idbSetCache(IDB_KEY_RTY_DATA, JSON.stringify(parsed));
       await idbSetCache(IDB_KEY_RTY_META, JSON.stringify({ fileName: file.name, uploadedAt: new Date().toISOString() }));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (e) {
       setUploadError(e instanceof RtyParseError ? e.message : 'Không đọc được file Excel. Vui lòng kiểm tra lại định dạng.');
     } finally {
       setIsParsing(false);
+      onSyncProgress?.(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };

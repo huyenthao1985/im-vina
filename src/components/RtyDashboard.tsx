@@ -39,6 +39,7 @@ interface RtyDashboardProps {
    *  thái chờ (disabled). Dữ liệu hiển thị bên dưới là dữ liệu THAM CHIẾU
    *  nhúng sẵn từ Test4.xlsx, không phải dữ liệu do người dùng tải lên. */
   onFileSelected?: (file: File, workbook: any) => void;
+  onSyncProgress?: (progress: { bucket: string; done: number; total: number } | null) => void;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -585,7 +586,7 @@ const RtyLegendItem: React.FC<RtyLegend> = ({ type, label, color }) => {
 };
 
 export const RtyDashboard: React.FC<RtyDashboardProps> = ({
-  theme, onToggleTheme: _onToggleTheme, lang, setLang: _setLang, onFileSelected,
+  theme, onToggleTheme: _onToggleTheme, lang, setLang: _setLang, onFileSelected, onSyncProgress,
 }) => {
   const t = TXT[lang];
   const isLightMode = theme === 'light';
@@ -1336,7 +1337,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
       )}
 
       {/* ══════════════ TAB MỚI: RTY TOTAL (chuyển từ Mục 5 sang) ══════════════ */}
-      {activeTab === 'rtyTotal' && <RtyTotalTab theme={theme} lang={lang} />}
+      {activeTab === 'rtyTotal' && <RtyTotalTab theme={theme} lang={lang} onSyncProgress={onSyncProgress} />}
 
       {/* ══════════════ TAB 1: TÌNH HÌNH RTY ══════════════ */}
       {activeTab === 'summary' && (

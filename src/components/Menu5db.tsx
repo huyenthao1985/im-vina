@@ -2592,9 +2592,10 @@ interface Menu5Props {
   onToggleTheme?: () => void;
   lang: Lang;
   setLang?: (l: Lang) => void;
+  onSyncProgress?: (progress: { bucket: string; done: number; total: number } | null) => void;
 }
 
-export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
+export default function Menu5ModelDashboard({ theme, lang, onSyncProgress }: Menu5Props) {
   const t = TEXT[lang] ?? TEXT.vi;
   // Màu nhãn toolbar — lấy nguyên văn từ TargetActualDashboard.tsx
   // (filterLabelColor) để 2 dashboard đồng bộ, không tự bịa màu mới.
@@ -2650,22 +2651,24 @@ export default function Menu5ModelDashboard({ theme, lang }: Menu5Props) {
   async function handleUploadFile(file: File) {
     setIsParsing(true);
     setUploadError(null);
+    onSyncProgress?.({ bucket: 'F-Cost', done: 0, total: 0 });
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array', cellDates: false });
-      // EPCC (menu5-multisheet-upload): gộp TẤT CẢ sheet trong workbook,
-      // không chỉ sheet đầu tiên — xem chi tiết root cause ở comment tại
-      // định nghĩa aggregateWorkbookToTest5Data() phía trên.
       const parsed = aggregateWorkbookToTest5Data(wb);
+      const rows = parsed.models?.length || 0;
+      onSyncProgress?.({ bucket: 'F-Cost', done: rows, total: rows });
       const nowIso = new Date().toISOString();
       setDataSource(parsed);
       setLastUpdated(nowIso);
       await idbSetCache(IDB_KEY_MENU5_DATA, JSON.stringify(parsed));
       await idbSetCache(IDB_KEY_MENU5_META, nowIso);
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (err) {
       setUploadError(err instanceof Test5ParseError ? err.message : 'Không đọc được file Excel này.');
     } finally {
       setIsParsing(false);
+      onSyncProgress?.(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }

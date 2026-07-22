@@ -907,7 +907,7 @@ export default function App() {
           padding: '8px 16px', fontSize: '13px', fontWeight: 600,
           boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
         }}>
-          ⏳ Đang đồng bộ dữ liệu ({syncProgress.bucket}) lên Cloud: {syncProgress.done.toLocaleString('vi-VN')}/{syncProgress.total.toLocaleString('vi-VN')} dòng —
+          ⏳ Đang đồng bộ dữ liệu ({syncProgress.bucket}) lên Cloud{syncProgress.total > 0 ? `: ${syncProgress.done.toLocaleString('vi-VN')}/${syncProgress.total.toLocaleString('vi-VN')} dòng` : '...'} —
           {' '}VUI LÒNG KHÔNG tải lại (F5) hoặc đóng tab cho đến khi hoàn tất, nếu không dữ liệu sẽ bị mất dở.
         </div>
       )}
@@ -1020,6 +1020,7 @@ export default function App() {
                 onToggleTheme={toggleTheme}
                 lang={lang}
                 setLang={setLang}
+                onSyncProgress={setSyncProgress}
               />
             )}
 
@@ -1039,6 +1040,7 @@ export default function App() {
                 onToggleTheme={toggleTheme}
                 lang={lang}
                 setLang={setLang}
+                onSyncProgress={setSyncProgress}
               />
             )}
           </main>
