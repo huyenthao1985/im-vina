@@ -1445,8 +1445,17 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
       const modelsAll = activeModelSummary.map(m => m.model);
 
       const candidates = xs.map((label, i) => ({ label, rawIndex: idxs[i] }));
+      // EPCC (rty-ttl-spider-blank): nhiều file RTY không có cột TTL riêng (chỉ có
+      // MAIN/SUB1/SUB2) → labelsWithData rỗng → purge → spider TTL trắng.
+      // Fix: với TTL, nếu không có RTY_TTL thì fallback kiểm tra RTY_MAIN
+      // (vì modelSummary.ttl.actual đã tính từ mainAct khi RTY_TTL null,
+      // getSpiderValueWithFallback → mức 'summary' vẫn trả được giá trị).
+      const fallbackSeriesKey = processType === 'TTL' ? 'RTY_MAIN' : null;
       const labelsWithData = candidates.filter(({ rawIndex }) =>
-        modelsAll.some(m => getSeriesValueForModel(m, seriesKey, viewMode, rawIndex, activeModelSeries) != null)
+        modelsAll.some(m =>
+          getSeriesValueForModel(m, seriesKey, viewMode, rawIndex, activeModelSeries) != null
+          || (fallbackSeriesKey && getSeriesValueForModel(m, fallbackSeriesKey, viewMode, rawIndex, activeModelSeries) != null)
+        )
       );
       const selected = labelsWithData.slice(-8);
 
@@ -1467,6 +1476,10 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
             if (getSeriesValueForModel(m, seriesKey, 'month', monthIdx, activeModelSeries) != null) return true;
           }
         }
+        // EPCC (rty-ttl-spider-blank): chấp nhận RTY_MAIN làm proxy cho TTL
+        // khi file không có cột RTY_TTL riêng.
+        if (processType === 'TTL' && fallbackSeriesKey &&
+            getSeriesValueForModel(m, fallbackSeriesKey, viewMode, rawIndex, activeModelSeries) != null) return true;
         return false;
       });
       const models = modelsAll.filter(hasRealDataAtAnySelectedPeriod);
