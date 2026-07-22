@@ -127,8 +127,20 @@ function detectIsTargetActual(headers: string[]): boolean {
   return hasModel && hasDivision && hasValue && hasDate && hasType && hasCustom;
 }
 
+function detectIsRty(headers: string[], rows: DataRow[]): boolean {
+  const headersLower = headers.map(h => h.toLowerCase());
+  const hasRtyHeader = headersLower.some(h => h.includes('rty') || h.includes('sub1') || h.includes('sub2'));
+  const hasModel = headersLower.includes('model') || headersLower.includes('so');
+  if (hasRtyHeader && hasModel) return true;
+  return rows.some(r => {
+    const item = String(r['ITEM'] ?? r['Item'] ?? r['item'] ?? r['PROCESS'] ?? r['Process'] ?? r['process'] ?? '').toUpperCase();
+    return item.includes('RTY') || item.includes('SUB1') || item.includes('SUB2');
+  });
+}
+
 // Quyết định 1 sheet vừa upload thuộc bucket nào (dùng cho upload thủ công)
-function detectBucket(headers: string[], rows: DataRow[]): 'sales' | 'manpower' | 'target_actual' {
+function detectBucket(headers: string[], rows: DataRow[]): 'sales' | 'manpower' | 'target_actual' | 'rty' {
+  if (detectIsRty(headers, rows)) return 'rty';
   if (detectIsManpower(headers, rows)) return 'manpower';
   if (detectIsTargetActual(headers)) return 'target_actual';
   return 'sales';

@@ -644,47 +644,62 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
     const XLSX_lib = (window as any).XLSX || (globalThis as any).XLSX;
     if (!XLSX_lib) return null;
     const sheetNames = wb.SheetNames || [];
-    let allRows: any[] = [];
-    sheetNames.forEach((sName: string) => {
-      const sheet = wb.Sheets[sName];
-      if (!sheet) return;
-      const rows = XLSX_lib.utils.sheet_to_json(sheet, { defval: null }) as any[];
-      if (rows && rows.length > 0) {
-        allRows = allRows.concat(rows);
-      }
-    });
+    const parsedRows: Array<{
+      model: string;
+      processKey: string;
+      isActual: boolean;
+      rty: number;
+      dateInfo: NonNullable<ReturnType<typeof parseDateInfo>>;
+    }> = [];
 
-    if (allRows.length === 0) return null;
-
-    const gv = (r: any, ...keys: string[]) => {
-      for (const k of keys) {
-        if (r[k] !== undefined && r[k] !== null) return r[k];
-        const lowerK = k.toLowerCase();
-        for (const rk of Object.keys(r)) {
-          if (rk.trim().toLowerCase() === lowerK && r[rk] !== undefined && r[rk] !== null) {
-            return r[rk];
-          }
-        }
-      }
-      return null;
+    const monthNamesMap: Record<string, number> = {
+      jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+      jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+      'tháng 1': 1, 'tháng 2': 2, 'tháng 3': 3, 'tháng 4': 4, 'tháng 5': 5, 'tháng 6': 6,
+      'tháng 7': 7, 'tháng 8': 8, 'tháng 9': 9, 'tháng 10': 10, 'tháng 11': 11, 'tháng 12': 12,
     };
 
-    const parseDateInfo = (val: any) => {
+    const parseDateInfo = (val: any, rawYear?: any) => {
       if (val == null) return null;
       let d: Date | null = null;
+      let yearNum = typeof rawYear === 'number' ? rawYear : 2026;
+      if (typeof rawYear === 'string' && !isNaN(Number(rawYear))) yearNum = Number(rawYear);
+      if (yearNum < 2000 || yearNum > 2100) yearNum = 2026;
+
       if (val instanceof Date) {
         d = val;
       } else if (typeof val === 'number') {
-        d = new Date(Math.round((val - 25569) * 86400 * 1000));
+        if (val > 1000 && val < 99999) {
+          d = new Date(Math.round((val - 25569) * 86400 * 1000));
+        } else if (val >= 1 && val <= 12) {
+          d = new Date(yearNum, val - 1, 1);
+        }
       } else if (typeof val === 'string') {
         const str = val.trim();
-        if (str.includes('-')) {
+        const lowerStr = str.toLowerCase();
+        if (monthNamesMap[lowerStr]) {
+          d = new Date(yearNum, monthNamesMap[lowerStr] - 1, 1);
+        } else if (str.includes('-')) {
           const parts = str.split('-');
           if (parts.length === 3) d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+          else if (parts.length === 2) {
+            const p1 = Number(parts[0]);
+            const p2 = Number(parts[1]);
+            if (!isNaN(p1) && !isNaN(p2)) {
+              if (p1 > 12) d = new Date(yearNum, p2 - 1, p1);
+              else d = new Date(yearNum, p1 - 1, p2);
+            }
+          }
         } else if (str.includes('/')) {
           const parts = str.split('/');
-          if (parts.length === 2) d = new Date(2026, Number(parts[0]) - 1, Number(parts[1]));
-          else if (parts.length === 3) d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+          if (parts.length === 2) {
+            const p1 = Number(parts[0]);
+            const p2 = Number(parts[1]);
+            if (!isNaN(p1) && !isNaN(p2)) {
+              if (p1 > 12) d = new Date(yearNum, p2 - 1, p1);
+              else d = new Date(yearNum, p1 - 1, p2);
+            }
+          } else if (parts.length === 3) d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
         }
       }
       if (!d || isNaN(d.getTime())) return null;
@@ -706,6 +721,7 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
     const parseRtyVal = (val: any): number | null => {
       if (val == null) return null;
       if (typeof val === 'number') {
+        if (isNaN(val)) return null;
         return val > 1 ? val / 100 : val;
       }
       if (typeof val === 'string') {
@@ -718,7 +734,7 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
 
     const normalizeProcess = (proc: string): string => {
       const p = proc.trim().toUpperCase();
-      if (p.includes('TTL') || p.includes('TOTAL')) return 'RTY_TTL';
+      if (p.includes('TTL') || p.includes('TOTAL') || p === 'RTY' || p === 'RTY %') return 'RTY_TTL';
       if (p.includes('MAIN FVI')) return 'MAIN_FVI';
       if (p.includes('MAIN ASSY') || p.includes('ASSY')) return 'MAIN_ASSY';
       if (p.includes('MAIN DRIVING') || p.includes('DRIVING')) return 'MAIN_DRIVING';
@@ -734,32 +750,59 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
       return 'RTY_TTL';
     };
 
-    const parsedRows: Array<{
-      model: string;
-      processKey: string;
-      isActual: boolean;
-      rty: number;
-      dateInfo: NonNullable<ReturnType<typeof parseDateInfo>>;
-    }> = [];
-
-    allRows.forEach(r => {
-      const rawModel = gv(r, 'model', 'Model', 'MODEL');
-      const rawProc  = gv(r, 'process', 'Process', 'PROCESS', 'Item', 'ITEM');
-      const rawType  = gv(r, 'type', 'Type', 'TYPE');
-      const rawDate  = gv(r, 'date', 'Date', 'DATE', 'Period', 'PERIOD');
-      const rawRty   = gv(r, 'rty', 'RTY', 'RTY %', 'RTY%', 'value', 'Value', 'VALUE');
-
-      if (!rawModel || !rawProc) return;
-      const modelStr = String(rawModel).trim();
-      const processKey = normalizeProcess(String(rawProc));
-      const typeStr = rawType ? String(rawType).trim().toLowerCase() : 'actual';
-      const isActual = typeStr.includes('actual') || typeStr.includes('thực tế') || typeStr.includes('act');
-      const rtyVal = parseRtyVal(rawRty);
-      const dateInfo = parseDateInfo(rawDate);
-
-      if (rtyVal != null && dateInfo != null) {
-        parsedRows.push({ model: modelStr, processKey, isActual, rty: rtyVal, dateInfo });
+    const gv = (r: any, ...keys: string[]) => {
+      for (const k of keys) {
+        if (r[k] !== undefined && r[k] !== null) return r[k];
+        const lowerK = k.toLowerCase();
+        for (const rk of Object.keys(r)) {
+          if (rk.trim().toLowerCase() === lowerK && r[rk] !== undefined && r[rk] !== null) {
+            return r[rk];
+          }
+        }
       }
+      return null;
+    };
+
+    sheetNames.forEach((sName: string) => {
+      const sheet = wb.Sheets[sName];
+      if (!sheet) return;
+      const rows = XLSX_lib.utils.sheet_to_json(sheet, { defval: null }) as any[];
+      if (!rows || rows.length === 0) return;
+
+      rows.forEach(r => {
+        const rawModel = gv(r, 'model', 'Model', 'MODEL', 'so', 'SO');
+        const rawProc  = gv(r, 'process', 'Process', 'PROCESS', 'item', 'Item', 'ITEM');
+        const rawType  = gv(r, 'type', 'Type', 'TYPE');
+        const rawYear  = gv(r, 'year', 'Year', 'YEAR');
+        const rawDate  = gv(r, 'date', 'Date', 'DATE', 'period', 'Period', 'PERIOD', 'month', 'Month', 'MONTH', 'day', 'Day', 'DAY', 'time', 'Time', 'TIME');
+        const rawRty   = gv(r, 'rty', 'RTY', 'RTY %', 'RTY%', 'value', 'Value', 'VALUE', 'rate', 'Rate');
+
+        if (rawModel && rawProc) {
+          const modelStr = String(rawModel).trim();
+          const processKey = normalizeProcess(String(rawProc));
+          const typeStr = rawType ? String(rawType).trim().toLowerCase() : 'actual';
+          const isActual = typeStr.includes('actual') || typeStr.includes('thực tế') || typeStr.includes('act');
+
+          if (rawRty != null && rawDate != null) {
+            const rtyVal = parseRtyVal(rawRty);
+            const dateInfo = parseDateInfo(rawDate, rawYear);
+            if (rtyVal != null && dateInfo != null) {
+              parsedRows.push({ model: modelStr, processKey, isActual, rty: rtyVal, dateInfo });
+            }
+          }
+
+          Object.keys(r).forEach(colKey => {
+            const keyTrim = colKey.trim();
+            const dateInfo = parseDateInfo(keyTrim, rawYear);
+            if (dateInfo != null) {
+              const rtyVal = parseRtyVal(r[colKey]);
+              if (rtyVal != null) {
+                parsedRows.push({ model: modelStr, processKey, isActual, rty: rtyVal, dateInfo });
+              }
+            }
+          });
+        }
+      });
     });
 
     if (parsedRows.length === 0) return null;
