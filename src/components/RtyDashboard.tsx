@@ -1062,6 +1062,18 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   const [endDate,   setEndDate]   = useState<string>(getDefaultEndDate);
   const filterLabelColor = '#C0EF6A';
 
+  // EPCC (rty-date-range-stale-on-idb-load): khi dynamicRtyData load từ IDB cache,
+  // startDate/endDate vẫn giữ giá trị tĩnh mặc định (e.g. '2026-07-09') vì useState
+  // chỉ dùng initializer 1 lần duy nhất lúc mount. Chart bị giới hạn đến ngày tĩnh
+  // dù dữ liệu đã có đến ngày mới nhất (e.g. '2026-07-21').
+  // Sửa: useEffect theo dõi thay đổi của dynamicRtyData và tự cập nhật ngày
+  // để chart tự mở rộng đến ngày thực tế trong file upload.
+  useEffect(() => {
+    if (!dynamicRtyData) return;
+    setStartDate(dynamicRtyData.dataMinDate);
+    setEndDate(dynamicRtyData.dataMaxDate);
+  }, [dynamicRtyData?.dataMinDate, dynamicRtyData?.dataMaxDate]);
+
   const _resetFilters = () => {
     setSelectedModel(activeBestModel); setViewMode('day');
     setStartDate(getDefaultStartDate()); setEndDate(getDefaultEndDate());
