@@ -136,7 +136,7 @@ export const translations: Record<'vi' | 'en' | 'ko', TranslationDict> = {
     partner: 'Custom',
     customer: 'Khách hàng',
     resetBtn: 'Đặt lại',
-    loadExcelBtn: 'Tải Excel',
+    loadExcelBtn: 'Tải tệp lên',
     saveToCloudBtn: '☁️ Lên mây (Lưu)',
     filtersApplied: 'bộ lọc đang áp dụng',
     rowsPill: 'dòng dữ liệu',
