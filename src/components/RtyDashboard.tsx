@@ -443,6 +443,12 @@ const getSeriesValueForModel = (
  * MODEL_SERIES / MODEL_SUMMARY (trích xuất từ Test4.xlsx) — KHÔNG suy diễn
  * hay generate số giả ở bất kỳ bước nào.
  * ═══════════════════════════════════════════════════════════════════════ */
+// EPCC (rty-day-month-fallback-wrong-index): dùng để tra ĐÚNG TÊN tháng
+// (JAN..DEC) từ số tháng lấy ra từ nhãn Ngày (vd "07/21" -> 7 -> 'JUL'),
+// rồi tìm đúng VỊ TRÍ của tên tháng đó trong mảng monthLabels ĐỘNG — xem
+// giải thích chi tiết ngay tại nơi dùng nó bên dưới.
+const MONTH_NUM_TO_NAME = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
 type SpiderSource = 'exact' | 'month' | 'summary' | 'none';
 interface SpiderPoint { value: number | null; source: SpiderSource }
 
@@ -460,17 +466,42 @@ const getSpiderValueWithFallback = (
   rawIndex: number,
   currentLabel: string,
   customSummary?: ModelSummary[],
-  customSeriesMap?: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>>
+  customSeriesMap?: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>>,
+  /** EPCC (rty-day-month-fallback-wrong-index): mảng monthLabels ĐỘNG hiện
+   *  đang hiển thị (activeMonthLabels) — bắt buộc phải truyền vào để tra
+   *  đúng vị trí tháng, xem giải thích root-cause bên dưới. */
+  monthLabels?: string[]
 ): SpiderPoint => {
   const seriesKey = processType === 'TTL' ? 'RTY_TTL' : 'RTY_MAIN';
 
   const exact = getSeriesValueForModel(model, seriesKey, mode, rawIndex, customSeriesMap);
   if (exact != null) return { value: exact, source: 'exact' };
 
+  /** ═════════════════════════════════════════════════════════════════════
+   * EPCC (rty-day-month-fallback-wrong-index) - FIX ROOT CAUSE "Xem theo
+   * Ngày ra không đầy đủ biểu đồ (mạng nhện thiếu model) dù Tuần/Tháng đủ":
+   * Bản cũ suy ra vị trí tháng trong mảng `month` bằng `monthIdx = mm - 1`
+   * (số tháng trừ 1), coi mảng monthLabels như LUÔN LÀ ['JAN',...,'DEC']
+   * đủ 12 phần tử liên tục từ đầu năm. Nhưng monthLabels thực tế được dựng
+   * ĐỘNG từ đúng những tháng CÓ xuất hiện trong file (xem monthMap ở hàm
+   * buildRtySummaryFromRows) — model có thể không có dữ liệu tháng đầu năm,
+   * hoặc file chỉ có vài tháng rải rác, nên vị trí thật của 1 tháng trong
+   * mảng monthLabels KHÔNG chắc bằng "số tháng - 1". Khi lệch, monthIdx
+   * hoặc trỏ sai tháng (lấy nhầm dữ liệu tháng khác) hoặc vượt quá độ dài
+   * mảng (undefined) — model bị coi như "không có số liệu" ở nhánh Ngày dù
+   * thực ra có dữ liệu Tháng thật, khiến model đó biến mất khỏi mạng nhện
+   * hoặc bị vẽ giá trị sai — CHỈ xảy ra ở chế độ Ngày vì Tuần/Tháng không đi
+   * qua nhánh suy đoán này.
+   * SỬA: tra tên tháng thật (MONTH_NUM_TO_NAME[mm-1], vd 7 -> 'JUL') rồi tìm
+   * ĐÚNG vị trí của tên đó trong monthLabels bằng indexOf() — không đoán mò
+   * theo số thứ tự tháng nữa. Nếu không tìm thấy (indexOf trả -1), coi như
+   * không có dữ liệu tháng, rơi tiếp xuống mức "Tổng hợp" như cũ.
+   * ═════════════════════════════════════════════════════════════════════ */
   if (mode === 'day') {
     const mm = parseInt(currentLabel.split('/')[0], 10);
-    const monthIdx = mm - 1;
-    if (Number.isFinite(monthIdx) && monthIdx >= 0) {
+    const monthName = MONTH_NUM_TO_NAME[mm - 1];
+    const monthIdx = monthName && monthLabels ? monthLabels.indexOf(monthName) : -1;
+    if (monthIdx >= 0) {
       const monthVal = getSeriesValueForModel(model, seriesKey, 'month', monthIdx, customSeriesMap);
       if (monthVal != null) return { value: monthVal, source: 'month' };
     }
@@ -1597,9 +1628,14 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
       const hasRealDataAtAnySelectedPeriod = (m: string) => selected.some(({ label, rawIndex }) => {
         if (getSeriesValueForModel(m, seriesKey, viewMode, rawIndex, activeModelSeries) != null) return true;
         if (viewMode === 'day') {
+          // EPCC (rty-day-month-fallback-wrong-index): tra đúng vị trí tháng
+          // trong activeMonthLabels (mảng động) bằng indexOf(tên tháng),
+          // không đoán mò monthIdx = mm - 1 nữa — xem giải thích root-cause
+          // đầy đủ tại getSpiderValueWithFallback ở trên.
           const mm = parseInt(label.split('/')[0], 10);
-          const monthIdx = mm - 1;
-          if (Number.isFinite(monthIdx) && monthIdx >= 0 && monthIdx < activeMonthLabels.length) {
+          const monthName = MONTH_NUM_TO_NAME[mm - 1];
+          const monthIdx = monthName ? activeMonthLabels.indexOf(monthName) : -1;
+          if (monthIdx >= 0) {
             if (getSeriesValueForModel(m, seriesKey, 'month', monthIdx, activeModelSeries) != null) return true;
           }
         }
@@ -1623,7 +1659,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
         // `models` ở trên đã lọc bỏ model không hề có data thật, mức "Tổng
         // hợp" (mức 3) ở đây chỉ còn bù cho các mốc LẺ TẺ thiếu của model đã
         // đủ điều kiện — không còn tạo cả 1 model từ hư không.
-        const points = models.map(m => getSpiderValueWithFallback(m, processType, viewMode, rawIndex, label, activeModelSummary, activeModelSeries));
+        const points = models.map(m => getSpiderValueWithFallback(m, processType, viewMode, rawIndex, label, activeModelSummary, activeModelSeries, activeMonthLabels));
         const r = points.map(p => p.value != null ? parseFloat((p.value * 100).toFixed(2)) : null);
         const noteText = points.map(p => SPIDER_SOURCE_LABEL[p.source]);
         // FIX (radar-label-no-marker, EPCC): trước đây gắn thêm dấu "*" vào
