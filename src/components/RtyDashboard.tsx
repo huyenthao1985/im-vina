@@ -459,6 +459,54 @@ const SPIDER_SOURCE_LABEL: Record<SpiderSource, string> = {
   none: '(không có số liệu)'
 };
 
+/** ═══════════════════════════════════════════════════════════════════════
+ * EPCC (rty-bar-line-day-mode-gaps) - FIX ROOT CAUSE "4 biểu đồ cột+đường
+ * (TTL/MAIN/SUB1/SUB2) bị thiếu cột/đường khi Xem theo Ngày, dù Tuần/Tháng
+ * đủ, ngay cả SAU KHI đã sửa mạng nhện (rty-day-month-fallback-wrong-index)":
+ * `getYs()` trong `plotMixedPanel` (4 panel cột+đường) gọi thẳng
+ * `getSeriesValueForModel(selectedModel, key, viewMode, i, ...)` — KHÔNG hề
+ * có bước "rơi mức" nào cả, khác hẳn mạng nhện (đã có
+ * `getSpiderValueWithFallback` rơi từ Ngày -> Tháng). Với dữ liệu THẬT trên
+ * Supabase (nhiều model/quy trình không phát sinh số liệu đúng MỌI ngày,
+ * chỉ có theo tuần/tháng), phần lớn các mốc Ngày trong `idxs` trả về null
+ * cho từng cột/đường riêng lẻ (mỗi processKey như MAIN_FVI, SUB1_FPCB,
+ * SUB2_HOOK... có thể chỉ có vài ngày rải rác) → cột/đường biến mất khỏi
+ * chart. Vì đây là dữ liệu THẬT trên deploy (nhiều model + nhiều process
+ * hơn hẳn bộ dữ liệu test cục bộ), lỗi hầu như không lộ ra ở localhost với
+ * dữ liệu mẫu ít ỏi nhưng lộ rõ trên app thật.
+ * SỬA: thêm hàm rơi mức DÙNG CHUNG cho mọi processKey (không riêng
+ * RTY_TTL/RTY_MAIN như mạng nhện) — nếu mốc Ngày đang chọn không có số liệu
+ * thật, rơi xuống đúng Tháng chứa ngày đó (tra bằng tên tháng qua
+ * `monthLabels.indexOf()`, không đoán mò index). Không rơi tiếp xuống mức
+ * "Tổng hợp" như mạng nhện vì các processKey phụ (MAIN_FVI, SUB1_FPCB,
+ * SUB2_HOOK...) không có sẵn số liệu tổng hợp tương ứng trong ModelSummary.
+ * ═══════════════════════════════════════════════════════════════════════ */
+interface ValueWithFallback { value: number | null; isFallback: boolean }
+const getValueWithFallback = (
+  model: string,
+  key: string,
+  mode: 'day' | 'week' | 'month',
+  rawIndex: number,
+  currentLabel: string,
+  customSeriesMap?: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>>,
+  monthLabels?: string[]
+): ValueWithFallback => {
+  const exact = getSeriesValueForModel(model, key, mode, rawIndex, customSeriesMap);
+  if (exact != null) return { value: exact, isFallback: false };
+
+  if (mode === 'day') {
+    const mm = parseInt(currentLabel.split('/')[0], 10);
+    const monthName = MONTH_NUM_TO_NAME[mm - 1];
+    const monthIdx = monthName && monthLabels ? monthLabels.indexOf(monthName) : -1;
+    if (monthIdx >= 0) {
+      const monthVal = getSeriesValueForModel(model, key, 'month', monthIdx, customSeriesMap);
+      if (monthVal != null) return { value: monthVal, isFallback: true };
+    }
+  }
+
+  return { value: null, isFallback: false };
+};
+
 const getSpiderValueWithFallback = (
   model: string,
   processType: 'TTL' | 'MAIN',
@@ -1402,14 +1450,23 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
       const el = document.getElementById(elId);
       if (!el) return;
 
-      const getYs = (key: string): (number | null)[] =>
-        idxs.map(i => {
-          const v = getSeriesValueForModel(selectedModel, key, viewMode, i, activeModelSeries);
-          return v == null ? null : parseFloat((v * 100).toFixed(2));
+      // EPCC (rty-bar-line-day-mode-gaps): getYs giờ trả về cả giá trị đã rơi
+      // mức (nếu cần) VÀ cờ đánh dấu để hiển thị ghi chú trong tooltip —
+      // không còn để trống cột/đường chỉ vì thiếu đúng NGÀY đó.
+      const getYsWithNote = (key: string): { ys: (number | null)[]; notes: string[] } => {
+        const ys: (number | null)[] = [];
+        const notes: string[] = [];
+        idxs.forEach((i, pos) => {
+          const label = xs[pos];
+          const { value, isFallback } = getValueWithFallback(selectedModel, key, viewMode, i, label, activeModelSeries, activeMonthLabels);
+          ys.push(value == null ? null : parseFloat((value * 100).toFixed(2)));
+          notes.push(isFallback ? ' (rơi mức: TB Tháng)' : '');
         });
+        return { ys, notes };
+      };
 
       const barTraces = barSeries.map(s => {
-        const ys = getYs(s.key);
+        const { ys, notes } = getYsWithNote(s.key);
         return {
           x: xs, y: ys, name: s.name,
           type: 'bar' as const,
@@ -1418,12 +1475,13 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
           textposition: 'inside' as const,
           textfont: { size: 10, color: '#ffffff', family: 'Arial Black, Arial, sans-serif' },
           insidetextanchor: 'middle' as const,
-          hovertemplate: `%{x}<br><b>${s.name}: %{y:.2f}%</b><extra></extra>`,
+          customdata: notes,
+          hovertemplate: `%{x}<br><b>${s.name}: %{y:.2f}%%{customdata}</b><extra></extra>`,
         };
       });
 
       const lineTraces = lineSeries.map((s, idx) => {
-        const ys = getYs(s.key);
+        const { ys, notes } = getYsWithNote(s.key);
         const pos = idx === 0 ? 'top center' : 'bottom center';
         return {
           x: xs, y: ys, name: s.name,
@@ -1436,7 +1494,8 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
           textfont: { size: 10, color: s.color, family: 'Arial Black, Arial, sans-serif' },
           cliponaxis: false,
           connectgaps: true,
-          hovertemplate: `%{x}<br><b>${s.name}: %{y:.2f}%</b><extra></extra>`,
+          customdata: notes,
+          hovertemplate: `%{x}<br><b>${s.name}: %{y:.2f}%%{customdata}</b><extra></extra>`,
         };
       });
 
