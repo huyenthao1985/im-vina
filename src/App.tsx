@@ -187,6 +187,12 @@ export default function App() {
   // hiển thị vì không còn dashboard nào tiêu thụ.
   const [manpowerRows, setManpowerRows] = useState<DataRow[]>([]);
   const [targetActualRows, setTargetActualRows] = useState<DataRow[]>([]);
+  // EPCC (rty-cloud-readback-missing): rows bucket 'RTY' đọc lại từ Supabase
+  // lúc mount — trước đây bucket này chỉ được GHI (syncBucketToSupabase) chứ
+  // không bao giờ ĐỌC LẠI, nên RtyDashboard chỉ có dữ liệu qua IndexedDB nội
+  // bộ trình duyệt (origin-scoped) — domain deploy khác localhost sẽ không
+  // thấy được data đã upload.
+  const [rtyRawRows, setRtyRawRows] = useState<DataRow[]>([]);
   const hasHydratedRef = useRef(false);
   // Trạng thái đồng bộ Supabase khi upload thủ công — có thể dùng để hiện
   // badge "Đang đồng bộ..." / "Đã lên Cloud" / "Lỗi đồng bộ" trên UI nếu cần.
@@ -230,9 +236,9 @@ export default function App() {
   useEffect(() => {
     if (!hasHydratedRef.current) return;
     idbSetCache('cached_dashboard_buckets', JSON.stringify({
-      manpower: manpowerRows, targetActual: targetActualRows,
+      manpower: manpowerRows, targetActual: targetActualRows, rty: rtyRawRows,
     })).catch(() => { /* IndexedDB không khả dụng (private mode...) — bỏ qua, không ảnh hưởng dashboard đang hiển thị */ });
-  }, [manpowerRows, targetActualRows]);
+  }, [manpowerRows, targetActualRows, rtyRawRows]);
 
   // Load from Supabase on mount — Supabase luôn được ưu tiên.
   // Cache local chỉ là fallback khi Supabase không khả dụng.
@@ -258,9 +264,11 @@ export default function App() {
         const parsed = JSON.parse(cachedBuckets);
         const manpower = parsed.manpower || [];
         const targetActual = parsed.targetActual || [];
-        if (manpower.length > 0 || targetActual.length > 0) {
+        const rty = parsed.rty || []; // EPCC (rty-cloud-readback-missing)
+        if (manpower.length > 0 || targetActual.length > 0 || rty.length > 0) {
           setManpowerRows(manpower);
           setTargetActualRows(targetActual);
+          setRtyRawRows(rty); // EPCC (rty-cloud-readback-missing)
           setScreen('dashboard');
           hasHydratedRef.current = true;
           console.log('Hiện ngay từ cache local (IndexedDB), đang đồng bộ Supabase ở nền...');
@@ -307,17 +315,23 @@ export default function App() {
               return null;
             });
 
-          type BucketKind = 'sales' | 'manpower' | 'target_actual';
+          // EPCC (rty-cloud-readback-missing): thêm 'rty' vào BucketKind —
+          // trước đây bucket RTY không nằm trong union này nên fetchBucketRows
+          // không bao giờ được gọi cho bucket này (chỉ 'manpower'/'target_actual'
+          // được đọc lại lúc mount), dù syncBucketToSupabase đã ghi đúng
+          // source_tag='RTY' lên Supabase từ trước.
+          type BucketKind = 'sales' | 'manpower' | 'target_actual' | 'rty';
 
           // Áp filter đúng bucket lên 1 query builder Supabase (dùng lại
           // cho cả head-count request và các trang range() bên dưới).
           const applyBucketFilter = (kind: BucketKind, q: any) => {
             if (kind === 'manpower') return q.eq('source_tag', 'Manpower');
             if (kind === 'target_actual') return q.eq('source_tag', 'TargetActual');
-            // Sales: KHÔNG mang source_tag Manpower/TargetActual (comment
+            if (kind === 'rty') return q.eq('source_tag', 'RTY'); // EPCC (rty-cloud-readback-missing)
+            // Sales: KHÔNG mang source_tag Manpower/TargetActual/RTY (comment
             // gốc ở bucketByTag() vẫn đúng — origin của Sales là dữ liệu
-            // xuất xứ thật, không bao giờ trùng 2 tag trên).
-            return q.not('source_tag', 'in', '("Manpower","TargetActual")');
+            // xuất xứ thật, không bao giờ trùng các tag trên).
+            return q.not('source_tag', 'in', '("Manpower","TargetActual","RTY")');
           };
 
           // Tải toàn bộ (tối đa MAX_PAGES trang) của 1 bucket.
@@ -450,32 +464,40 @@ export default function App() {
           // Supabase Free tier (mỗi bucket bên trong đã tự chạy CONCURRENCY=3).
           const manpowerResult = await fetchBucketRows('manpower');
           const targetActualResult = await fetchBucketRows('target_actual');
+          // EPCC (rty-cloud-readback-missing): đọc lại bucket RTY giống hệt
+          // pattern manpower/target_actual — trước đây bước này hoàn toàn
+          // không tồn tại.
+          const rtyResult = await fetchBucketRows('rty');
 
-          if (manpowerResult === null && targetActualResult === null) {
-            // Cả 2 bucket đều lỗi/timeout → giữ cache đang hiển thị (nếu có).
+          if (manpowerResult === null && targetActualResult === null && rtyResult === null) {
+            // Cả 3 bucket đều lỗi/timeout → giữ cache đang hiển thị (nếu có).
             hasHydratedRef.current = true;
             return;
           }
 
           const manpower = manpowerResult ?? [];
           const targetActual = targetActualResult ?? [];
-          const allData = [...manpower, ...targetActual];
+          const rty = rtyResult ?? []; // EPCC (rty-cloud-readback-missing)
+          const allData = [...manpower, ...targetActual, ...rty];
 
           if (manpowerResult === null) console.warn('Bucket Manpower tải thất bại — giữ dữ liệu Manpower cache cũ (nếu có), bucket khác vẫn cập nhật.');
           if (targetActualResult === null) console.warn('Bucket TargetActual tải thất bại — giữ dữ liệu TargetActual cache cũ (nếu có), bucket khác vẫn cập nhật.');
+          if (rtyResult === null) console.warn('Bucket RTY tải thất bại — giữ dữ liệu RTY cache cũ (nếu có), bucket khác vẫn cập nhật.');
 
           if (allData.length > 0) {
             // Chỉ ghi đè bucket nào tải THÀNH CÔNG (khác null) — bucket lỗi
             // giữ nguyên state hiện có, tránh xoá mất dữ liệu đang hiển thị.
             if (manpowerResult !== null) setManpowerRows(manpower);
             if (targetActualResult !== null) setTargetActualRows(targetActual);
+            if (rtyResult !== null) setRtyRawRows(rty); // EPCC (rty-cloud-readback-missing)
             setScreen('dashboard');
-            idbSetCache('cached_dashboard_buckets', JSON.stringify({ manpower, targetActual }))
+            idbSetCache('cached_dashboard_buckets', JSON.stringify({ manpower, targetActual, rty }))
               .catch(() => { /* IndexedDB không khả dụng — bỏ qua, dashboard vẫn dùng state React hiện tại */ });
             hasHydratedRef.current = true;
             console.log(
               'Đã đồng bộ dữ liệu mới nhất từ Supabase — Manpower:', manpower.length,
               '| TargetActual:', targetActual.length,
+              '| RTY:', rty.length,
               '| Tổng:', allData.length, 'rows'
             );
             return;
@@ -1076,6 +1098,7 @@ export default function App() {
                 setLang={setLang}
                 onFileSelected={handleFileSelected}
                 onSyncProgress={setSyncProgress}
+                supabaseRtyRows={rtyRawRows} // EPCC (rty-cloud-readback-missing)
               />
             )}
 

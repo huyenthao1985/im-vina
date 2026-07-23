@@ -41,6 +41,13 @@ interface RtyDashboardProps {
    *  nhúng sẵn từ Test4.xlsx, không phải dữ liệu do người dùng tải lên. */
   onFileSelected?: (file: File, workbook: any) => void;
   onSyncProgress?: (progress: { bucket: string; done: number; total: number } | null) => void;
+  /** EPCC (rty-cloud-readback-missing): rows bucket 'RTY' đọc lại từ Supabase
+   *  lúc App.tsx mount. Trước đây RtyDashboard CHỈ có dữ liệu qua IndexedDB
+   *  cục bộ của trình duyệt vừa upload — origin-scoped, nên máy/domain khác
+   *  (VD bản deploy Vercel) không thấy được data thật đã có trên Supabase,
+   *  rơi về data tĩnh demo (MODEL_SUMMARY) dù "cùng 1 sheet" đã upload từ
+   *  nơi khác. */
+  supabaseRtyRows?: any[];
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -674,17 +681,13 @@ interface RtySummaryDynamicData {
   dataMinDate: string;
 }
 
-function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
+// EPCC (rty-cloud-readback-missing): tách từ parseWorkbookToRtySummaryData() ra hàm
+// dùng chung — nhận thẳng mảng rows (đã gộp mọi sheet HOẶC rows lấy từ Supabase,
+// cùng shape cột model/process/type/date/rty) thay vì 1 workbook Excel. Cho phép
+// RtyDashboard build dynamicRtyData từ dữ liệu Supabase giống hệt logic khi user
+// tự upload file — không lặp lại code, không lệch kết quả giữa 2 nguồn.
+function buildRtySummaryFromRows(allRows: any[]): RtySummaryDynamicData | null {
   try {
-    // EPCC (rty-upload-xlsx-global-missing) - FIX ROOT CAUSE "bấm Tải tệp lên nhưng
-    // dữ liệu không cập nhật, không có thông báo lỗi nào cả":
-    // Trước đây hàm này tìm thư viện XLSX qua `window.XLSX`/`globalThis.XLSX`, nhưng
-    // dự án import XLSX theo kiểu ES module (`import * as XLSX from 'xlsx'`) nên
-    // không bao giờ có biến global đó -> `XLSX_lib` luôn undefined -> hàm return null
-    // ngay từ dòng đầu -> onChange coi như "đọc được file nhưng không có dữ liệu hợp lệ"
-    // và bỏ qua trong im lặng. Fix: dùng thẳng module XLSX đã import tĩnh ở đầu file.
-    const XLSX_lib = XLSX;
-    const sheetNames = wb.SheetNames || [];
     const parsedRows: Array<{
       model: string;
       processKey: string;
@@ -821,13 +824,7 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
       return null;
     };
 
-    sheetNames.forEach((sName: string) => {
-      const sheet = wb.Sheets[sName];
-      if (!sheet) return;
-      const rows = XLSX_lib.utils.sheet_to_json(sheet, { defval: null }) as any[];
-      if (!rows || rows.length === 0) return;
-
-      rows.forEach(r => {
+    allRows.forEach(r => {
         const rawModel = gv(r, 'model', 'Model', 'MODEL', 'so', 'SO');
         const rawProc  = gv(r, 'process', 'Process', 'PROCESS', 'item', 'Item', 'ITEM');
         const rawType  = gv(r, 'type', 'Type', 'TYPE');
@@ -871,7 +868,6 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
           });
         }
       });
-    });
 
     if (parsedRows.length === 0) return null;
 
@@ -1045,6 +1041,37 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
       dataMinDate,
     };
   } catch (err) {
+    console.error('Error building RTY summary from rows:', err);
+    return null;
+  }
+}
+
+
+function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
+  // EPCC (rty-upload-xlsx-global-missing) - FIX ROOT CAUSE "bấm Tải tệp lên nhưng
+  // dữ liệu không cập nhật, không có thông báo lỗi nào cả":
+  // Trước đây hàm này tìm thư viện XLSX qua `window.XLSX`/`globalThis.XLSX`, nhưng
+  // dự án import XLSX theo kiểu ES module (`import * as XLSX from 'xlsx'`) nên
+  // không bao giờ có biến global đó -> `XLSX_lib` luôn undefined -> hàm return null
+  // ngay từ dòng đầu -> onChange coi như "đọc được file nhưng không có dữ liệu hợp lệ"
+  // và bỏ qua trong im lặng. Fix: dùng thẳng module XLSX đã import tĩnh ở đầu file.
+  //
+  // EPCC (rty-cloud-readback-missing): giờ chỉ còn nhiệm vụ gom rows từ MỌI sheet
+  // trong workbook thành 1 mảng phẳng, rồi giao lại cho buildRtySummaryFromRows()
+  // xử lý — cùng 1 hàm xử lý duy nhất cho cả nguồn "upload file Excel" lẫn nguồn
+  // "rows đọc lại từ Supabase" (xem effect dùng supabaseRtyRows trong component).
+  try {
+    const XLSX_lib = XLSX;
+    const sheetNames = wb.SheetNames || [];
+    let allRows: any[] = [];
+    sheetNames.forEach((sName: string) => {
+      const sheet = wb.Sheets[sName];
+      if (!sheet) return;
+      const rows = XLSX_lib.utils.sheet_to_json(sheet, { defval: null }) as any[];
+      if (rows && rows.length > 0) allRows = allRows.concat(rows);
+    });
+    return buildRtySummaryFromRows(allRows);
+  } catch (err) {
     console.error('Error parsing RTY summary workbook:', err);
     return null;
   }
@@ -1052,6 +1079,7 @@ function parseWorkbookToRtySummaryData(wb: any): RtySummaryDynamicData | null {
 
 export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   theme, onToggleTheme: _onToggleTheme, lang, setLang: _setLang, onFileSelected, onSyncProgress,
+  supabaseRtyRows, // EPCC (rty-cloud-readback-missing)
 }) => {
   const t = TXT[lang];
   const isLightMode = theme === 'light';
@@ -1083,6 +1111,24 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
       }
     })();
   }, []);
+
+  // EPCC (rty-cloud-readback-missing) - FIX ROOT CAUSE "Localhost hiện đầy đủ,
+  // domain deploy (Vercel) thiếu biểu đồ dù cùng 1 sheet đã upload":
+  // dynamicRtyData trước đây CHỈ đến từ IndexedDB của trình duyệt — origin-scoped,
+  // không chia sẻ giữa localhost và domain deploy. App.tsx giờ đọc lại bucket
+  // 'RTY' từ Supabase lúc mount và truyền xuống qua prop `supabaseRtyRows`. Ở
+  // đây: khi prop này có dữ liệu, build lại dynamicRtyData từ đó — ưu tiên hơn
+  // cache cục bộ (đúng nguyên tắc "Supabase luôn được ưu tiên" đã áp dụng cho
+  // Manpower/TargetActual ở App.tsx) — đồng thời ghi đè lại IDB cache để lần
+  // mở sau (kể cả mất mạng/offline) vẫn có ngay dữ liệu mới nhất.
+  useEffect(() => {
+    if (!supabaseRtyRows || supabaseRtyRows.length === 0) return;
+    const built = buildRtySummaryFromRows(supabaseRtyRows);
+    if (built && built.modelSummary && built.modelSummary.length > 0) {
+      setDynamicRtyData(built);
+      idbSetCacheSummary(IDB_KEY_RTY_SUMMARY_DATA, JSON.stringify(built)).catch(() => { /* ignore */ });
+    }
+  }, [supabaseRtyRows]);
 
   // EPCC (rty-empty-array-falsy-bug): operator `||` không fallback khi giá trị
   // là mảng rỗng `[]` ([] là TRUTHY trong JS). Phải kiểm tra length ạnh hưởng đến
