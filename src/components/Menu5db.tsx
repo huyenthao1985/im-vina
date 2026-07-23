@@ -2353,10 +2353,12 @@ const IM_LOGO_DATA_URI =
 const IM_LOGO_ASPECT = 257 / 156;
 
 function DonutCenterLogo({ cx, cy, r, theme }: { cx: number; cy: number; r: number; theme: ThemeMode }) {
-  // Khung ảnh logo được co theo chiều RỘNG bằng đúng đường kính vùng hiển thị
-  // (2 * r * 0.98, giữ khoảng đệm nhỏ 2% giống bản vẽ tay trước đây), chiều
-  // cao suy ra từ tỉ lệ gốc để không méo hình oval/chữ.
-  const logoW = r * 2 * 0.98;
+  // Khung ảnh logo được co theo chiều RỘNG bằng đúng đường kính vùng hiển thị.
+  // EPCC (menu5-donut-im-logo-size-plus-20pct) - theo yêu cầu người dùng
+  // "cho chữ IM phía trong to hơn khoảng 20% so với hiện tại": hệ số nền
+  // 0.98 (2%) được nhân thêm 1.2 lần => 1.176, chiều cao suy ra từ tỉ lệ gốc
+  // để không méo hình oval/chữ.
+  const logoW = r * 2 * 0.98 * 1.2;
   const logoH = logoW / IM_LOGO_ASPECT;
   return (
     <g>
