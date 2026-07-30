@@ -5,6 +5,9 @@ import { CustomSelect } from './CustomSelect';
 import { usePagination } from '../hooks/usePagination';
 import { chartTheme, getChartLayout } from './chartTheme';
 import { NeonButton } from './NeonButton';
+// EPCC (im-logo-shared-module) - đồng bộ logo IM ở Card đầu tiên với
+// Menu5db.tsx (Mục 4), xem chi tiết trong imLogo.ts
+import { IM_LOGO_DATA_URI } from './imLogo';
 
 /* ═══════════════════════════════════════════════════════════════════════
  * FIX (header-legend-merge, EPCC) — chuyển legend "Mục tiêu(Target)/Thực
@@ -2108,6 +2111,48 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       }}
     >
       <style>{`
+        /* EPCC (header-card-match-sidebar-header-60px) - đồng bộ với
+           Menu5db.tsx (Mục 4) / RtyDashboard.tsx (Mục 3): trước đây file
+           này KHÔNG có rule riêng cho .dashboard-header-grid, chỉ dùng
+           style mặc định toàn cục (không rõ padding/height) → Card đầu
+           tiên có thể lệch với Sidebar. Nay thêm rule riêng, ép cứng
+           height 60px + border-box để khớp đúng .sidebar-header (Computed:
+           height 60px, border-box, padding 0 16px, align-items center). */
+        .second-dashboard .dashboard-header-grid {
+          background: #2F3A1D;
+          border-radius: 14px;
+          padding: 0 16px;
+          border: 1px solid rgba(0,0,0,0.18);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+          height: 60px !important;
+          min-height: 60px !important;
+          box-sizing: border-box !important;
+          overflow: visible !important;
+          display: flex !important;
+          align-items: center !important;
+          /* EPCC (header-title-center) - cần position:relative để làm mốc
+             canh giữa TUYỆT ĐỐI cho .dashboard-header-title bên dưới. */
+          position: relative !important;
+        }
+        .second-dashboard .dashboard-header-left { color: #C0EF6A !important; }
+        /* EPCC (header-title-center) - theo yêu cầu người dùng "di chuyển
+           dòng chữ BÁO CÁO DOANH SỐ THÁNG... ra giữa Center": tiêu đề trước
+           đây nằm ngay sau khối logo+đồng hồ bên trái (không phải chính
+           giữa Card) vì layout flex 3 khối trái/giữa/phải không đối xứng
+           (khối trái có logo+đồng hồ, khối phải rỗng). Đổi sang canh giữa
+           TUYỆT ĐỐI (position:absolute + left:50% + translateX(-50%)) so
+           với chính giữa Card, không phụ thuộc độ rộng khối trái/phải nữa —
+           luôn nằm đúng tâm ngang của Card dù nội dung 2 bên dài/ngắn khác
+           nhau. */
+        .second-dashboard .dashboard-header-title {
+          color: #C0EF6A !important;
+          position: absolute !important;
+          left: 50% !important;
+          top: 50% !important;
+          transform: translate(-50%, -50%) !important;
+          margin: 0 !important;
+          white-space: nowrap;
+        }
         /* ═══════════════════════════════════════════════════════════════
            FIX (EPCC-merged-table-blank-space v2): bảng "DOANH SỐ & SẢN
            LƯỢNG" từng bị khoảng trắng lớn ở dưới do ép panel/bảng
@@ -2351,6 +2396,10 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
           cho Mục 1-4), không lặp lại riêng ở đây nữa. */}
       <div className="dashboard-header-grid">
         <div className="dashboard-header-left" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {/* EPCC (header-card-add-im-logo) - đồng bộ với Menu5db.tsx: thêm
+              logo IM cùng ảnh gốc IM_LOGO_DATA_URI, cùng kích thước
+              57.4px/margin 0.5mm để 2 Card giống hệt nhau. */}
+          <img src={IM_LOGO_DATA_URI} alt="IM" style={{ height: 57.4, width: 'auto', display: 'block', margin: '0.5mm 0' }} />
           <span aria-hidden="true">🕐</span>
           {formattedTime}
         </div>

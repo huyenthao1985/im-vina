@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { NeonButton } from './NeonButton';
+// EPCC (im-logo-shared-module) - đồng bộ logo IM ở Card đầu tiên với
+// Menu5db.tsx (Mục 4), xem chi tiết trong imLogo.ts
+import { IM_LOGO_DATA_URI } from './imLogo';
 // EPCC (rty-total-move-to-muc4): chuyển tab "RTY Total" từ Mục 5 sang đây
 // (Mục 4) theo yêu cầu — cùng nhóm "RTY" để dễ quan sát/quản lý, tách hẳn
 // khỏi Menu5ModelDashboard.tsx (đã dọn sạch, trả về đúng 2 tab gốc).
@@ -1262,7 +1265,11 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   const [spiderLegendTTL, setSpiderLegendTTL] = useState<{ label: string; color: string }[]>([]);
   const [spiderLegendMAIN, setSpiderLegendMAIN] = useState<{ label: string; color: string }[]>([]);
 
-  const [selectedModel, setSelectedModel] = useState<string>(activeBestModel);
+  // EPCC (rty-default-model-all): mặc định khi mở app là "Tất cả" (không tự
+  // chọn model tốt nhất) — theo yêu cầu, để 4 thẻ KPI + biểu đồ hiển thị
+  // trung bình toàn bộ model ngay từ đầu, người dùng tự chọn model cụ thể
+  // nếu muốn qua dropdown "Model".
+  const [selectedModel, setSelectedModel] = useState<string>('');
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
   const [startDate, setStartDate] = useState<string>(getDefaultStartDate);
   const [endDate,   setEndDate]   = useState<string>(getDefaultEndDate);
@@ -1281,7 +1288,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
   }, [dynamicRtyData?.dataMinDate, dynamicRtyData?.dataMaxDate]);
 
   const _resetFilters = () => {
-    setSelectedModel(activeBestModel); setViewMode('day');
+    setSelectedModel(''); setViewMode('day');
     setStartDate(getDefaultStartDate()); setEndDate(getDefaultEndDate());
   }; void _resetFilters;
 
@@ -1821,16 +1828,41 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
         .rty-dashboard .dashboard-header-grid {
           background: #2F3A1D;
           border-radius: 14px;
-          padding: 10px 16px;
+          padding: 0 16px;
           border: 1px solid rgba(0,0,0,0.18);
           box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+          /* EPCC (header-card-match-sidebar-header-60px) - đồng bộ với
+             Menu5db.tsx (Mục 4): ép height 60px + border-box để khớp đúng
+             .sidebar-header (Computed: height 60px, border-box,
+             padding 0 16px, align-items center) thay vì padding 10px 16px
+             cũ (chiều cao co theo nội dung, không khớp Sidebar). */
+          height: 60px !important;
+          min-height: 60px !important;
+          box-sizing: border-box !important;
+          overflow: visible !important;
+          display: flex !important;
+          align-items: center !important;
+          /* EPCC (header-title-center) - cần position:relative để làm mốc
+             canh giữa TUYỆT ĐỐI cho .dashboard-header-title bên dưới. */
+          position: relative !important;
         }
         /* FIX (unify-header-color-C0EF6A): đồng hồ + tiêu đề trong khung
            header-grid (nền #2F3A1D) đổi sang màu cố định '#C0EF6A' theo
            yêu cầu — cùng tông với màu nhãn filter bên dưới, đảm bảo tương
            phản tốt trên nền xanh đậm ở mọi theme. */
         .rty-dashboard .dashboard-header-left { color: #C0EF6A !important; }
-        .rty-dashboard .dashboard-header-title { color: #C0EF6A !important; }
+        /* EPCC (header-title-center) - đồng bộ với TargetActualDashboard.tsx
+           (Mục 1): canh giữa TUYỆT ĐỐI tiêu đề "HIỆU SUẤT RTY" so với chính
+           giữa Card, không phụ thuộc độ rộng khối logo+đồng hồ bên trái. */
+        .rty-dashboard .dashboard-header-title {
+          color: #C0EF6A !important;
+          position: absolute !important;
+          left: 50% !important;
+          top: 50% !important;
+          transform: translate(-50%, -50%) !important;
+          margin: 0 !important;
+          white-space: nowrap;
+        }
         /* Chuẩn hóa khung 2 tab: copy NGUYÊN VĂN từ TargetActualDashboard
            (.second-dashboard .tab-container / .tab-btn) để đồng nhất tuyệt
            đối màu sắc + cỡ chữ giữa 2 dashboard. */
@@ -1878,6 +1910,10 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
       {/* ── Header ── */}
       <div className="dashboard-header-grid">
         <div className="dashboard-header-left" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {/* EPCC (header-card-add-im-logo) - đồng bộ với Menu5db.tsx: thêm
+              logo IM cùng ảnh gốc IM_LOGO_DATA_URI, cùng kích thước
+              57.4px/margin 0.5mm để 2 Card giống hệt nhau. */}
+          <img src={IM_LOGO_DATA_URI} alt="IM" style={{ height: 57.4, width: 'auto', display: 'block', margin: '0.5mm 0' }} />
           <span aria-hidden="true">🕐</span>
           {formattedTime}
         </div>
@@ -2024,8 +2060,10 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
                       // KHÔNG đặt selectedModel về '' (gây 0/0 KPI) — giữ nguyên model đang chọn.
                       // Chỉ cập nhật selectedModel khi thực sự có model mới từ upload.
                       if (dynamicResult.modelSummary.length > 0) {
-                        const sortedBest = [...dynamicResult.modelSummary].sort((a, b) => (b.ttl.actual - b.ttl.target) - (a.ttl.actual - a.ttl.target))[0]?.model || activeBestModel;
-                        setSelectedModel(sortedBest);
+                        // EPCC (rty-default-model-all): sau khi tải tệp lên, cũng mặc định
+                        // về "Tất cả" thay vì tự chọn model tốt nhất — nhất quán với mặc
+                        // định lúc mở app (xem khai báo selectedModel ở trên).
+                        setSelectedModel('');
                       }
                       setStartDate(dynamicResult.dataMinDate);
                       setEndDate(dynamicResult.dataMaxDate);

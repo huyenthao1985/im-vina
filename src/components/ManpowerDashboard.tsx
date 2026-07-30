@@ -5,6 +5,9 @@ import { parseToDate } from '../utils';
 import { PerCapitaTab } from './PerCapitaTab';
 import { CustomSelect } from './CustomSelect';
 import { NeonButton } from './NeonButton';
+// EPCC (im-logo-shared-module) - đồng bộ logo IM ở Card đầu tiên với
+// Menu5db.tsx/RtyDashboard.tsx/TargetActualDashboard.tsx, xem imLogo.ts
+import { IM_LOGO_DATA_URI } from './imLogo';
 
 interface ManpowerDashboardProps {
   rows: DataRow[];
@@ -1119,8 +1122,13 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
   };
 
   return (
-    <div className="sales-dashboard">
-      
+    <div className="sales-dashboard manpower-dashboard">
+      {/* EPCC (im-logo-add-header-card-center-muc2) - thêm class scope riêng
+          "manpower-dashboard" (không đụng class "sales-dashboard" dùng
+          chung với SalesDashboard.tsx) để CSS chỉnh Card đầu tiên bên dưới
+          (logo IM, chiều cao 60px, canh giữa tiêu đề) chỉ áp dụng cho đúng
+          Mục 2 (Sản lượng đầu người & Nhân lực), không lan sang dashboard
+          khác đang dùng chung root class. */}
       {/* Header ngang hàng — Lang+Theme đã chuyển vào Sidebar (dùng chung
           cho Mục 1-4), không lặp lại riêng ở đây nữa.
           FIX (EPCC-copy-spacing-from-muc2): bỏ modifier "stretched" — mục 2
@@ -1136,8 +1144,65 @@ export const ManpowerDashboard: React.FC<ManpowerDashboardProps> = ({
           header (box 1) cao hơn/rộng khác mục 2. Gộp lại thành đúng 1 thẻ h1
           duy nhất, icon nằm ngay trong h1 để kế thừa đúng font-size mặc định
           của class chuẩn — chiều cao box 1 khớp hệt mục 2. */}
+      <style>{`
+        /* EPCC (im-logo-add-header-card-center-muc2) - đồng bộ Card đầu
+           tiên (dashboard-header-grid) với Mục 1/3/4: file này trước đây
+           KHÔNG có rule riêng, chỉ dùng style mặc định toàn cục (không rõ
+           padding/height) → có thể lệch với .sidebar-header. Nay thêm rule
+           riêng (scope ".manpower-dashboard" để không đụng SalesDashboard.
+           tsx đang dùng chung ".sales-dashboard"), ép height 60px +
+           border-box khớp đúng .sidebar-header (Computed: height 60px,
+           border-box, padding 0 16px, align-items center), đồng thời canh
+           giữa TUYỆT ĐỐI tiêu đề bằng position:absolute + left:50%. */}
+        /* EPCC (header-card-padding-specificity-muc2) - FIX ROOT CAUSE
+           "Card đầu tiên cao ~80px thay vì 60px như Mục 2": .panel (hoặc
+           rule global tương đương) có sẵn !important cho padding đâu đó
+           trong CSS toàn cục cho .dashboard-header-grid, cùng specificity
+           2-class (".manpower-dashboard .dashboard-header-grid") nhưng
+           thắng theo thứ tự nạp CSS → "padding: 0 16px" (không !important)
+           bên dưới bị ghi đè thành padding mặc định 8px, cộng content
+           61.1px + padding 8px×2 + border ra đúng ~80px như ảnh Computed.
+           Fix giống hệt kỹ thuật đã dùng ở ".mp-charts-row .panel" bên
+           dưới file này: (1) thêm !important cho padding, (2) lặp class
+           ".manpower-dashboard" 3 lần để tăng specificity vượt qua rule
+           toàn cục, đảm bảo thắng bất kể thứ tự nạp CSS. */
+        .manpower-dashboard.manpower-dashboard.manpower-dashboard .dashboard-header-grid {
+          /* EPCC (canary-test-stale-build) - TẠM THỜI, sẽ xoá ngay sau khi
+             xác nhận: nếu KHÔNG thấy viền đỏ 6px quanh header sau reload,
+             nghĩa là file này không phải file đang chạy thật (sai đường dẫn
+             import / build stale) — không phải vấn đề CSS/cache thường. */
+          outline: 6px solid red !important;
+          background: #2F3A1D;
+          border-radius: 14px;
+          padding: 0 16px !important;
+          border: 1px solid rgba(0,0,0,0.18);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+          height: 60px !important;
+          min-height: 60px !important;
+          box-sizing: border-box !important;
+          overflow: visible !important;
+          display: flex !important;
+          align-items: center !important;
+          position: relative !important;
+        }
+        .manpower-dashboard .dashboard-header-left { color: #C0EF6A !important; }
+        .manpower-dashboard .dashboard-header-title {
+          color: #C0EF6A !important;
+          position: absolute !important;
+          left: 50% !important;
+          top: 50% !important;
+          transform: translate(-50%, -50%) !important;
+          margin: 0 !important;
+          white-space: nowrap;
+        }
+      `}</style>
+
       <div className="dashboard-header-grid">
         <div className="dashboard-header-left" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-2)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {/* EPCC (im-logo-add-header-card-center-muc2) - thêm logo IM cùng
+              ảnh gốc IM_LOGO_DATA_URI, cùng kích thước 57.4px/margin 0.5mm
+              để đồng nhất với Mục 1/3/4. */}
+          <img src={IM_LOGO_DATA_URI} alt="IM" style={{ height: 57.4, width: 'auto', display: 'block', margin: '0.5mm 0' }} />
           <span aria-hidden="true">🕐</span>
           {formatClock(currentTime)}
         </div>
