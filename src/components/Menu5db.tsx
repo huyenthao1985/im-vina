@@ -2354,7 +2354,7 @@ function RevenueCustomerStackedChart({
 // hình dáng "iM" sẽ giống hệt ảnh tham chiếu ở MỌI máy/trình duyệt, không
 // còn phụ thuộc font cài sẵn hay độ khéo tay khi tự vẽ lại.
 
-function DonutCenterLogo({ cx, cy, r, theme }: { cx: number; cy: number; r: number; theme: ThemeMode }) {
+function DonutCenterLogo({ cx, cy, r, theme: _theme }: { cx: number; cy: number; r: number; theme: ThemeMode }) {
   // EPCC (menu5-donut-center-close-dark-gap) - `r` truyền vào giờ là bán
   // kính LẤP KÍN khoảng hở (khớp đúng mép trong donut) để không lộ nền tối
   // phía sau. Kích thước logo vẫn tính theo bán kính cũ (r * 0.86, giữ
