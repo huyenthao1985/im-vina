@@ -37,10 +37,32 @@ export function canAccessTab(viewId: string, role: UserRole | null | undefined):
 //   - profile: null khi chưa có hồ sơ / role: null khi đang chờ admin phân quyền
 // Dùng CHUNG client `supabase` đã có sẵn ở ./supabase (client đang lưu dữ liệu
 // sales/manpower) — KHÔNG tạo thêm client thứ 2 để tránh xung đột phiên/cache.
+// EPCC (login-hang-no-timeout) - FIX ROOT CAUSE "đăng nhập vào trang tải quá
+// lâu, không hiện màn hình": trước đây getSession()/loadProfile() KHÔNG có
+// timeout nào — nếu mạng chậm hoặc query 'profiles' bị treo (cold-start
+// Supabase, RLS chậm...), authLoading kẹt `true` vô thời hạn, người dùng chỉ
+// thấy màn hình trắng + spinner, không có cách nào tự thoát ngoài refresh
+// tay. Thêm timeout 15s (giống pattern withTimeoutMs đã dùng cho phần tải
+// dữ liệu dashboard trong App.tsx) — hết 15s mà chưa xong thì dừng spinner,
+// chuyển sang trạng thái lỗi có nút "Thử lại" thay vì treo mãi.
+const AUTH_TIMEOUT_MS = 15_000;
+function withAuthTimeout<T>(promise: Promise<T>): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_resolve, reject) =>
+      setTimeout(() => reject(new Error('auth-timeout')), AUTH_TIMEOUT_MS)
+    ),
+  ]);
+}
+
 export function useAuthGate() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  // EPCC (login-hang-no-timeout): true khi getSession/loadProfile hết 15s mà
+  // chưa xong — App.tsx dùng cờ này để hiện màn hình lỗi + nút "Thử lại"
+  // thay vì spinner treo vô thời hạn.
+  const [authTimedOut, setAuthTimedOut] = useState(false);
 
   const loadProfile = useCallback(async (userId: string, email: string, fallbackName: string) => {
     if (!supabase) return;
@@ -73,18 +95,30 @@ export function useAuthGate() {
     }
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!mounted) return;
-      setSession(session);
-      if (session?.user) {
-        await loadProfile(
-          session.user.id,
-          session.user.email || '',
-          session.user.user_metadata?.full_name || session.user.email || ''
-        );
-      }
-      if (mounted) setLoading(false);
-    });
+    withAuthTimeout(supabase.auth.getSession())
+      .then(async ({ data: { session } }) => {
+        if (!mounted) return;
+        setSession(session);
+        if (session?.user) {
+          await withAuthTimeout(
+            loadProfile(
+              session.user.id,
+              session.user.email || '',
+              session.user.user_metadata?.full_name || session.user.email || ''
+            )
+          );
+        }
+        if (mounted) setLoading(false);
+      })
+      .catch((err: Error) => {
+        // EPCC (login-hang-no-timeout): getSession/loadProfile quá 15s —
+        // dừng spinner, báo lỗi thay vì treo trắng vô thời hạn.
+        console.warn('useAuthGate: hết thời gian chờ đăng nhập —', err.message);
+        if (mounted) {
+          setAuthTimedOut(true);
+          setLoading(false);
+        }
+      });
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       setSession(newSession);
@@ -112,5 +146,7 @@ export function useAuthGate() {
     setProfile(null);
   }, []);
 
-  return { loading, session, profile, signOut, refreshProfile };
+  // EPCC (login-hang-no-timeout): App.tsx dùng authTimedOut để hiện màn hình
+  // lỗi + nút "Thử lại" (reload trang) thay vì spinner treo mãi.
+  return { loading, session, profile, signOut, refreshProfile, authTimedOut };
 }

@@ -167,7 +167,7 @@ export default function App() {
   // component — việc "chặn" hiển thị dashboard khi chưa đăng nhập chỉ xảy ra
   // ở JSX bên trong return(), KHÔNG return sớm trước các hook khác bên dưới
   // (tránh vi phạm Rules of Hooks — thứ tự hook phải cố định mỗi lần render).
-  const { loading: authLoading, session, profile, signOut } = useAuthGate();
+  const { loading: authLoading, session, profile, signOut, authTimedOut } = useAuthGate();
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -955,6 +955,33 @@ export default function App() {
           animation: 'spin 0.8s linear infinite',
         }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+  {/* EPCC (login-hang-no-timeout) - FIX ROOT CAUSE "đăng nhập vào trang tải
+      quá lâu, không hiện màn hình": trước đây getSession()/loadProfile()
+      không có timeout, mạng chậm/Supabase treo khiến authLoading kẹt `true`
+      vô thời hạn, người dùng chỉ thấy trắng trang + spinner không rõ đang
+      chờ hay đã treo. Giờ useAuthGate tự dừng chờ sau 15s và báo authTimedOut
+      — hiện màn hình lỗi rõ ràng kèm nút "Thử lại" (reload) thay vì trắng
+      trang mãi mãi. */}
+  if (authTimedOut) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', textAlign: 'center' }}>
+        <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-1, #333)' }}>
+          {lang === 'vi'
+            ? '⚠️ Kết nối chậm hoặc mất mạng — không thể đăng nhập.'
+            : lang === 'ko'
+              ? '⚠️ 연결이 느리거나 끊어져 로그인할 수 없습니다.'
+              : '⚠️ Slow connection or network issue — could not sign in.'}
+        </div>
+        <button
+          className="btn"
+          onClick={() => window.location.reload()}
+          style={{ padding: '10px 20px', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+        >
+          {lang === 'vi' ? 'Thử lại' : lang === 'ko' ? '다시 시도' : 'Retry'}
+        </button>
       </div>
     );
   }
