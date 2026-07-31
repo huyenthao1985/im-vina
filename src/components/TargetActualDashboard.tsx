@@ -1675,9 +1675,16 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       yaxis: 'y2',
       text: qtyRates.map(v => v > 0 ? Math.round(v) + '%\n' : ''),
       textposition: 'top center',
+      // EPCC (target-actual-rate-label-dark-contrast) - FIX ROOT CAUSE "số %
+      // Rate không đọc được ở dark mode": trước đây dùng chung axisTextColor
+      // với nhãn giá trị cột (outsidetextfont) — khi cột gần chạm max chiều
+      // cao, điểm % Rate rơi gần sát đỉnh cột, 2 dòng chữ CÙNG MÀU chồng lên
+      // nhau thành 1 vệt mờ. Đổi sang rateLineColor (đã theo theme sẵn: vàng
+      // dark / nâu light, giống màu đường nét đứt) để luôn khác màu nhãn cột,
+      // đọc được ngay cả khi còn chồng vị trí. Tăng cỡ chữ +1 cho rõ hơn.
       textfont: {
-        color: axisTextColor,
-        size: chartTheme.common.dataLabelFontSize,
+        color: rateLineColor,
+        size: chartTheme.common.dataLabelFontSize + 1,
         weight: 'bold'
       }
     };
@@ -1685,7 +1692,11 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     const layoutQty = getChartLayout('bar', theme, {
       categoryarray: xQty,
       yaxisRange: [0, maxQtyVal * 1.15],
-      yaxis2Range: [-20, 140]
+      // EPCC (target-actual-rate-label-dark-contrast): nới yaxis2Range trên
+      // từ 140 lên 165 — đẩy điểm/nhãn % Rate lên cao hơn, tách xa khỏi đỉnh
+      // cột (giảm khả năng chồng chữ với nhãn giá trị cột ở các model gần
+      // đạt 100%+).
+      yaxis2Range: [-20, 165]
     });
     // FIX (header-legend-merge v2, EPCC): getChartLayout() tính margin.t
     // (khoảng trống phía trên biểu đồ) DỰA TRÊN showlegend MẶC ĐỊNH (true)
@@ -1796,9 +1807,11 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       yaxis: 'y2',
       text: amtRates.map(v => v > 0 ? Math.round(v) + '%\n' : ''),
       textposition: 'top center',
+      // EPCC (target-actual-rate-label-dark-contrast) — xem giải thích đầy đủ
+      // ở traceQtyRate phía trên; áp dụng tương tự cho chart AMT.
       textfont: {
-        color: axisTextColor,
-        size: chartTheme.common.dataLabelFontSize,
+        color: rateLineColor,
+        size: chartTheme.common.dataLabelFontSize + 1,
         weight: 'bold'
       }
     };
@@ -1806,7 +1819,8 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     const layoutAmt = getChartLayout('bar', theme, {
       categoryarray: xAmt,
       yaxisRange: [0, maxAmtVal * 1.15],
-      yaxis2Range: [-20, 140]
+      // EPCC (target-actual-rate-label-dark-contrast) — xem giải thích ở layoutQty.
+      yaxis2Range: [-20, 165]
     });
     (layoutAmt as any).showlegend = false; // FIX (header-legend-merge, EPCC) — legend đã chuyển lên header
     (layoutAmt as any).margin = { ...(((layoutAmt as any).margin) || {}), t: 20 }; // FIX v2 — margin.t vẫn tính theo showlegend cũ, ép nhỏ lại
@@ -1905,9 +1919,11 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
       yaxis: 'y2',
       text: [totalQtyRate, totalAmtRate].map(v => Math.round(v) + '%\n'),
       textposition: 'top center',
+      // EPCC (target-actual-rate-label-dark-contrast) — xem giải thích ở
+      // traceQtyRate; áp dụng tương tự cho chart tổng hợp QTY/AMT.
       textfont: {
-        color: axisTextColor,
-        size: chartTheme.common.dataLabelFontSize,
+        color: rateLineColor,
+        size: chartTheme.common.dataLabelFontSize + 1,
         weight: 'bold'
       }
     };
@@ -1915,7 +1931,10 @@ export const TargetActualDashboard: React.FC<TargetActualDashboardProps> = ({
     const layoutSum = getChartLayout('summary', theme, {
       categoryarray: ['QTY', 'AMT'],
       yaxisRange: [0, maxSumVal * 1.15],
-      yaxis2Range: [Math.min(totalQtyRate, totalAmtRate) - 10, Math.max(totalQtyRate, totalAmtRate) + 10]
+      // EPCC (target-actual-rate-label-dark-contrast): nới biên trên/dưới từ
+      // ±10 lên ±25 quanh giá trị % Rate — thêm khoảng trống để nhãn % Rate
+      // không rơi sát đỉnh cột, giảm chồng chữ với nhãn giá trị cột.
+      yaxis2Range: [Math.min(totalQtyRate, totalAmtRate) - 25, Math.max(totalQtyRate, totalAmtRate) + 25]
     });
     (layoutSum as any).showlegend = false; // FIX (header-legend-merge, EPCC) — legend đã chuyển lên header
     (layoutSum as any).margin = { ...(((layoutSum as any).margin) || {}), t: 20 }; // FIX v2 — margin.t vẫn tính theo showlegend cũ, ép nhỏ lại
