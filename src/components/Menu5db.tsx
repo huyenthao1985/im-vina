@@ -122,8 +122,8 @@ const IDB_STORE = 'kv';
 // cache thành công dưới key này, vẫn bump theo đúng quy ước đã tự đặt ra:
 // đổi logic parse ⇒ LUÔN bump version cache key, để không phụ thuộc vào giả
 // định "chưa có cache cũ nào ghi được" — an toàn cho mọi trường hợp triển khai.
-const IDB_KEY_MENU5_DATA = 'menu5:test5_agg_v6';
-const IDB_KEY_MENU5_META = 'menu5:test5_agg_v6_meta';
+const IDB_KEY_MENU5_DATA = 'menu5:test5_agg_v7';
+const IDB_KEY_MENU5_META = 'menu5:test5_agg_v7_meta';
 
 function idbOpenCacheDb(): Promise<IDBDatabase | null> {
   return new Promise(resolve => {
@@ -242,25 +242,45 @@ function createAccumulator(): AggAccumulator {
 // lẫn khi có nhiều cột gần giống nhau); nếu không có mới fallback sang khớp
 // CHỨA tên cột (giống cách QTY vốn đã làm qua `k.includes('QTY')` từ trước —
 // áp dụng nhất quán quy tắc dò cột giữa QTY và 5 cột core còn lại).
+const HEADER_CANDIDATES: Record<string, string[]> = {
+  MODEL: ['MODEL', 'MODELS', 'MDL'],
+  TYPE: ['TYPE', 'LOAI', 'DIVISION'],
+  ITEM: ['ITEM', 'ITEMS', 'MUC'],
+  CUSTOM: ['IMVNCUSTOM', 'CUSTOM', 'CUSTOMER', 'CUST', 'CLIENT', 'KHACHHANG'],
+  YEAR: ['YEAR', 'YR', 'NAM'],
+  MONTH: ['MONTH', 'MON', 'MO', 'THANG'],
+  QTY: ['QTY', 'QUANTITY', 'SOLUONG', 'AMOUNT', 'VALUE', 'VAL'],
+};
+
 function findHeaderRow(rows: unknown[][]): { headerRowIdx: number; colIdx: Record<string, number> } | null {
-  const CORE_NAMES = ['MODEL', 'TYPE', 'ITEM', 'CUSTOM', 'YEAR', 'MONTH'];
-  for (let r = 0; r < Math.min(rows.length, 20); r++) {
+  for (let r = 0; r < Math.min(rows.length, 25); r++) {
     const row = rows[r] ?? [];
     const map: Record<string, number> = {};
     row.forEach((cell, i) => {
       const key = normalizeHeader(cell);
       if (key && !(key in map)) map[key] = i;
     });
+
     const resolvedColIdx: Record<string, number> = {};
-    let hasCore = true;
-    for (const name of CORE_NAMES) {
-      const matchKey = (name in map) ? name : Object.keys(map).find(k => k.includes(name));
-      if (matchKey === undefined) { hasCore = false; break; }
-      resolvedColIdx[name] = map[matchKey];
+    let hasAll = true;
+
+    for (const [targetKey, candidates] of Object.entries(HEADER_CANDIDATES)) {
+      let match = candidates.find(c => c in map);
+      if (!match) {
+        match = Object.keys(map).find(rawKey =>
+          candidates.some(c => rawKey.includes(c) || (rawKey.length >= 4 && c.includes(rawKey)))
+        );
+      }
+      if (match && map[match] !== undefined) {
+        resolvedColIdx[targetKey] = map[match];
+      } else {
+        hasAll = false;
+        break;
+      }
     }
-    const qtyKey = Object.keys(map).find(k => k.includes('QTY'));
-    if (hasCore && qtyKey) {
-      return { headerRowIdx: r, colIdx: { ...resolvedColIdx, QTY: map[qtyKey] } };
+
+    if (hasAll) {
+      return { headerRowIdx: r, colIdx: resolvedColIdx };
     }
   }
   return null;
@@ -601,18 +621,26 @@ function buildTest5DataFromAccumulator(acc: AggAccumulator): Test5Data {
 function aggregateWorkbookToTest5Data(wb: XLSX.WorkBook): Test5Data {
   const acc = createAccumulator();
   let matchedAnySheet = false;
+  const sheetDiagnostics: string[] = [];
 
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }) as unknown[][];
     const found = findHeaderRow(rows);
-    if (!found) continue; // sheet này không có bảng dữ liệu hợp lệ -> bỏ qua, không phải lỗi cả file
+    if (!found) {
+      const topRow = rows.slice(0, 10).find(r => (r ?? []).filter(c => c != null && String(c).trim() !== '').length >= 3);
+      if (topRow) {
+        sheetDiagnostics.push(`Sheet "${sheetName}": các cột [${(topRow ?? []).filter(c => c != null).slice(0, 10).join(', ')}]`);
+      }
+      continue;
+    }
     matchedAnySheet = true;
     accumulateSheetRows(rows, found.colIdx, found.headerRowIdx, acc);
   }
 
   if (!matchedAnySheet) {
+    console.error('[Menu5 Parse Error] Không tìm thấy đủ cột bắt buộc. Chẩn đoán các sheet:', sheetDiagnostics);
     throw new Test5ParseError(
       'Không tìm thấy đủ cột bắt buộc (MODEL, TYPE, ITEM, CUSTOM, YEAR, MONTH, Q\'TY) trong bất kỳ sheet nào của file.'
     );
