@@ -115,8 +115,15 @@ const IDB_STORE = 'kv';
 // LUÔN bump version cache key kèm theo. Không bump sẽ khiến cache cũ (thiếu
 // hẳn field mới) vẫn được đọc thẳng lên Chart 3, khiến nhánh Quý/Tháng mới
 // thêm không có dữ liệu cho tới khi người dùng tự tay tải lại Excel.
-const IDB_KEY_MENU5_DATA = 'menu5:test5_agg_v5';
-const IDB_KEY_MENU5_META = 'menu5:test5_agg_v5_meta';
+// EPCC (menu5-fix-imvncustom-header-alias) - bump lần nữa 'v5' → 'v6' vì lần
+// sửa này ĐỔI LOGIC DÒ CỘT trong findHeaderRow (chấp nhận alias/biến thể tên
+// cột thay vì chỉ khớp tuyệt đối, để nhận đúng cột 'IMVNCUSTOM' làm 'CUSTOM')
+// — dù các lần thử trước đó thất bại (ném lỗi Test5ParseError) chưa từng ghi
+// cache thành công dưới key này, vẫn bump theo đúng quy ước đã tự đặt ra:
+// đổi logic parse ⇒ LUÔN bump version cache key, để không phụ thuộc vào giả
+// định "chưa có cache cũ nào ghi được" — an toàn cho mọi trường hợp triển khai.
+const IDB_KEY_MENU5_DATA = 'menu5:test5_agg_v6';
+const IDB_KEY_MENU5_META = 'menu5:test5_agg_v6_meta';
 
 function idbOpenCacheDb(): Promise<IDBDatabase | null> {
   return new Promise(resolve => {
@@ -224,11 +231,19 @@ function createAccumulator(): AggAccumulator {
   };
 }
 
-// Dò dòng tiêu đề (chứa đủ các cột bắt buộc) trong 1 sheet đã đọc dạng
-// mảng-2-chiều. Trả về null nếu sheet này không có bảng dữ liệu hợp lệ
-// (ví dụ sheet tổng hợp/pivot/ghi chú phụ) — KHÔNG coi là lỗi ở cấp sheet,
-// chỉ bỏ qua sheet đó khi gộp toàn workbook.
+// FIX ROOT CAUSE "Không tìm thấy đủ cột bắt buộc" dù file có đủ dữ liệu:
+// file Sales_Month-Fcost.xlsx thật của người dùng có cột khách hàng tên là
+// 'IMVNCUSTOM' (không phải 'CUSTOM' thuần) — ví dụ header thực tế:
+// ['MODEL','TYPE','ITEM','IMVNCUSTOM','YEAR','MONTH','QTY']. hasCore trước
+// đây dùng `k in map` (so khớp TUYỆT ĐỐI), nên 'CUSTOM' không khớp
+// 'IMVNCUSTOM' dù cột này rõ ràng CHỨA đúng ý nghĩa "khách hàng" cần tìm —
+// khiến CẢ FILE bị coi là thiếu cột dù 6/6 cột còn lại (kể cả QTY) đều đúng.
+// Fix: với mỗi cột bắt buộc, thử khớp TUYỆT ĐỐI trước (ưu tiên, tránh nhầm
+// lẫn khi có nhiều cột gần giống nhau); nếu không có mới fallback sang khớp
+// CHỨA tên cột (giống cách QTY vốn đã làm qua `k.includes('QTY')` từ trước —
+// áp dụng nhất quán quy tắc dò cột giữa QTY và 5 cột core còn lại).
 function findHeaderRow(rows: unknown[][]): { headerRowIdx: number; colIdx: Record<string, number> } | null {
+  const CORE_NAMES = ['MODEL', 'TYPE', 'ITEM', 'CUSTOM', 'YEAR', 'MONTH'];
   for (let r = 0; r < Math.min(rows.length, 20); r++) {
     const row = rows[r] ?? [];
     const map: Record<string, number> = {};
@@ -236,10 +251,16 @@ function findHeaderRow(rows: unknown[][]): { headerRowIdx: number; colIdx: Recor
       const key = normalizeHeader(cell);
       if (key && !(key in map)) map[key] = i;
     });
-    const hasCore = ['MODEL', 'TYPE', 'ITEM', 'CUSTOM', 'YEAR', 'MONTH'].every(k => k in map);
+    const resolvedColIdx: Record<string, number> = {};
+    let hasCore = true;
+    for (const name of CORE_NAMES) {
+      const matchKey = (name in map) ? name : Object.keys(map).find(k => k.includes(name));
+      if (matchKey === undefined) { hasCore = false; break; }
+      resolvedColIdx[name] = map[matchKey];
+    }
     const qtyKey = Object.keys(map).find(k => k.includes('QTY'));
     if (hasCore && qtyKey) {
-      return { headerRowIdx: r, colIdx: { ...map, QTY: map[qtyKey] } };
+      return { headerRowIdx: r, colIdx: { ...resolvedColIdx, QTY: map[qtyKey] } };
     }
   }
   return null;
