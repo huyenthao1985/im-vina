@@ -710,12 +710,14 @@ export default function App() {
           const isActual = rawType.includes('actual') || rawType.includes('thực tế') || rawType.includes('act');
           const rawRty = gv(r, 'rty', 'RTY', "RTY %", 'RTY%', 'value', 'Value', 'rate', 'Rate');
           const rtyNum = Number(rawRty ?? 0);
+          const childProc = String(gv(r, 'process1', 'Process1', 'PROCESS1', 'subprocess', 'SubProcess', 'processdetail', 'item', 'Item') ?? '').trim();
+          const parentProc = String(gv(r, 'process', 'Process', 'PROCESS', 'parent_process', 'origin', 'Origin', 'type', 'Type') ?? '').trim();
           return {
             source_tag: 'RTY',
             model:    String(gv(r, 'model', 'Model', 'so', 'SO') ?? '').trim() || 'N/A',
-            origin:   'RTY',
+            origin:   parentProc || 'RTY',
             customer: '',
-            type:     String(gv(r, 'process', 'Process', 'item', 'Item') ?? '').trim() || 'N/A',
+            type:     childProc || parentProc || 'N/A',
             division: isActual ? 'actual' : 'target',
             year:     guessYear(rawDate),
             month:    String(rawDate).trim() || 'N/A',

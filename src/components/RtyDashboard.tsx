@@ -414,8 +414,6 @@ const getSeriesValueForModel = (
   rawIndex: number,
   customSeriesMap?: Record<string, Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>>
 ): number | null => {
-  const m = model || HERO_MODEL;
-
   const readFrom = (
     series?: Record<string, { month: (number | null)[]; week: (number | null)[]; day: (number | null)[] }>
   ): number | null | undefined => {
@@ -425,11 +423,32 @@ const getSeriesValueForModel = (
     return arr[rawIndex];
   };
 
-  const dynamicVal = readFrom(customSeriesMap?.[m]);
-  if (dynamicVal != null) return dynamicVal;
+  // 1. Khi chọn một Model cụ thể (hoặc khi chỉ có 1 model):
+  if (model) {
+    const dynamicVal = readFrom(customSeriesMap?.[model]);
+    if (dynamicVal != null) return dynamicVal;
+    const staticVal = readFrom(MODEL_SERIES[model]);
+    return staticVal != null ? staticVal : null;
+  }
 
-  const staticVal = readFrom(MODEL_SERIES[m]);
-  return staticVal != null ? staticVal : null;
+  // 2. Khi chọn "Tất cả" (model rỗng):
+  // Ưu tiên tính TRUNG BÌNH CỘNG của toàn bộ các Model có số liệu ở mốc này
+  if (customSeriesMap && Object.keys(customSeriesMap).length > 0) {
+    const vals: number[] = [];
+    Object.values(customSeriesMap).forEach(series => {
+      const v = readFrom(series);
+      if (v != null) vals.push(v);
+    });
+    if (vals.length > 0) {
+      return vals.reduce((a, b) => a + b, 0) / vals.length;
+    }
+  }
+
+  // Nếu dữ liệu động không có mốc này, fallback về model tham chiếu HERO_MODEL
+  const heroDynamic = readFrom(customSeriesMap?.[HERO_MODEL]);
+  if (heroDynamic != null) return heroDynamic;
+  const heroStatic = readFrom(MODEL_SERIES[HERO_MODEL]);
+  return heroStatic != null ? heroStatic : null;
 };
 
 /** ═══════════════════════════════════════════════════════════════════════
@@ -867,30 +886,62 @@ function buildRtySummaryFromRows(allRows: any[]): RtySummaryDynamicData | null {
       return null;
     };
 
-    const normalizeProcess = (proc: string): string => {
-      const p = proc.trim().toUpperCase();
-      if (p.includes('TTL') || p.includes('TOTAL') || p === 'RTY' || p === 'RTY %') return 'RTY_TTL';
-      // EPCC (rty-main-fvi-missing): bắt thêm 'FVI' standalone và các biến thể
-      // tiếng Hàn/tiếng Việt/viết tắt cho MAIN sub-processes.
-      if (p.includes('MAIN FVI') || p === 'FVI'
-          || p.includes('FINAL VISUAL') || p.includes('FINAL VI')
-          || p.includes('최종 VI') || p.includes('최종VI')
-          || p.includes('KT CUOI') || p.includes('KIEM TRA CUOI')) return 'MAIN_FVI';
-      if (p.includes('MAIN ASSY') || p.includes('ASSY')
-          || p.includes('어셈블리') || p.includes('조립')) return 'MAIN_ASSY';
-      if (p.includes('MAIN DRIVING') || p.includes('DRIVING') || p.includes('DRV')
-          || p.includes('구동')) return 'MAIN_DRIVING';
-      if (p.includes('MAIN TILT') || p.includes('TILT') || p.includes('TLT')
-          || p.includes('틸트')) return 'MAIN_TILT';
-      if (p.includes('MAIN')) return 'RTY_MAIN';
-      if (p.includes('SUB1 FPCB') || p.includes('FPCB')) return 'SUB1_FPCB';
-      if (p.includes('SUB1 FVI')) return 'SUB1_FVI';
-      if (p.includes('SUB1')) return 'RTY_SUB1';
-      if (p.includes('SUB2 HOOK') || p.includes('HOOK')) return 'SUB2_HOOK';
-      if (p.includes('SUB2 OVEN') || p.includes('OVEN')) return 'SUB2_OVEN';
-      if (p.includes('SUB2 INDEX') || p.includes('INDEX')) return 'SUB2_INDEX';
-      if (p.includes('SUB2')) return 'RTY_SUB2';
-      return 'RTY_TTL';
+    const normalizeProcess = (rawProc: string, parentProc?: string): string | null => {
+      const child = String(rawProc || '').trim();
+      const parent = String(parentProc || '').trim();
+      const c = child.toUpperCase();
+      const p = parent.toUpperCase();
+      const target = c || p;
+      if (!target) return null;
+
+      // 1. TTL
+      if (target === 'RTY TTL' || target === 'TTL' || target === 'TOTAL' || target === 'RTY %') return 'RTY_TTL';
+      if (c.includes('RTY TTL') || c.includes('TTL') || c.includes('TOTAL')) return 'RTY_TTL';
+
+      // 2. MAIN sub-processes & top-level
+      if (c.includes('MAIN FVI') || c.includes('FINAL VISUAL') || c.includes('FINAL VI')
+          || c.includes('최종 VI') || c.includes('최종VI') || c.includes('KT CUOI') || c.includes('KIEM TRA CUOI')) {
+        return 'MAIN_FVI';
+      }
+      if (c.includes('MAIN ASSY') || (p === 'MAIN' && (c === 'ASSY' || c.startsWith('MAIN ASSY'))) || c.includes('OIS ASSY')) {
+        return 'MAIN_ASSY';
+      }
+      if (c.includes('MAIN DRIVING') || c.includes('DRIVING') || c.includes('DRV') || c.includes('구동')) {
+        return 'MAIN_DRIVING';
+      }
+      if (c.includes('MAIN TILT') || c.includes('TILT') || c.includes('TLT') || c.includes('틸트')) {
+        return 'MAIN_TILT';
+      }
+      if (c === 'RTY MAIN' || c === 'MAIN RTY' || (p === 'MAIN' && (c === 'RTY' || c === 'MAIN' || !c))) {
+        return 'RTY_MAIN';
+      }
+
+      // 3. SUB1 sub-processes & top-level
+      if (c.includes('FPCB') || c.includes('S1 FPCB')) return 'SUB1_FPCB';
+      if (c.includes('S1 FVI') || c.includes('SUB1 FVI') || (p === 'SUB1' && (c === 'FVI' || c.includes('FVI')))) {
+        return 'SUB1_FVI';
+      }
+      if (c === 'RTY SUB1' || c === 'SUB1 RTY' || (p === 'SUB1' && (c === 'RTY' || c === 'SUB1' || !c))) {
+        return 'RTY_SUB1';
+      }
+
+      // 4. SUB2 sub-processes & top-level
+      if (c.includes('HOOK') || c.includes('S2 HOOK')) return 'SUB2_HOOK';
+      if (c.includes('OVEN') || c.includes('S2 OVEN')) return 'SUB2_OVEN';
+      if (c.includes('INDEX') || c.includes('S2 INDEX')) return 'SUB2_INDEX';
+      if (c === 'RTY SUB2' || c === 'SUB2 RTY' || (p === 'SUB2' && (c === 'RTY' || c === 'SUB2' || !c))) {
+        return 'RTY_SUB2';
+      }
+
+      // Fallbacks nếu chỉ có nhóm cha (hoặc con trùng cha)
+      if (!c || c === p) {
+        if (p === 'MAIN') return 'RTY_MAIN';
+        if (p === 'SUB1') return 'RTY_SUB1';
+        if (p === 'SUB2') return 'RTY_SUB2';
+      }
+
+      // Các công đoạn trung gian khác không nằm trong 4 biểu đồ (như Main Flag, Main X-ray...) trả về null để không ghi đè RTY_MAIN/TTL
+      return null;
     };
 
     const gv = (r: any, ...keys: string[]) => {
@@ -908,27 +959,30 @@ function buildRtySummaryFromRows(allRows: any[]): RtySummaryDynamicData | null {
 
     allRows.forEach(r => {
         const rawModel = gv(r, 'model', 'Model', 'MODEL', 'so', 'SO');
-        const rawProc  = gv(r, 'process', 'Process', 'PROCESS', 'item', 'Item', 'ITEM');
+        // Công đoạn chi tiết con (Process1, SubProcess, Item...)
+        const rawChild = gv(r, 'process1', 'Process1', 'PROCESS1', 'subprocess', 'SubProcess', 'processdetail', 'item', 'Item', 'ITEM');
+        // Nhóm công đoạn cha (Process, Division, Origin...)
+        const rawParent = gv(r, 'process', 'Process', 'PROCESS', 'parent_process', 'origin', 'Origin', 'division', 'Division');
         const rawType  = gv(r, 'type', 'Type', 'TYPE');
         const rawYear  = gv(r, 'year', 'Year', 'YEAR');
         const rawDate  = gv(r, 'date', 'Date', 'DATE', 'period', 'Period', 'PERIOD', 'month', 'Month', 'MONTH', 'day', 'Day', 'DAY', 'time', 'Time', 'TIME');
         const rawRty   = gv(r, 'rty', 'RTY', 'RTY %', 'RTY%', 'value', 'Value', 'VALUE', 'rate', 'Rate');
 
-        if (rawModel && rawProc) {
+        // Nếu rawChild không có trong file mà rawType lưu tên công đoạn (khi đọc lại từ Supabase), dùng rawType làm child
+        const typeStr = rawType ? String(rawType).trim().toLowerCase() : '';
+        const isTypeActualOrTarget = typeStr.includes('actual') || typeStr.includes('thực') || typeStr.includes('act') || typeStr.includes('target') || typeStr.includes('kế hoạch');
+        const childCandidate = rawChild || (!isTypeActualOrTarget && rawType ? rawType : null);
+        const effectiveChild = childCandidate || rawParent;
+
+        if (rawModel && (effectiveChild || rawParent)) {
           const modelStr = String(rawModel).trim();
-          const processKey = normalizeProcess(String(rawProc));
-          const typeStr = rawType ? String(rawType).trim().toLowerCase() : 'actual';
+          const processKey = normalizeProcess(String(effectiveChild || ''), String(rawParent || ''));
+          if (!processKey) return; // Bỏ qua các bước trung gian không thuộc biểu đồ
+
           // EPCC (rty-isActual-detection-miss): mở rộng nhận dạng nhãn Actual:
-          // - tiếng Anh: 'actual', 'act', 'real', 'result'
-          // - tiếng Việt: 'thực tế', 'thực hiện', 'thực'
-          // - tiếng Hàn: '실적', '실제'
-          // - đặc biệt: nếu rawType không tồn tại (null) → mặc định là actual
-          //   (nhiều file RTY không có cột Type riêng, chỉ có 1 loại dữ liệu)
-          const isActual = !rawType // không có cột Type → mặc định là actual
-            || typeStr.includes('actual') || typeStr.includes('act')
-            || typeStr.includes('real') || typeStr.includes('result')
-            || typeStr.includes('thực tế') || typeStr.includes('thực hiện') || typeStr.includes('thực')
-            || typeStr.includes('실적') || typeStr.includes('실제');
+          const isActual = !rawType || isTypeActualOrTarget
+            ? (!typeStr.includes('target') && !typeStr.includes('kế hoạch'))
+            : true;
 
           if (rawRty != null && rawDate != null) {
             const rtyVal = parseRtyVal(rawRty);
@@ -1042,34 +1096,64 @@ function buildRtySummaryFromRows(allRows: any[]): RtySummaryDynamicData | null {
       if (monthIdx >= 0) modelSeries[row.model][row.processKey].month[monthIdx] = row.rty;
     });
 
-    // EPCC (rty-ttl-missing-compute): nếu file không có cột Process 'TTL' riêng,
-    // RTY_TTL sẽ bị rỗng → line TTL trên biểu đồ không hiện.
-    // Tính tự động theo công thức RTY chuẩn trong sản xuất:
-    //   RTY_TTL = RTY_MAIN × RTY_SUB1 × RTY_SUB2
-    // Áp dụng cho từng điểm thời gian (day/week/month) riêng biệt.
-    // Nếu model đã có RTY_TTL (từ file), bỏ qua — không ghi đè.
-    const computeRtyTtl = (
+    // EPCC (rty-ttl-missing-compute): tự động tính các RTY cấp tổng hợp nếu file
+    // chỉ chứa các công đoạn con chi tiết (không ghi đè nếu file đã có sẵn dòng này).
+    const computeRollup = (
       m: string,
-      mode: 'day' | 'week' | 'month'
+      mode: 'day' | 'week' | 'month',
+      subKeys: string[]
     ): (number | null)[] => {
-      const main  = modelSeries[m]?.['RTY_MAIN']?.[mode]  ?? [];
-      const sub1  = modelSeries[m]?.['RTY_SUB1']?.[mode]  ?? [];
-      const sub2  = modelSeries[m]?.['RTY_SUB2']?.[mode]  ?? [];
-      const len = Math.max(main.length, sub1.length, sub2.length);
-      return Array.from({ length: len }, (_, i) => {
-        const values = [main[i], sub1[i], sub2[i]].filter((v): v is number => v != null && v > 0);
+      const seriesList = subKeys.map(k => modelSeries[m]?.[k]?.[mode] ?? []);
+      const maxLen = Math.max(...seriesList.map(s => s.length), 0);
+      if (maxLen === 0) return [];
+      return Array.from({ length: maxLen }, (_, i) => {
+        const values = seriesList.map(s => s[i]).filter((v): v is number => v != null && v > 0);
         if (values.length === 0) return null;
         return values.reduce((a, b) => a * b, 1);
       });
     };
+
     for (const m of Object.keys(modelSeries)) {
+      // 1. RTY_MAIN = MAIN_ASSY × MAIN_DRIVING × MAIN_TILT × MAIN_FVI
+      const hasExplicitMain = (modelSeries[m]?.['RTY_MAIN']?.day ?? []).some(v => v != null);
+      if (!hasExplicitMain) {
+        const mainDay   = computeRollup(m, 'day',   ['MAIN_ASSY', 'MAIN_DRIVING', 'MAIN_TILT', 'MAIN_FVI']);
+        const mainWeek  = computeRollup(m, 'week',  ['MAIN_ASSY', 'MAIN_DRIVING', 'MAIN_TILT', 'MAIN_FVI']);
+        const mainMonth = computeRollup(m, 'month', ['MAIN_ASSY', 'MAIN_DRIVING', 'MAIN_TILT', 'MAIN_FVI']);
+        if (mainDay.some(v => v != null) || mainWeek.some(v => v != null) || mainMonth.some(v => v != null)) {
+          modelSeries[m]['RTY_MAIN'] = { day: mainDay, week: mainWeek, month: mainMonth };
+        }
+      }
+
+      // 2. RTY_SUB1 = SUB1_FPCB × SUB1_FVI
+      const hasExplicitSub1 = (modelSeries[m]?.['RTY_SUB1']?.day ?? []).some(v => v != null);
+      if (!hasExplicitSub1) {
+        const sub1Day   = computeRollup(m, 'day',   ['SUB1_FPCB', 'SUB1_FVI']);
+        const sub1Week  = computeRollup(m, 'week',  ['SUB1_FPCB', 'SUB1_FVI']);
+        const sub1Month = computeRollup(m, 'month', ['SUB1_FPCB', 'SUB1_FVI']);
+        if (sub1Day.some(v => v != null) || sub1Week.some(v => v != null) || sub1Month.some(v => v != null)) {
+          modelSeries[m]['RTY_SUB1'] = { day: sub1Day, week: sub1Week, month: sub1Month };
+        }
+      }
+
+      // 3. RTY_SUB2 = SUB2_HOOK × SUB2_OVEN × SUB2_INDEX
+      const hasExplicitSub2 = (modelSeries[m]?.['RTY_SUB2']?.day ?? []).some(v => v != null);
+      if (!hasExplicitSub2) {
+        const sub2Day   = computeRollup(m, 'day',   ['SUB2_HOOK', 'SUB2_OVEN', 'SUB2_INDEX']);
+        const sub2Week  = computeRollup(m, 'week',  ['SUB2_HOOK', 'SUB2_OVEN', 'SUB2_INDEX']);
+        const sub2Month = computeRollup(m, 'month', ['SUB2_HOOK', 'SUB2_OVEN', 'SUB2_INDEX']);
+        if (sub2Day.some(v => v != null) || sub2Week.some(v => v != null) || sub2Month.some(v => v != null)) {
+          modelSeries[m]['RTY_SUB2'] = { day: sub2Day, week: sub2Week, month: sub2Month };
+        }
+      }
+
+      // 4. RTY_TTL = RTY_MAIN × RTY_SUB1 × RTY_SUB2
       const hasExplicitTTL = (modelSeries[m]?.['RTY_TTL']?.day ?? []).some(v => v != null);
       if (!hasExplicitTTL) {
-        const ttlDay   = computeRtyTtl(m, 'day');
-        const ttlWeek  = computeRtyTtl(m, 'week');
-        const ttlMonth = computeRtyTtl(m, 'month');
-        const hasAny = ttlDay.some(v => v != null) || ttlWeek.some(v => v != null) || ttlMonth.some(v => v != null);
-        if (hasAny) {
+        const ttlDay   = computeRollup(m, 'day',   ['RTY_MAIN', 'RTY_SUB1', 'RTY_SUB2']);
+        const ttlWeek  = computeRollup(m, 'week',  ['RTY_MAIN', 'RTY_SUB1', 'RTY_SUB2']);
+        const ttlMonth = computeRollup(m, 'month', ['RTY_MAIN', 'RTY_SUB1', 'RTY_SUB2']);
+        if (ttlDay.some(v => v != null) || ttlWeek.some(v => v != null) || ttlMonth.some(v => v != null)) {
           modelSeries[m]['RTY_TTL'] = { day: ttlDay, week: ttlWeek, month: ttlMonth };
         }
       }
@@ -1489,7 +1573,7 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
 
       const lineTraces = lineSeries.map((s, idx) => {
         const { ys, notes } = getYsWithNote(s.key);
-        const pos = idx === 0 ? 'top center' : 'bottom center';
+        const pos = idx % 2 === 0 ? 'top center' : 'bottom center';
         return {
           x: xs, y: ys, name: s.name,
           type: 'scatter' as const, mode: 'lines+markers+text' as const,
@@ -1535,13 +1619,6 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
           name: `${targetLabel} ${targetY.toFixed(1)}%`,
           type: 'scatter', mode: 'lines+markers+text',
           yaxis: 'y2',
-          // FIX (target-line-red-above, EPCC): đường Target trước đây màu
-          // amber (#f59e0b), nhãn số nằm DƯỚI đường ('bottom center'). Đổi
-          // sang màu ĐỎ (#ef4444) theo yêu cầu, nhãn số chuyển lên TRÊN
-          // đường ('top center' = "Above"). Vì màu đỏ này trước đó đã được
-          // dùng cho 1 cột trong mỗi biểu đồ (RTY Sub2 / Main FVI Final /
-          // S1 FVI / S2 Oven Cure), 4 cột đó đã được đổi sang màu khác ở
-          // lời gọi plotMixedPanel() bên dưới để không trùng màu với Target.
           line: { color: '#ef4444', width: 1.6, dash: 'dot', shape: 'spline', smoothing: 1 },
           marker: { color: '#ef4444', size: 5 },
           text: xs.map(() => `${targetY.toFixed(1)}%`),
@@ -1568,40 +1645,31 @@ export const RtyDashboard: React.FC<RtyDashboardProps> = ({
     };
 
     // Target: đỏ đứt nét (#ef4444) — nhãn số hiển thị Above (top center).
-    // FIX (revert-bar-recolor-line, EPCC): bản trước đổi màu CỘT (bar) để
-    // tránh trùng đỏ với Target — theo yêu cầu mới, cột trả về ĐÚNG màu đỏ
-    // gốc như ảnh tham chiếu. Thay vào đó, đổi màu ĐƯỜNG (line) nào đang có
-    // tông đỏ/hồng gần giống Target: "RTY TTL" (TTL RTY chart) và "RTY Main
-    // (line)" (MAIN chart) — trước đây cùng dùng rose #f43f5e, dễ lẫn với
-    // đỏ Target — nay đổi sang tím/hồng magenta để phân biệt rõ.
-
     // Panel 1 — TTL RTY
-    //   Cột: RTY Sub1 (xanh lá), RTY Sub2 (xanh lam)
-    //   Đường: RTY Main (cam), RTY TTL (vàng đậm — nổi bật tổng thể)
     plotMixedPanel('rtyChartTTL',
       [
-        { key: 'RTY_SUB1', name: 'RTY Sub1', color: '#1565C0' },   // xanh đậm (PerCapita DAY)
-        { key: 'RTY_SUB2', name: 'RTY Sub2', color: '#ef4444' },   // đỏ (trả về màu gốc theo ảnh tham chiếu)
+        { key: 'RTY_SUB1', name: 'RTY Sub1', color: '#1565C0' },   // xanh đậm
+        { key: 'RTY_SUB2', name: 'RTY Sub2', color: '#ef4444' },   // đỏ
       ],
       [
-        { key: 'RTY_MAIN', name: 'RTY Main',  color: tealAccent,  width: 1.6 },         // teal (PerCapita TTL)
-        { key: 'RTY_TTL',  name: 'RTY TTL',   color: '#8b5cf6',   width: 1.6, dash: 'dash' }, // tím (đổi từ rose để tránh trùng tông đỏ với Target)
+        { key: 'RTY_MAIN', name: 'RTY Main',  color: tealAccent,  width: 1.6 },
+        { key: 'RTY_TTL',  name: 'RTY TTL',   color: '#8b5cf6',   width: 1.6, dash: 'dash' }, // tím
       ],
       TARGET_TTL, 'Target RTY TTL');
 
     // Panel 2 — MAIN
-    //   Cột: RTY Main (xanh lá), Main FVI Final (xanh lam)
-    //   Đường: Main Assy (cam), Main Driving (tím), Main Tilt (xám), RTY Main line (vàng)
+    //   Cột: RTY Main (xanh lam), Main FVI Final (đỏ)
+    //   Đường: Main Assy (teal), Main Driving (cam), Main Tilt (tím), RTY Main line (hồng magenta)
     plotMixedPanel('rtyChartMAIN',
       [
         { key: 'RTY_MAIN', name: 'RTY Main',       color: '#1565C0' },
-        { key: 'MAIN_FVI', name: 'Main FVI Final',  color: '#ef4444' }, // đỏ (trả về màu gốc theo ảnh tham chiếu)
+        { key: 'MAIN_FVI', name: 'Main FVI Final',  color: '#ef4444' },
       ],
       [
         { key: 'MAIN_ASSY',    name: 'Main Assy',         color: tealAccent, width: 1.6 },
-        { key: 'MAIN_DRIVING', name: 'Main Driving test',  color: '#f59e0b', width: 1.6 },
-        { key: 'MAIN_TILT',   name: 'Main Tilt test',     color: '#a78bfa', width: 1.6 },
-        { key: 'RTY_MAIN',    name: 'RTY Main (line)',    color: '#ec4899', width: 1.6, dash: 'dash' }, // hồng magenta (đổi từ rose để tránh trùng tông đỏ với Target)
+        { key: 'MAIN_DRIVING', name: 'Main Driving',      color: '#f59e0b', width: 1.6 },
+        { key: 'MAIN_TILT',   name: 'Main Tilt',         color: '#a78bfa', width: 1.6 },
+        { key: 'RTY_MAIN',    name: 'RTY Main (line)',    color: '#ec4899', width: 1.6, dash: 'dash' },
       ],
       TARGET_MAIN, 'Target Main');
 
